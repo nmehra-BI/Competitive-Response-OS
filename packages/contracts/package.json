@@ -1,0 +1,17 @@
+{
+  "name": "@growth-os/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FROZEN. Zod schemas and TypeScript types for entities, enums, API shapes and events. Changes need a change request (decisions.md D-031).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  }
+}
