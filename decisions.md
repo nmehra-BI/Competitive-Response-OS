@@ -1342,3 +1342,272 @@ All 146 registry endpoints now have handlers.
 | CR-WS6-5 | WS6 | Shared approval-effectiveness helper | **Done** | D-075 |
 
 New open product questions: PQ-13 to PQ-16, and updates to PQ-2, PQ-6 and PQ-11 (see "Open product questions").
+
+---
+
+## Stage: Build — End-to-end and release readiness (2026-10-09)
+
+The Principal Engineer ran the web app against the real stack for the first time: API, worker and a seeded
+Postgres, with the simulated Jira connector and the fixture analysis provider, MSW off. The full 30-step Aster
+journey (BUILD_PLAN §8) and every alternate path now pass in Playwright with axe, twice (with analysis on and
+with `ANALYSIS_ENABLED=false`). Walking the journey for real found blockers the per-stream suites could not
+see: some endpoints existed with no screen, some screens called endpoints that nothing populated, and a few
+copies of the same rule disagreed. The entries below record each blocker decision, the harness, the release-gate
+mapping and the fixes of note. Additive contract changes follow the D-031 process (accepted here, listed in
+D-108). New open product questions: PQ-17 to PQ-20.
+
+### D-090 — Validation tasks are drafted from the locked plan at G1 (PQ-13 interim)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: PQ-13: G1 locked the experiment and created an empty validation task set, but no endpoint authored the
+  tasks, so step 12 ("create 5 tasks in Jira (ME-VAL)") could not happen without a database insert.
+- Decision: The G1 decision (`gates.decide`, inside its command pipeline: policy, audit, one transaction) drafts
+  the validation tasks from the pre-registered plan with the pure `draftValidationTasks` (packages/domain): select
+  the sample (experiment owner, window start), brief fieldwork (fieldwork owner, window start + 1 day), one task
+  per pre-registered metric with its target (fieldwork owner, window end), record results and nonresponse
+  (experiment owner, window end). The set keeps the WS6 shape (owner `experiment`, authorizing G1, validation
+  mapping); nothing is sent; audit `task_set.drafted`. EXP-03 yields exactly five tasks → VAL-1…VAL-5.
+- Alternatives considered: an additive `validation.tasks.create` endpoint (needs a task editor on S09 that the
+  design does not have); tasks inside the experiment plan (contract change and a second editor).
+- Consequences: task titles are derived ("Completed discovery interviews (target 8)") rather than the fixture's
+  free text; editing draft validation tasks before sending stays open under PQ-13 (owner PM with design). The
+  step-12 joint test no longer inserts tasks.
+
+### D-091 — Dev clock (dev-only, illustrative tenants, audited, forward only)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Steps 25–27 need the pilot window to end (90 days) and approval expiry must be walkable live; the only
+  transition to Review due is the pilot-window timer.
+- Decision: Migration 0005 adds `platform.dev_clock (tenant_id, offset_ms ≥ 0, set_by, set_at)` with RLS and a
+  guard trigger that refuses rows for non-illustrative tenants and any smaller offset. `dev.clock` /
+  `dev.setClock` (`auth: 'dev_only'`, registered only with `AUTH_MODE=dev`, people only, illustrative tenants
+  only) read and move it by `to` or `advanceDays`; moving it is audited (`dev.clock_set`) and enqueues the
+  pilot-window and approval-expiry timers. Business time comes from one helper, `businessNow()`
+  (packages/db/clock.ts), used by the API pipeline (`ctx.now`), the timers (per tenant) and the outbox send-time
+  re-check and sweep; it applies only when `AUTH_MODE=dev`, `NODE_ENV≠production` and the tenant is
+  illustrative. Sessions, leases, idempotency TTLs and audit timestamps stay real time.
+- Alternatives considered: a seed profile at the Review-due moment (cheaper, but the window end and expiry could
+  never be walked live, and the journey would have to jump seeds mid-run).
+- Consequences: the journey runs at the fixture moments (20 Nov results, 26 Nov G2, 1 Mar 2027 review). Going back
+  needs a reseed. Production code paths read no offset.
+
+### D-092 — Real-stack e2e harness
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `apps/web/e2e/support/playwright.real.config.ts` (projects `real` and `real-ai-down`) starts the API
+  (4710), a second API with `ANALYSIS_ENABLED=false` (4711), the worker, and two Vite servers (5710, 5711) with MSW
+  off and `/api` proxied — unique ports, so `pnpm dev` and other processes keep theirs. It runs serially on one
+  worker against a dedicated database (`growth_os_pe` locally, `growth_os_e2e` in CI). Each spec file resets and
+  seeds it in `beforeAll` through the test-only `packages/db/src/cli/e2e-reset.ts` (drops the app schemas,
+  re-migrates, empties the job queue, seeds `aster-start` or `aster-demo`, optionally an isolated second
+  tenant); the CLI refuses unless `E2E_DB_RESET=1`, outside production, on a database named `*_pe` or `*e2e*`.
+  Helpers (`support/real.ts`) read audit and analytics rows as the owner inside the tenant context (RLS on) and
+  call the API with the page's session. The mock project ignores the real specs and is unchanged.
+- Consequences: `pnpm test:e2e:real`; CI installs Chromium and runs both projects (D-108).
+
+### D-093 — aster-start carries the reviewers' comparison ratings
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Step 4 expects OPP-09's incomparable boundary and OPP-14 "1 input missing", but from aster-start no
+  rating existed and no endpoint records one; comparisons copy ratings from earlier comparisons.
+- Decision: aster-start seeds the fixture comparison of OPP-07/14/09/16 (weights v1, ratings by Priya, Jonas and
+  Maya, Unknown where nobody rated, OPP-09's boundary cell) without the exclusion; S04 reopens it in step 4 and
+  the exclusion is Maya's act. aster-demo adds the selection and the exclusion.
+- Consequences: the "new comparison has only Unknown cells" DB test now proves ratings carry over and the missing
+  rating stays Unknown.
+
+### D-094 — Pickers use the tenant directory
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `usePeople()` (apps/web/src/lib/people.ts) reads `people.list` and offers everyone who can own work
+  (a person whose only role is tenant administrator is left out); Administration names people and business units
+  from `people.list` and `catalogue.scopeOptions`; the S02 geography, product and segment fields are pickers over
+  `catalogue.scopeOptions` for the mandate's business unit. Owner pickers on S10 (conditions), S11 (task owners)
+  and the decision package also include the directory, so the pilot owner and the operations lead can be chosen.
+- Consequences: the persona directory is used only by the login page.
+
+### D-095 — First models and plans are entered through the API in the journey (PQ-17 interim)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The approved design has no data-entry screen for a new case's assumption register, sizing model
+  (boundary, cohorts, overlap), economics model, feasibility dimensions or pilot task list; AI-proposed drafts have
+  no writers yet (CR-WS5-6). The acceptance script assumes they exist.
+- Decision: The journey enters exactly this data through the real endpoints as Maya and Jonas
+  (`support/journey.ts`: `assumptions.create`, `sizing.saveDraft` + commit v1, `economics.saveDraft` + commit
+  v1, `cases.requestReview` for three feasibility dimensions, `pilot.saveDraft` for the six PRD tasks) — the same
+  writers, policy, audit and engines as any other write. Everything the script names is done in the UI. The
+  duplicate-cohort spec adds its imported cohort the same way.
+- Consequences: a design-partner pilot needs either these screens or an assisted import (PQ-17, owner PM with
+  design). This is the largest gap between "the workflow works" and "an operator can start a case alone".
+
+### D-096 — A dispute emits `assumption_changed`
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `assumptions.dispute` emits `assumption_changed {decisionCritical, origin: 'human'}` (step 9): the
+  assumption's standing changed. The analytics envelope carries no statement text.
+
+### D-097 — Finance review is requested from and signed by a named reviewer on S08
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: S08's "Request finance review" sent the request to the viewer; `economics.signFinanceReview` had no UI,
+  so step 16 could not be done.
+- Decision: The request form picks a finance reviewer from `people.list` (`role=finance_reviewer`) and an optional
+  due date; the named reviewer signs on S08 with position, checked items, not-checked items and a statement. The
+  API's own rules (named reviewer only, bound to the committed economics version) are unchanged.
+
+### D-098 — The experiment owner may preview and send its validation tasks
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Step 12 has Maya create the validation tasks, but `task_sync.preview/send` belonged to the pilot owner
+  only, so the API refused her.
+- Decision: For a validation task set only, the experiment's owner may preview, send and retry while they hold
+  `experiment.edit` in the case's scope; the worker repeats the same rule at send time (`actorMayStillSend`).
+  The role matrix is unchanged; pilot tasks stay the pilot owner's.
+
+### D-099 — Screen actions the script needs and the API already had
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: "Start assessment" in the case header for the owner in Discovery (`cases.transition`, step 6);
+  "Start fieldwork" on a locked experiment (`experiments.start`, which re-checks the G1 approval — results are
+  recorded on a running experiment); causal limitations on the S12 recommendation form (required before a
+  decision, step 26); the S12 extension form accepts the €[cap] / [duration] placeholders (PQ-2, D-071).
+
+### D-100 — Change an assumption value on S09
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: The case owner changes a value from the register ("Change value · <assumption>", rates in %, reason
+  required) through `assumptions.update` with If-Match. It is the step-19 trigger: a new immutable version, the
+  materiality check, a stale package.
+
+### D-101 — Dissent is signed by its author; proposed conditions are listed for the approver
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: The disputing reviewer can "Sign as dissent" from the S09 dispute thread (`gates.recordDissent`, the
+  statement verbatim), so the next package carries it (step 17). The S10 approval panel lists the author's
+  proposed conditions (snapshot `conditionsProposed`) as pre-filled conditions the approver keeps or removes
+  (`ApprovalPanelView.initialConditions`, additive); kept word for word they keep their key (C1, D-073). The
+  expiry date is shown with the approval.
+
+### D-102 — A G2 request drafts its pilot plan and pre-registers the pilot thresholds
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Nothing but the seed created `me.pilot_plan`, and outcome targets were only copied between snapshots,
+  so from aster-start there was no pilot to activate and nothing to measure actuals against.
+- Decision: `gates.createRequest` for G2 drafts the pilot plan (version 1 with the requested ceiling, window,
+  scope and thresholds text) and its empty pilot task set (owner the draft version, authorizing this G2, pilot
+  mapping); audit `pilot_plan.drafted`. It takes an additive optional `outcomeTargets` (G2 only, one per measure),
+  stored with the request and inserted as immutable `outcome_target` rows of the first G2 snapshot; later
+  snapshots copy them (thresholds never move). S10's prepare form collects them ("Pilot thresholds ·
+  pre-registered"). The G3 demand clause recognizes the measure key S10 derives from the PRD name
+  (`paid_use_and_continuation`).
+- Consequences: PQ-12 (stop rules and milestones) stays open; PQ-20 asks whether measures need a catalogue.
+
+### D-103 — The outcome review carries the G3 sentence
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: Additive optional `OutcomeReviewView.scaleGate.summary` carries the evaluator's one-line D-039
+  sentence; S12 shows it as the disabled reason of "Request scale approval" (step 28), all four blockers.
+
+### D-104 — A connection failure seen at preview is recorded
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: When the preview dry run gets a connection-level error (`token_expired`, unavailable), the API marks
+  the connection (audited `connection.status_changed`) as the worker does on send; S11 then shows "Jira
+  connection expired" with "Export CSV instead", and internal task status continues (`tasks.update`).
+
+### D-105 — Log scrubbing
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: Request logs keep method, path and request id only — the query string is dropped (a search term can
+  quote restricted text); bodies, cookies and auth headers were already never logged. The release-gate suite
+  `apps/api/test/db/security/log-scrub.test.ts` plants canaries in a restricted passage and a confidential
+  financial input, drives reads, searches (for the canary itself), accepted, refused and malformed writes and a
+  dispute, and proves neither canary appears in the captured server log, in audit rows or in analytics rows.
+
+### D-106 — Release-gate mapping (PRD §10, ARCHITECTURE testing strategy)
+
+| Release gate | Suite(s) | Runs in | Result |
+|---|---|---|---|
+| Evidence rights | `platform/evidence/evidence.db.test.ts`, `worker jobs/analysis/gateway.db.test.ts`, evals security suites, `e2e/real/restricted-evidence.spec.ts` | test:db, evals:smoke, e2e real | pass |
+| Approval bypass | `test/db/security/approval.test.ts`, `gates.db.test.ts`; journey steps 18, 29; `e2e/real/stale-approval.spec.ts` | test:db, e2e real | pass |
+| Calculations vs fixtures | `packages/domain/src/me/golden.test.ts`, sizing and economics property tests; journey steps 6 and 9 | test, e2e real | pass |
+| Tenant adversarial | `test/db/security/tenancy.test.ts`, per-handler cross-tenant tests, `e2e/real/cross-tenant.spec.ts` | test:db, e2e real | pass |
+| No duplicate tasks under retries | `test/connector-faults/*.test.ts` (crash, timeout, concurrent retry, partial, expired token, invalidated), joint `pilot-to-simulator`; journey steps 22–24; `e2e/real/pilot-sync.spec.ts` | test:db, e2e real | pass |
+| Operators complete the primary workflow | `e2e/aster-journey.spec.ts` (30 steps, real stack) | e2e real | pass (with PQ-17 setup, D-095) |
+| AI-down | project `real-ai-down` (whole journey with `ANALYSIS_ENABLED=false`), `e2e/real/ai-down.spec.ts`, D-074 guard test in `analysis.db.test.ts` | e2e real, test:db | pass |
+| Log scrubbing | `test/db/security/log-scrub.test.ts` (new, D-105) | test:db | pass |
+| Performance p95 ≤ 2 s | `e2e/real/performance.spec.ts` (new): 20 seeded reads × 20 requests; worst p95 95 ms locally (`/me/overview`) | e2e real | pass |
+| Accessibility | axe in every journey step and `e2e/real/a11y.spec.ts` (every route + admin sections) | e2e real, e2e mock | pass |
+
+### D-107 — Fixes of note found by the real journey
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: (1) S06 edits kept the input's source (`sourceId` was sent as null, so the API refused every edit of
+  an evidence input). (2) Reviews-inbox links name the gate code (`?gate=G2`) the screen reads, not the request
+  id. (3) The G0 rail caption reads "Mandate · 5 Oct" (prototype). (4) "What changed" lists an assumption change
+  once (name, old → new) instead of repeating it as component ids. (5) The pilot view and the task-sync API share
+  one summary rule ("5 of 6 tasks confirmed in Jira · 1 failed (permission)"). (6) S11 reads the activation
+  blocker keys the API sends (`all_tasks_owned`, `blocking_conditions_met`). (7) S11 keeps showing the plan's
+  latest task set after a scope change, so sent tasks stay visible and unsent ones read "Paused — approval
+  changed"; a scope change can state a new budget ceiling. (8) The lineage drawer always shows "Used by" (with
+  an honest empty state, PQ-18) and formats history dates. (9) Snapshot versions are numbered per case: G1 is
+  v1, so a fresh journey's first G2 snapshot is v2 and the refresh after step 19 is v3 (the fixture narrative's
+  v3 → v4 is walked on aster-demo by the stale-approval spec; PQ-19).
+
+### D-108 — CI and change requests of this stage
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `.github/workflows/ci.yml` (60 min) installs Chromium, runs the mock e2e, creates and migrates
+  `growth_os_e2e`, runs `pnpm test:e2e:real` and uploads the reports on failure; all other steps unchanged. Additive
+  contract changes accepted under D-031: `dev.clock` / `dev.setClock` (+ `DevClock`), `gates.createRequest.outcomeTargets`
+  (+ `OutcomeTargetInput`), `OutcomeReviewView.scaleGate.summary`, `ApprovalPanelViewProps.initialConditions`.
+  Migration 0005 (`platform.dev_clock`). Registry: 148 endpoints.
+
+### Open product questions (new)
+
+- **PQ-17 — Data entry for a new case.** The design has no screen to register assumptions, define the sizing model
+  (boundary, cohorts, overlap), set economics drivers, add feasibility dimensions or author pilot tasks; AI drafts
+  have no writers (CR-WS5-6). Interim: entered through the API (D-095). Owner: PM with design.
+- **PQ-18 — "Used by" for SAM.** The engine computes SOM from the reachable pool (an operational subset of SAM,
+  entered), so no figure is calculated from SAM; the script expects "used by SOM, economics". Interim: the drawer
+  says honestly that no other figure uses SAM. Should the reachable pool be modelled as derived from SAM? Owner:
+  PM with eng.
+- **PQ-19 — Snapshot numbering.** Versions are per case (G1 v1, G2 v2…), so a fresh journey shows G2 v2/v3 where
+  the narrative shows v3/v4. Interim: per case, as built. Owner: PM.
+- **PQ-20 — Pilot measures.** Thresholds are typed on S10; the G3 demand clause recognizes the measure by key.
+  Should measures come from a catalogue? Owner: PM.
+
+**Updates:** PQ-13 — tasks are now drafted at G1 from the plan (D-090); editing them before sending is still
+open. PQ-2 — the S12 form now submits the placeholders. PQ-11 — mapping edits still have no S14 UI; the journey
+fixes the mapping through `admin.setMapping` (step 23). PQ-15 — tests assert `PIL-n` and exactly six issues.
+
+### Release readiness summary
+
+**Done.** All 148 registry endpoints have handlers. The web app runs on the real stack (API, worker, Postgres, MSW
+off). The 30-step Aster journey passes end to end from `aster-start` with UI, API, audit, analytics and axe
+assertions, with analysis on and off. Every alternate path passes on the real stack: missing data, restricted
+evidence, expired connector, duplicate cohort, stale approval → v4, partial task sync with zero duplicates,
+approval invalidated after activation, AI down, cross-tenant 404, every screen axe-clean. Every release-gate
+suite exists and passes (D-106), including the new log-scrubbing and p95 checks.
+
+**Full CI on `growth_os_pe` (2026-10-09).** install, typecheck, lint and format pass; unit 60 files / 2,127
+tests; db:migrate; test:db 53 files / 345 tests; evals:smoke 14 suites pass; web build; API smoke OK; mock e2e 36
+passed; real e2e 54 passed (journey with analysis on, alternate paths, axe, p95, and the journey again with
+analysis off). No test is skipped or marked `fixme`.
+
+**Simulated.** Jira is the simulated connector (`sim.*`, fault injection); a real Jira adapter, its auth (OAuth 3LO
+or service account) and project membership checks are not built. Analysis uses the deterministic fixture
+provider; a live provider needs signed data terms and a manual eval run. Dev login stands in for SSO; the dev
+clock and simulator routes exist only with `AUTH_MODE=dev`.
+
+**Before a design-partner pilot.** Close PQ-17 (or run an assisted import), decide the policy placeholders
+(€[limit], €[cap], [duration], [hours per site]), add the S14 mapping editor (PQ-11), and settle hosting,
+residency, SSO/SCIM, backups and a pen test (PRD §13).
+
+| PQ | Question | Interim behaviour | Owner |
+|---|---|---|---|
+| PQ-1 | G3 message: two or four blockers | All four unmet preconditions (D-039, D-103) | PM |
+| PQ-2 | Extension cap and duration | €[cap] / [duration] days placeholders: submittable, never approvable | PM with Finance |
+| PQ-3 | Upside adoption | 30% | PM |
+| PQ-4 | MD-21 v1 narrative wording | Seeded v1 = v2 minus the outreach exclusion | PM |
+| PQ-5 | Sizing/economics v1 in History | History shows committed versions only | PM |
+| PQ-6 | Thesis blocker wording | Next gate "Pending", later gate "Blocker" | PM |
+| PQ-7 | Assumption register order | Sensitivity, then weakest evidence | PM (design) |
+| PQ-8 | Restricted site-list owner | Maya Rao named; Jonas aggregate-only | PM |
+| PQ-9 | SAM > TAM state | Ladder values hidden while blocked | PM (design) |
+| PQ-10 | G3 note on the €400k investment | Not named in the G3 reason | PM |
+| PQ-11 | Missing prototype actions (mapping editor, budget entries, …) | Mapping fixed through `admin.setMapping` | PM |
+| PQ-12 | G2 stop rules and milestones | Taken from committed versions; thresholds on S10 (D-102) | PM |
+| PQ-13 | Who writes validation tasks | Drafted at G1 from the plan (D-090); no editor | PM (design) |
+| PQ-14 | Investment committee persona | None; tests grant the role | PM |
+| PQ-15 | Retried task key | Next free `PIL-n`; exactly six issues | PM |
+| PQ-16 | Two acceptances for an AI claim | Two steps (proposal → draft → accepted fact) | PM (design) |
+| PQ-17 | Data entry for a new case | API entry (D-095) | PM (design) |
+| PQ-18 | SAM "Used by" | Honest empty "Used by" | PM with Eng |
+| PQ-19 | Snapshot numbering | Per case | PM |
+| PQ-20 | Pilot measure catalogue | Free text with derived keys | PM |
+| — | Approval ceilings, committees, expiry days | Policy placeholders (€[limit], 14 days) editable in S14 | Finance |
+| — | Licensed intelligence rights, model provider data terms | Uploads + licence table; fixture provider | Legal |
+| — | Real Jira edition and auth | Simulated connector | Eng |
