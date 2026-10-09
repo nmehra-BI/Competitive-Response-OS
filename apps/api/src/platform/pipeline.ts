@@ -438,3 +438,60 @@ export function commandTools<D extends EndpointDef>(
     },
   };
 }
+
+/**
+ * Writers for code that runs without an HTTP request (timers, materiality cascades in tests):
+ * audit events are recorded with actor kind 'system' and the given rule.
+ */
+export function systemTools(
+  tx: Tx,
+  s: { tenantId: string; correlationId: string; now: Date; rule: string },
+): Tools {
+  const authz: Allowed = { allow: true, rule: s.rule, authorityGrantId: null, role: null };
+  return {
+    tx,
+    authz,
+    async audit(a) {
+      await auditWriter.record(tx, {
+        actorUserId: null,
+        actorKind: 'system',
+        actorRole: null,
+        action: a.action,
+        objectType: a.objectType,
+        objectId: a.objectId,
+        objectVersion: a.objectVersion ?? null,
+        caseId: a.caseId ?? null,
+        beforeHash: a.before === undefined ? null : stateHash(a.before),
+        afterHash: a.after === undefined ? null : stateHash(a.after),
+        summary: a.summary,
+        details: a.details ?? {},
+        authz: { decision: 'allow', rule: s.rule, authorityGrantId: null },
+        occurredAt: s.now,
+      });
+    },
+    async analytics(name, target, props) {
+      await auditWriter.analytics(
+        tx,
+        name,
+        {
+          tenantId: s.tenantId,
+          caseId: target.caseId ?? null,
+          actorRole: 'system',
+          objectType: target.objectType,
+          objectId: target.objectId,
+          objectVersion: target.objectVersion ?? null,
+          occurredAt: s.now.toISOString(),
+          stage: target.stage ?? null,
+          correlationId: s.correlationId,
+        },
+        props as Record<string, unknown>,
+      );
+    },
+    enqueue(name, payload = {}, opts = {}) {
+      return enqueueJob(tx, name, { ...payload, tenantId: s.tenantId, correlationId: s.correlationId }, opts);
+    },
+    emit(event) {
+      return auditWriter.emit(tx, event);
+    },
+  };
+}
