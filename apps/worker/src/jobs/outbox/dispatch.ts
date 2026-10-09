@@ -15,7 +15,7 @@
  * "Confirmed" is written only with the key the tool returned (never-rule 9).
  */
 import { randomUUID } from 'node:crypto';
-import { auditWriter, enqueueJob, sql, withTenant, type Db, type Tx } from '@growth-os/db';
+import { auditWriter, businessNow, enqueueJob, sql, withTenant, type Db, type Tx } from '@growth-os/db';
 import {
   ConnectorError,
   type ConnectorFactory,
@@ -508,7 +508,8 @@ export async function processOutboxMessage(
       businessUnitId: l.kase.businessUnitId,
       connectionStatus: l.connection.status,
       actorUserId: msg.actor_user_id,
-      now: now(),
+      // Approval expiry is business time: the dev clock applies in AUTH_MODE=dev only (D-091).
+      now: await businessNow(tx, now()),
     });
     const mode: 'send' | 'reconcile' = msg.status === 'checking' ? 'reconcile' : 'send';
 

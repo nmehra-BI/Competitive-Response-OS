@@ -37,6 +37,7 @@ import { workHandlers } from './platform/work';
 import { directoryHandlers } from './platform/directory';
 import { catalogueHandlers } from './me/catalogue';
 import { taskSyncHandlers } from './tasksync';
+import { devClockHandlers } from './platform/devclock';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -68,4 +69,5 @@ export const handlers: HandlerMap = {
   ...analysisHandlers,
   ...directoryHandlers,
   ...catalogueHandlers,
+  ...devClockHandlers,
 };

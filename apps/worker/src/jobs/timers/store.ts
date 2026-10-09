@@ -3,7 +3,7 @@
  * RLS applies; the worker role reaches other tenants only through platform.list_tenant_ids().
  * State change, invalidation rows, paused writes and the audit event commit together.
  */
-import { APPROVAL_EXECUTED_SQL, sql, withTenant, type Db, type Tx } from '@growth-os/db';
+import { APPROVAL_EXECUTED_SQL, businessNow, sql, withTenant, type Db, type Tx } from '@growth-os/db';
 import type { CaseStage, ExperimentLifecycle, GateCode, GateRequestStatus } from '@growth-os/contracts';
 import {
   planApprovalExpiry,
@@ -247,7 +247,14 @@ export async function forEachTenant<T>(
       const result = await withTenant(
         db,
         { tenantId, userId: null, correlationId: ctx.correlationId },
-        async (tx) => fn(tx, { ...ctx, timeZone: await tenantZone(tx, ctx.timeZone) }),
+        async (tx) =>
+          fn(tx, {
+            ...ctx,
+            timeZone: await tenantZone(tx, ctx.timeZone),
+            // The tenant's business time: the dev clock moves it only in AUTH_MODE=dev for an
+            // illustrative tenant (D-091); otherwise this is the run's own time.
+            now: (await businessNow(tx, new Date(ctx.now))).toISOString(),
+          }),
       );
       out.push({ tenantId, result });
     } catch (e) {

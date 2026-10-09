@@ -12,7 +12,7 @@
  * only, migration 0002) and processes each with `processOutboxMessage`.
  */
 import { randomUUID } from 'node:crypto';
-import { auditWriter, sql, withTenant, type Db, type Tx } from '@growth-os/db';
+import { auditWriter, businessNow, sql, withTenant, type Db, type Tx } from '@growth-os/db';
 import type { SyncStatus } from '@growth-os/contracts';
 import { syncMachine } from '@growth-os/domain';
 import {
@@ -244,8 +244,9 @@ export async function sweepOutbox(
     try {
       const ambiguous = await withTenant(deps.db, { tenantId, userId: null, correlationId }, async (tx) => {
         summary.recovered += await recoverStaleSends(tx);
-        summary.resumed += await resumeReconnected(tx, now());
-        summary.aligned += await alignPausedLinks(tx, now());
+        const at = await businessNow(tx, now()); // dev clock only in AUTH_MODE=dev (D-091)
+        summary.resumed += await resumeReconnected(tx, at);
+        summary.aligned += await alignPausedLinks(tx, at);
         return pausedAmbiguousWrites(tx);
       });
       // 4. Paused after an attempt: search once so an executed write is preserved as Confirmed.

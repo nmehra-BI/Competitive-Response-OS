@@ -938,6 +938,13 @@ export interface PlatformDecisionSnapshot {
   version: number;
 }
 
+export interface PlatformDevClock {
+  offset_ms: Int8;
+  set_at: Generated<Timestamp>;
+  set_by: string;
+  tenant_id: string;
+}
+
 export interface PlatformDisplayKeyCounter {
   next_value: Generated<number>;
   prefix: string;
@@ -1487,6 +1494,7 @@ export interface DB {
   "platform.connector_mapping": PlatformConnectorMapping;
   "platform.decision_record": PlatformDecisionRecord;
   "platform.decision_snapshot": PlatformDecisionSnapshot;
+  "platform.dev_clock": PlatformDevClock;
   "platform.display_key_counter": PlatformDisplayKeyCounter;
   "platform.dissent": PlatformDissent;
   "platform.evidence_passage": PlatformEvidencePassage;

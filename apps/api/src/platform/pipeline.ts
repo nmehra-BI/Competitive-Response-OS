@@ -25,7 +25,7 @@ import {
   type DomainEvent,
   type EndpointDef,
 } from '@growth-os/contracts';
-import { auditWriter, enqueueJob, withTenant, type Tx } from '@growth-os/db';
+import { auditWriter, businessNow, enqueueJob, withTenant, type Tx } from '@growth-os/db';
 import type { Allowed, Authorization, Identity, PlatformDeps, SessionRef, UploadedFile } from './context';
 import { ApiError, zodFieldErrors } from './errors';
 import { sha256Hex, stableStringify, stateHash } from './hash';
@@ -243,7 +243,7 @@ function buildCtx<D extends EndpointDef>(
   reply: FastifyReply,
   identity: Identity,
   input: Awaited<ReturnType<typeof parseInput<D>>>,
-  extra: { idempotencyKey: string | null; ifMatch: number | null },
+  extra: { idempotencyKey: string | null; ifMatch: number | null; now: Date },
 ): Ctx<D> {
   const d = deps(req);
   return {
@@ -253,12 +253,22 @@ function buildCtx<D extends EndpointDef>(
     tenantId: identity.session.tenantId,
     userId: identity.session.userId,
     correlationId: req.id,
-    now: d.now(),
     deps: d,
     ...extra,
     setHeader: (name, value) => void reply.header(name, value),
     setETag: (v) => void reply.header(HEADERS.etag, `"${v}"`),
   };
+}
+
+/**
+ * Business time for this request: the injected clock, moved by the tenant's dev clock only when the
+ * server runs with AUTH_MODE=dev and the tenant is illustrative (D-091). Never in production paths.
+ */
+export async function clockFor(tx: Tx, d: PlatformDeps, identity: Identity): Promise<Date> {
+  const base = d.now();
+  if (d.config.authMode !== 'dev' || !identity.tenant.illustrative || process.env.NODE_ENV === 'production')
+    return base;
+  return businessNow(tx, base, true);
 }
 
 function requireHuman(def: EndpointDef, identity: Identity): void {
@@ -286,6 +296,7 @@ export function query<D extends EndpointDef, F = undefined>(def: D, spec: QueryS
         const ctx = buildCtx(def, req, reply, identity, input, {
           idempotencyKey: null,
           ifMatch: parseIfMatch(header(req, HEADERS.ifMatch)),
+          now: await clockFor(tx, d, identity),
         });
         const facts = (spec.load ? await spec.load(ctx, tx) : undefined) as F;
         const decision = await spec.authorize(ctx, facts);
@@ -356,7 +367,11 @@ export function command<D extends EndpointDef, F = undefined>(def: D, spec: Comm
         d.db,
         { tenantId: session.tenantId, userId: session.userId, correlationId: req.id },
         async (tx) => {
-          const ctx = buildCtx(def, req, reply, identity, input, { idempotencyKey, ifMatch });
+          const ctx = buildCtx(def, req, reply, identity, input, {
+            idempotencyKey,
+            ifMatch,
+            now: await clockFor(tx, d, identity),
+          });
           const facts = (spec.load ? await spec.load(ctx, tx) : undefined) as F;
           const decision = await spec.authorize(ctx, facts);
           if (!decision.allow) throw denied(decision);

@@ -131,3 +131,5 @@ export {
   loadApprovalGateFacts,
   type ApprovalGateFacts,
 } from './approval';
+
+export { businessNow, devClockAllowed, devClockOffsetMs } from './clock';

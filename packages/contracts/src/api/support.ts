@@ -431,7 +431,51 @@ export const SimFaultRule = z.object({
 });
 export type SimFaultRule = z.infer<typeof SimFaultRule>;
 
+/**
+ * Dev/test only (D-091). The tenant's business clock: real time plus a forward offset, honoured only
+ * with AUTH_MODE=dev for illustrative tenants. Audit timestamps never use it.
+ */
+export const DevClock = z.object({
+  /** Business "now" for this tenant (ISO date-time). */
+  now: z.string(),
+  /** Offset from real time in ms; 0 = real time. Moves forward only. */
+  offsetMs: z.number().int().nonnegative(),
+  setAt: z.string().nullable(),
+});
+export type DevClock = z.infer<typeof DevClock>;
+
 export const devEndpoints = {
+  clock: endpoint({
+    id: 'dev.clock',
+    method: 'GET',
+    path: '/dev/clock',
+    summary: "Read the tenant's dev clock (business time used by the API, timers and send-time checks).",
+    screens: ['S14'],
+    prd: ['§10'],
+    auth: 'dev_only',
+    response: DevClock,
+  }),
+  setClock: endpoint({
+    id: 'dev.setClock',
+    method: 'PUT',
+    path: '/dev/clock',
+    summary:
+      'Move the dev clock forward to a moment (or by a number of days) and run the pilot-window and approval-expiry timers at once. Forward only; reseed to go back.',
+    screens: ['S14'],
+    prd: ['§10'],
+    auth: 'dev_only',
+    body: z
+      .object({
+        to: z.string().datetime({ offset: true }).optional(),
+        advanceDays: z.number().int().positive().max(3650).optional(),
+      })
+      .refine((b) => (b.to === undefined) !== (b.advanceDays === undefined), {
+        message: 'Give either `to` or `advanceDays`.',
+      }),
+    response: DevClock,
+    successStatus: 200,
+  }),
+
   setFaults: endpoint({
     id: 'dev.setConnectorFaults',
     method: 'PUT',
