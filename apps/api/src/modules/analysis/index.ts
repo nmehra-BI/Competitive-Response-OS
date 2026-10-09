@@ -170,7 +170,7 @@ const ZERO_USAGE = { elapsedMs: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0
 
 function toRun(r: RunRow, who: Map<string, ReturnType<typeof personRef>>): AnalysisRun {
   const status = r.status as RunStatus;
-  const checkpoint = (r.checkpoint ?? {}) as { v?: number };
+  const checkpoint = (r.checkpoint ?? {}) as { v?: number; outputMeta?: AnalysisRun['output'] };
   return {
     id: r.id,
     caseId: r.case_id,
@@ -194,6 +194,7 @@ function toRun(r: RunRow, who: Map<string, ReturnType<typeof personRef>>): Analy
     startedAt: isoDateTimeOrNull(r.started_at),
     finishedAt: isoDateTimeOrNull(r.finished_at),
     correlationId: r.correlation_id,
+    output: checkpoint.v === 1 ? (checkpoint.outputMeta ?? null) : null,
   };
 }
 

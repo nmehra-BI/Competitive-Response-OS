@@ -83,6 +83,12 @@ describe('analysis runs on a case', () => {
     const after = await get(run.id);
     expect(after.body!.run).toMatchObject({ status: 'completed', statusLabel: 'Done' });
     expect(after.body!.run.lastCheckpointSeq).toBeGreaterThan(0);
+    // The output envelope is served with the run (D-081, CR-WS5-2).
+    expect(after.body!.run.output).toMatchObject({
+      summary: expect.any(String),
+      unknowns: expect.any(Array),
+      notChecked: expect.any(Array),
+    });
     expect(after.body!.steps.map((s) => s.kind)).toEqual([
       'checkpoint',
       'provider_call',

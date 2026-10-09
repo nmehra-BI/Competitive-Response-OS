@@ -32,7 +32,8 @@ export function redactBlockedSizing(o: SizingOutput): SizingOutput {
   return {
     ...o,
     ladder: {
-      tam: { population: 0, value: zero(o.ladder.tam.value) },
+      // Every rung is flagged, not only SAM (D-033, D-081): the zeros are placeholders, never values.
+      tam: { population: 0, value: zero(o.ladder.tam.value), available: false },
       sam: {
         population: 0,
         value: zero(o.ladder.sam.value),
@@ -40,7 +41,7 @@ export function redactBlockedSizing(o: SizingOutput): SizingOutput {
         overlapRemoved: 0,
         available: false,
       },
-      reachablePool: { population: 0 },
+      reachablePool: { population: 0, available: false },
       som: [],
     },
     lineage: o.lineage.map((n) =>

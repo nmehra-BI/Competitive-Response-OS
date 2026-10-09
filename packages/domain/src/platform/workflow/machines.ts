@@ -189,7 +189,9 @@ export const SYNC_TRANSITIONS: readonly Transition<SyncStatus, SyncCommand>[] = 
     ],
   },
   {
-    from: 'sending',
+    // A write in flight when a pause landed is still recorded once the tool returns its key
+    // (CR-WS6-1, D-083): "sent preserved" — never-rule 9 still needs the key.
+    from: ['sending', 'paused_approval_changed', 'paused_connector'],
     command: 'send_ok',
     to: 'confirmed',
     by: 'system',
@@ -198,7 +200,8 @@ export const SYNC_TRANSITIONS: readonly Transition<SyncStatus, SyncCommand>[] = 
   },
   { from: 'sending', command: 'send_timeout', to: 'checking', by: 'system', guards: [] },
   {
-    from: 'checking',
+    // An ambiguous send paused while Checking is searched once; if the issue exists it is Confirmed.
+    from: ['checking', 'paused_approval_changed', 'paused_connector'],
     command: 'reconcile_found',
     to: 'confirmed',
     by: 'system',

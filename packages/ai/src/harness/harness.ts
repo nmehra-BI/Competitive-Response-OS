@@ -95,7 +95,7 @@ export interface Checkpoint {
   output: { proposalIds: string[] } | null;
   /**
    * The output envelope besides proposals: summary, unknowns and "what the analysis did not check".
-   * Kept with the run (the frozen AnalysisRun has no field for it yet: CR-WS5-2).
+   * Kept with the run and served as `AnalysisRun.output` (D-081, CR-WS5-2).
    */
   outputMeta: { summary: string; unknowns: string[]; notChecked: string[] } | null;
 }

@@ -340,7 +340,7 @@ export const opportunityHandlers: HandlerMap = {
         tenantId: ctx.tenantId,
         userId: ctx.userId,
         now: ctx.now,
-        title: `${opp.name} — ${(product?.name ?? 'expansion').toLowerCase()}`,
+        title: ctx.body.title ?? `${opp.name} — ${(product?.name ?? 'expansion').toLowerCase()}`,
         businessUnitId: mandate.business_unit_id,
         ownerId: ctx.body.ownerId,
         sponsorId: ver.sponsor_user_id!,

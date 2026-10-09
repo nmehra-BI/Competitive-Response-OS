@@ -58,6 +58,14 @@ export const AnalysisRun = z.object({
   startedAt: IsoDateTime.nullable(),
   finishedAt: IsoDateTime.nullable(),
   correlationId: z.string(),
+  /**
+   * The run's output envelope besides proposals: its summary, the unknowns it named and "What the
+   * analysis did not check". Null until the run produced output. Additive (D-081, CR-WS5-2).
+   */
+  output: z
+    .object({ summary: z.string(), unknowns: z.array(z.string()), notChecked: z.array(z.string()) })
+    .nullable()
+    .optional(),
 });
 export type AnalysisRun = z.infer<typeof AnalysisRun>;
 

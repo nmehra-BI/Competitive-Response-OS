@@ -110,11 +110,20 @@ describe('outcomes', () => {
         })
       ).statusCode,
     ).toBe(400);
+    // A stated result cannot override a numeric pre-registered threshold (D-081, never-rule 12).
+    const overridden = await call(t.app, API.outcomes.recordObservation, {
+      params: { caseRef: 'ME-104' },
+      body: { ...body(outcomeObservations[0]), result: 'met' },
+      cookie: k.jonas,
+      idempotencyKey: true,
+    });
+    expect(overridden.statusCode).toBe(400);
     const results = [];
-    for (const o of outcomeObservations) {
+    for (const [i, o] of outcomeObservations.entries()) {
       const res = await call(t.app, API.outcomes.recordObservation, {
         params: { caseRef: 'ME-104' },
-        body: body(o),
+        // The effort target's threshold is a placeholder ("[hours per site]"): Jonas states the reading.
+        body: i === 1 ? { ...body(o), result: 'not_met' } : body(o),
         cookie: k.jonas,
         idempotencyKey: true,
       });

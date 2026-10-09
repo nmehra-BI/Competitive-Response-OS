@@ -157,6 +157,11 @@ const SYNC_ALLOWED: AllowedTransition<SyncStatus, SyncCommand>[] = [
   ['sending', 'send_ok', 'confirmed', 'system'],
   ['sending', 'send_timeout', 'checking', 'system'],
   ['checking', 'reconcile_found', 'confirmed', 'system'],
+  // CR-WS6-1 (D-083): an executed write is recorded even after a pause landed.
+  ['paused_approval_changed', 'send_ok', 'confirmed', 'system'],
+  ['paused_connector', 'send_ok', 'confirmed', 'system'],
+  ['paused_approval_changed', 'reconcile_found', 'confirmed', 'system'],
+  ['paused_connector', 'reconcile_found', 'confirmed', 'system'],
   ['checking', 'reconcile_not_found', 'retry_scheduled', 'system'],
   ['sending', 'send_failed_retryable', 'retry_scheduled', 'system'],
   ['sending', 'send_failed_permanent', 'failed', 'system'],

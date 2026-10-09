@@ -100,6 +100,9 @@ describe('sizing journey (aster-start)', () => {
     expect(out.ladder.som).toEqual([]);
     expect(out.ladder.sam.available).toBe(false);
     expect(out.ladder.tam.value.amount).toBe('0.00');
+    // Every placeholder rung is flagged (D-081, CR-WS4a-1).
+    expect(out.ladder.tam.available).toBe(false);
+    expect(out.ladder.reachablePool.available).toBe(false);
     expect(out.lineage.filter((n) => n.kind === 'calculated').every((n) => n.value === null)).toBe(true);
 
     const calc = await api(w, API.sizing.calculateDraft, m, { params: { caseRef: caseKey } });

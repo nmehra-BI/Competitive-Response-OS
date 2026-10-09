@@ -187,7 +187,8 @@ export const opportunityEndpoints = {
     auth: 'human',
     idempotent: true,
     params: RefParams,
-    body: z.object({ ownerId: Id }),
+    // `title` is optional (D-081, CR-WS4a-4, additive): absent → "<candidate> — <product name>".
+    body: z.object({ ownerId: Id, title: z.string().trim().min(1).max(200).optional() }),
     response: z.object({ opportunity: Opportunity, case: WorkflowCase }),
   }),
   requestDiscovery: endpoint({

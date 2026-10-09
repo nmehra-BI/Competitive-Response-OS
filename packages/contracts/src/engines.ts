@@ -149,7 +149,12 @@ export const SizingOutput = z.object({
   blocked: z.boolean(),
   checks: z.array(CalcCheck),
   ladder: z.object({
-    tam: z.object({ population: z.number().int(), value: Money }),
+    tam: z.object({
+      population: z.number().int(),
+      value: Money,
+      /** D-081 (CR-WS4a-1, additive): false on a redacted blocked result; absent means computed. */
+      available: z.boolean().optional(),
+    }),
     sam: z.object({
       population: z.number().int(),
       value: Money,
@@ -162,7 +167,11 @@ export const SizingOutput = z.object({
        */
       available: z.boolean().optional(),
     }),
-    reachablePool: z.object({ population: z.number().int() }), // a site count, never money
+    reachablePool: z.object({
+      population: z.number().int(), // a site count, never money
+      /** D-081 (CR-WS4a-1, additive): false on a redacted blocked result; absent means computed. */
+      available: z.boolean().optional(),
+    }),
     som: z.array(SomScenarioOutput),
   }),
   crossCheck: z.object({ result: CrossCheckResult, message: z.string() }),

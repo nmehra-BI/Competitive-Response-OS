@@ -242,3 +242,48 @@ describe('tenant time zone (D-077)', () => {
     });
   });
 });
+
+describe('expiry pauses the links of queued tasks (CR-WS6-3, D-083)', () => {
+  it('a queued task ("Sending…", row still pending) pauses with its row; an in-flight one does not', async () => {
+    await inTenantTx(async (tx, w) => {
+      const conn = randomUUID();
+      const set = randomUUID();
+      await sql`INSERT INTO platform.connection(id, tenant_id, kind, provider, name, scope_text, used_for, status, created_by)
+        VALUES (${conn}, ${w.tenant}, 'task_tool', 'jira_simulated', 'Jira', 'Create issues', 'Validation tasks',
+          'connected', ${w.owner})`.execute(tx);
+      await sql`INSERT INTO platform.task_set(id, tenant_id, case_id, owner_type, owner_id, authorizing_gate_request_id, connection_id)
+        VALUES (${set}, ${w.tenant}, ${w.caseId}, 'experiment', ${randomUUID()}, ${w.gate}, ${conn})`.execute(
+        tx,
+      );
+      const links: string[] = [];
+      for (const [i, outboxStatus] of [
+        [1, 'pending'],
+        [2, 'sending'],
+      ] as const) {
+        const task = randomUUID();
+        const link = randomUUID();
+        links.push(link);
+        await sql`INSERT INTO platform.task(id, tenant_id, case_id, task_set_id, ordinal, title, function, deliverable)
+          VALUES (${task}, ${w.tenant}, ${w.caseId}, ${set}, ${i}, ${`Task ${i}`}, 'sales', 'List')`.execute(
+          tx,
+        );
+        await sql`INSERT INTO platform.external_task_link(id, tenant_id, task_id, connection_id, idempotency_key, sync_status)
+          VALUES (${link}, ${w.tenant}, ${task}, ${conn}, ${'k'.repeat(63) + i}, 'sending')`.execute(tx);
+        await sql`INSERT INTO platform.outbox_message(id, tenant_id, kind, aggregate_type, aggregate_id,
+            idempotency_key, payload, status, authorization_ref, correlation_id)
+          VALUES (${randomUUID()}, ${w.tenant}, 'task.create', 'external_task_link', ${link}, ${'k'.repeat(63) + i},
+            '{}', ${outboxStatus}, ${JSON.stringify({ gateRequestId: w.gate })}::jsonb, 'c')`.execute(tx);
+      }
+      // A row in flight ('sending') counts as executed, so the approval is used and does not expire;
+      // move it to a failed state first, as in the first expiry test.
+      await sql`UPDATE platform.outbox_message SET status = 'failed' WHERE aggregate_id = ${links[1]!}`.execute(
+        tx,
+      );
+      expect((await expireApprovalsInTenant(tx, ctx('2026-12-12T00:00:00+01:00'))).expired).toBe(1);
+      const r = await sql<{ id: string; sync_status: string }>`
+        SELECT id, sync_status FROM platform.external_task_link WHERE id = ANY(${links}::uuid[])`.execute(tx);
+      expect(r.rows.find((x) => x.id === links[0])!.sync_status).toBe('paused_approval_changed');
+      expect(r.rows.find((x) => x.id === links[1])!.sync_status).toBe('sending');
+    });
+  });
+});

@@ -399,10 +399,16 @@ async function recordConfirmed(
   correlationId: string,
   via: 'create' | 'reconcile',
 ): Promise<ProcessResult> {
-  const from: SyncStatus = cur.link.sync_status === 'checking' ? 'checking' : 'sending';
-  const r = syncMachine.apply(from, from === 'checking' ? 'reconcile_found' : 'send_ok', SYSTEM, {
-    externalKey: ref.key,
-  });
+  // The machine allows confirmation from the state the link is really in, including a pause that
+  // landed while the write was in flight (CR-WS6-1, D-083).
+  const s = cur.link.sync_status;
+  const paused = s === 'paused_approval_changed' || s === 'paused_connector';
+  const from: SyncStatus = s === 'checking' || paused ? s : 'sending';
+  const command =
+    from === 'checking' || (paused && via === 'reconcile')
+      ? ('reconcile_found' as const)
+      : ('send_ok' as const);
+  const r = syncMachine.apply(from, command, SYSTEM, { externalKey: ref.key });
   if (!r.ok) throw new Error(`sync machine refused confirmation: ${r.reasons.join('; ')}`);
   await updateMessage(tx, cur.msg.id, {
     status: 'confirmed',

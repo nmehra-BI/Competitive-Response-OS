@@ -3,7 +3,7 @@
  * outcomes and review decisions (S12).
  */
 import { z } from 'zod';
-import { DecisionOutcome, TaskFunction, TaskStatus } from '../enums';
+import { DecisionOutcome, TaskFunction, TaskStatus, ThresholdResult } from '../enums';
 import {
   BudgetEntry,
   DecisionRecord,
@@ -262,6 +262,12 @@ export const outcomeEndpoints = {
       sourceText: z.string().min(1),
       sourceId: Id.nullable(),
       supersedesId: Id.nullable(),
+      /**
+       * The person's reading against a target whose threshold has no number (a placeholder such as
+       * "Within [hours per site]" or a qualitative target). For a numeric threshold it
+       * must agree with the computed result (thresholds never move silently). Additive (D-081).
+       */
+      result: ThresholdResult.nullable().optional(),
     }),
     response: OutcomeObservation,
   }),

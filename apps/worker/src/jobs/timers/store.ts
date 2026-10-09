@@ -90,7 +90,8 @@ export async function applyExpiry(tx: Tx, a: ExpiryAction, ctx: TimerContext): P
   }
 
   // Never-rule 10: an expired approval pauses unsent external writes. Ambiguous sends ('checking')
-  // keep reconciling; confirmed writes are preserved.
+  // keep reconciling; confirmed writes are preserved. A queued task reads "Sending…" while its row is
+  // still pending, so its link pauses with the row (CR-WS6-3, D-083); rows in flight are not touched.
   const paused = await sql<{ aggregate_type: string; aggregate_id: string }>`
     UPDATE platform.outbox_message SET status = 'paused', updated_at = now()
      WHERE authorization_ref->>'gateRequestId' = ${a.gateRequestId} AND status = 'pending'
@@ -101,9 +102,8 @@ export async function applyExpiry(tx: Tx, a: ExpiryAction, ctx: TimerContext): P
   if (linkIds.length > 0) {
     await sql`
       UPDATE platform.external_task_link SET sync_status = 'paused_approval_changed', updated_at = now()
-       WHERE id = ANY(${linkIds}::uuid[]) AND sync_status IN ('not_sent','in_preview','retry_scheduled')`.execute(
-      tx,
-    );
+       WHERE id = ANY(${linkIds}::uuid[])
+         AND sync_status IN ('not_sent','in_preview','sending','retry_scheduled')`.execute(tx);
   }
 
   await sql`

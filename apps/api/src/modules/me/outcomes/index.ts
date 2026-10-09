@@ -335,7 +335,20 @@ export const outcomeHandlers: HandlerMap = {
       }
       if (b.value !== null && scaled(b.value) < 0n && target?.unit === 'customers')
         throw new ApiError('VALIDATION_FAILED', 'Counts are not negative.');
-      const result = resultFor(target, b.value, b.valueText);
+      const computed = resultFor(target, b.value, b.valueText);
+      // A stated reading (D-081, CR-WS4b-4) is used only where the threshold has no number; for a
+      // numeric threshold it must agree with the pre-registered comparison (never-rule 12).
+      const numeric =
+        !!target && target.operator !== 'qualitative' && target.threshold_value !== null && b.value !== null;
+      if (b.result !== undefined && b.result !== null && !target)
+        throw new ApiError('VALIDATION_FAILED', 'Only an actual for a pre-registered target has a result.');
+      if (numeric && b.result !== undefined && b.result !== null && b.result !== computed)
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          'The result is computed from the pre-registered threshold and cannot be overridden.',
+          { errors: [{ path: 'body.result', code: 'custom', message: `Computed result is ${computed}` }] },
+        );
+      const result = !numeric && b.result !== undefined && b.result !== null ? b.result : computed;
       const row = (await t.tx
         .insertInto('platform.outcome_observation')
         .values({

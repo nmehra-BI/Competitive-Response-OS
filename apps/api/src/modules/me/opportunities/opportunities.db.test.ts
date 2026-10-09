@@ -169,6 +169,7 @@ describe('opportunities', () => {
     expect(c.owner.displayName).toBe('Maya Rao');
     expect(c.sponsor.displayName).toBe('Elena Fischer');
     expect(c.originId).toBe(body.opportunity.id);
+    expect(c.title).toBe('German food-processing plants — water-monitoring system');
 
     const header = CaseHeader.parse(
       (await api(w, API.cases.header, maya, { params: { caseRef: 'ME-104' } })).json(),
@@ -215,5 +216,21 @@ describe('opportunities', () => {
     expect(conv.statusCode).toBe(409);
     expect(conv.json()).toMatchObject({ code: 'PRECONDITIONS_UNMET' });
     expect(conv.json().blockers.map((b: { key: string }) => b.key)).toContain('mandate_approved');
+  });
+
+  it('convert takes an optional case title (D-081, CR-WS4a-4)', async () => {
+    const maya = await w.cookie('b', 'maya');
+    const B = w.tenants.b!;
+    expect((await api(w, API.opportunities.shortlist, maya, { params: { ref: 'OPP-07' } })).statusCode).toBe(
+      200,
+    );
+    const res = await api(w, API.opportunities.convert, maya, {
+      params: { ref: 'OPP-07' },
+      body: { ownerId: B.user('maya'), title: 'Process-water monitoring · German food plants' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(API.opportunities.convert.response.parse(res.json()).case.title).toBe(
+      'Process-water monitoring · German food plants',
+    );
   });
 });
