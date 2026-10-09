@@ -15,6 +15,13 @@ import { authHandlers } from './platform/auth';
 import { commentHandlers } from './platform/comments';
 import { evidenceHandlers } from './platform/evidence';
 import { searchHandlers } from './platform/search';
+import { budgetHandlers } from './me/budget';
+import { experimentHandlers } from './me/experiments';
+import { gateHandlers } from './me/gates';
+import { outcomeHandlers } from './me/outcomes';
+import { pilotHandlers } from './me/pilot';
+import { reviewHandlers } from './platform/reviews';
+import { workHandlers } from './platform/work';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -24,4 +31,11 @@ export const handlers: HandlerMap = {
   ...commentHandlers,
   ...adminHandlers,
   ...auditHandlers,
+  ...gateHandlers,
+  ...experimentHandlers,
+  ...pilotHandlers,
+  ...budgetHandlers,
+  ...outcomeHandlers,
+  ...reviewHandlers,
+  ...workHandlers,
 };
