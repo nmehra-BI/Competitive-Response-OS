@@ -488,7 +488,10 @@ export default function FeasibilityScreen() {
               subtitle="Drafted with AI assistance, edited by Maya Rao. The answer is human-owned."
             />
             <p className="as-serif">
-              “{specialist.question}” · {specialist.evidenceText}
+              {/* The full question (D-068); an API without it gives the short label and evidence. */}
+              {specialist.questionDetail
+                ? `“${specialist.questionDetail}”`
+                : `“${specialist.question}” · ${specialist.evidenceText}`}
             </p>
             <div className="as-row" style={{ marginTop: 12, gap: 8 }}>
               <ReviewStatusTag

@@ -191,10 +191,15 @@ function CellView({ cell }: { cell: ComparisonCell | undefined }) {
         {cell.detailText ? <span className="dx-small dx-muted">{cell.detailText}</span> : null}
       </div>
     );
-  if (cell.attribute === 'growth_evidence' && cell.valueText && QUALITY_BY_LABEL[cell.valueText])
+  // `evidenceQuality` (D-068); an API that predates it only sends the label as valueText.
+  const quality =
+    cell.attribute === 'growth_evidence'
+      ? (cell.evidenceQuality ?? (cell.valueText ? QUALITY_BY_LABEL[cell.valueText] : undefined))
+      : undefined;
+  if (quality)
     return (
       <div>
-        <EvidenceQualityTag quality={QUALITY_BY_LABEL[cell.valueText]!} />
+        <EvidenceQualityTag quality={quality} />
         {detail}
       </div>
     );
@@ -219,7 +224,8 @@ function RankCell({ row, ranked }: { row: RankingRow | undefined; ranked: Rankin
         <span>{row.reason}</span>
       </span>
     );
-  const rank = ranked.findIndex((r) => r.opportunityId === row.opportunityId) + 1;
+  // `rank` (D-068); an API that predates it returns ranked rows in rank order.
+  const rank = row.rank ?? ranked.findIndex((r) => r.opportunityId === row.opportunityId) + 1;
   return (
     <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <b style={{ fontWeight: 600, fontSize: 14 }}>

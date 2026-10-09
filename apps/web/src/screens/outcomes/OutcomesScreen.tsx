@@ -121,7 +121,7 @@ function OutcomesView({
   const [recording, setRecording] = useState<Row | null>(null);
   const [decideAs, setDecideAs] = useState<DecideOutcome | null>(null);
   const [extOpen, setExtOpen] = useState(false);
-  const [submittedExt, setSubmittedExt] = useState<{
+  const [justSubmitted, setSubmittedExt] = useState<{
     key: string;
     amount: string | null;
     currency: string | null;
@@ -132,7 +132,21 @@ function OutcomesView({
   const rec = v.recommendation;
   const unmet = v.scaleGate.unmet;
   const scaleReason = `G3 preconditions unmet: ${unmet.map((b) => b.message).join('; ')}`;
-  const extensionPending = !!submittedExt || xStatus === 'awaiting_decision';
+  // After a reload the review carries the X request (D-068); an older API leaves only the X status.
+  const xr = v.extensionRequest ?? null;
+  const submittedExt =
+    justSubmitted ??
+    (xr
+      ? {
+          key: xr.key,
+          amount: xr.scope.amount,
+          currency: xr.scope.currency,
+          submittedAt: xr.submittedAt,
+          scope: xr.scope.authorizes.join(' · '),
+        }
+      : null);
+  const extensionPending =
+    !!justSubmitted || xr?.status === 'awaiting_decision' || xStatus === 'awaiting_decision';
   const canRequestExt = can.extend && decision?.outcome === 'extend' && !extensionPending && !!parentGateId;
   const people = peopleIn(v);
 
@@ -872,7 +886,7 @@ function RecommendationForm({ caseKey, v }: { caseKey: string; v: View }) {
     try {
       await cmd.mutateAsync({
         params: { caseRef: caseKey },
-        ifMatch: v.version,
+        ifMatch: v.rowVersion ?? v.version,
         body: { recommendation: { outcome, text: text.trim() } },
       });
     } catch (e) {

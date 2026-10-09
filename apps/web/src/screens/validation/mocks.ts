@@ -10,7 +10,7 @@ import type { HttpHandler } from 'msw';
 import { findCase } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
 import { state } from '../../mocks/state';
-import { G2_ID } from '../decisions/mock-data';
+import { g2Package } from '../decisions/mock-data';
 import { scoped } from '../mandate/mock-kit';
 import { hasResults, persisting, setStale, ws } from '../decisions/mock-state';
 import {
@@ -74,12 +74,13 @@ export const handlers: HttpHandler[] = [
       const valueChanged = body.value !== undefined || body.valueText !== undefined;
       if (a.id === ADOPTION_ID && valueChanged) {
         w.adoptionVersion += 1;
+        // The contract names snapshot and approval ids (D-068), not the gate request id.
         if (w.g2 === 'submitted' && !state.g2Decision) {
+          staleSnapshotIds.push(g2Package(null)!.snapshot.id);
           setStale(true);
-          staleSnapshotIds.push(G2_ID);
         } else if (state.g2Decision && !w.g2Invalidated) {
+          invalidatedApprovalIds.push(...g2Package(null)!.approvals.map((x) => x.id));
           w.g2Invalidated = true;
-          invalidatedApprovalIds.push(G2_ID);
         }
       }
       const after = assumptionList().find((x) => x.id === a.id)!;

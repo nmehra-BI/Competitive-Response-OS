@@ -3,11 +3,13 @@
  * validation tasks from fixtures/aster with the prototype's task briefs, plus the review requests
  * assigned to them. Task status changes go through tasks.update (S11, owned by the pilot screen).
  */
-import { API, type WorkItem } from '@growth-os/contracts';
+import { API, TASK_STATUS_LABELS, type WorkItem } from '@growth-os/contracts';
 import { cases, gates, people, pilotTasks, validationTasks } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
 import { mock } from '../../mocks/define';
+import { ws8d } from '../history/journey';
 import { mockUuid } from '../mandate/mock-kit';
+import { tasks as pilotPlanTasks } from '../pilot/mocks';
 import { gateDecisionsAwaiting, reviewRequestsFor } from '../reviews/mocks';
 
 const ME104 = cases[0];
@@ -46,10 +48,14 @@ const BRIEF: Record<string, { why: string; done: string; measured: string; statu
   };
 
 export function workItemsFor(viewerId: string | null): WorkItem[] {
+  // Row versions and statuses changed through tasks.update come from the S11 pilot plan (D-068).
+  const plan = new Map(pilotPlanTasks().map((t) => [t.id, t]));
+  const updated = ws8d().taskStatus ?? {};
   const pilot = pilotTasks
     .filter((t) => t.ownerId === viewerId)
     .map((t): WorkItem => {
       const b = BRIEF[t.externalKey];
+      const changed = updated[t.id]?.status;
       return {
         id: t.id, // a task work item carries the task id (tasks.update / tasks.reportBlocker)
         kind: 'task',
@@ -58,7 +64,8 @@ export function workItemsFor(viewerId: string | null): WorkItem[] {
         caseKey: ME104.key,
         subtitle: `${ME104.key} · ${MILESTONE[t.milestone - 1]} · ${cap(t.function)}`,
         dueText: dueText(t.dueOn, t.dueRule),
-        statusText: b?.status ?? 'Not started',
+        statusText: changed ? TASK_STATUS_LABELS[changed] : (b?.status ?? 'Not started'),
+        rowVersion: plan.get(t.id)?.rowVersion ?? null,
         href: `/me/cases/${ME104.key}/pilot?task=${t.externalKey}`,
         brief: {
           gateText: b?.gate ?? 'G2 · v3',
@@ -116,21 +123,22 @@ export function workItemsFor(viewerId: string | null): WorkItem[] {
   return [...pilot, ...validation, ...reviews];
 }
 
-export const handlers: HttpHandler[] = [
-  mock(API.work.myWork, ({ viewerId }) => {
-    const items = workItemsFor(viewerId);
-    const tasks = items.filter((i) => i.kind !== 'review_request');
-    const approver = gateDecisionsAwaiting(viewerId).length > 0 || viewerId === people.elena.id;
-    return {
-      tabs: [
-        { key: 'tasks', label: 'Tasks', count: tasks.length },
-        { key: 'reviews', label: 'Reviews', count: items.length - tasks.length },
-        { key: 'done', label: 'Done', count: tasks.filter((t) => t.statusText === 'Done').length },
-      ],
-      items,
-      approvalsNotice: approver
-        ? null
-        : 'You approve nothing in this workspace. Gate decisions for BU Water are made by Elena Fischer. Owning tasks does not include approval rights.',
-    };
-  }),
-];
+/** The My Work view for a viewer (exported for tests that vary one field). */
+export function myWorkView(viewerId: string | null) {
+  const items = workItemsFor(viewerId);
+  const tasks = items.filter((i) => i.kind !== 'review_request');
+  const approver = gateDecisionsAwaiting(viewerId).length > 0 || viewerId === people.elena.id;
+  return {
+    tabs: [
+      { key: 'tasks', label: 'Tasks', count: tasks.length },
+      { key: 'reviews', label: 'Reviews', count: items.length - tasks.length },
+      { key: 'done', label: 'Done', count: tasks.filter((t) => t.statusText === 'Done').length },
+    ],
+    items,
+    approvalsNotice: approver
+      ? null
+      : 'You approve nothing in this workspace. Gate decisions for BU Water are made by Elena Fischer. Owning tasks does not include approval rights.',
+  };
+}
+
+export const handlers: HttpHandler[] = [mock(API.work.myWork, ({ viewerId }) => myWorkView(viewerId))];

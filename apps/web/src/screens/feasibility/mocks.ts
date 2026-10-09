@@ -9,7 +9,7 @@ import {
   type FeasibilityDimension,
   type FeasibilityView,
 } from '@growth-os/contracts';
-import { feasibility, people } from '@growth-os/fixtures-aster';
+import { feasibility, people, specialistQuestion } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
 import { findCase, personRef } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
@@ -35,6 +35,7 @@ function row(f: (typeof feasibility)[number]): FeasibilityAssessment {
     caseId: CASE_ID,
     dimension: f.dimension,
     question: f.question,
+    questionDetail: f.dimension === 'specialist_review' ? specialistQuestion : null,
     evidenceText: f.evidenceText,
     reviewer: personRef(f.reviewerId),
     status: signed ? 'signed' : f.status,

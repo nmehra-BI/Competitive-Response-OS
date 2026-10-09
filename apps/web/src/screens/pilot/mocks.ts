@@ -302,6 +302,7 @@ function messageDraft() {
     origin: d.origin,
     status: 'draft' as const,
     notice: 'Draft — not authorized to send' as const,
+    rowVersion: d.rowVersion,
   };
 }
 
@@ -574,11 +575,13 @@ export const handlers: HttpHandler[] = [
     return { items: [messageDraft()] };
   }),
 
-  mock(API.pilot.updateMessageDraft, ({ params, body, viewerId }) => {
+  mock(API.pilot.updateMessageDraft, ({ params, body, viewerId, ifMatch }) => {
     if (params.id !== MESSAGE_DRAFT_ID) throw notFound();
     if (viewerId === people.admin.id)
       throw new MockProblem('FORBIDDEN', 'Administrators cannot edit drafts.');
     const d = ws8d().messageDraft;
+    if (ifMatch !== d.rowVersion)
+      throw new MockProblem('VERSION_CONFLICT', 'Someone saved this draft. Reload to see the latest.');
     if (body.title !== undefined) d.title = body.title;
     if (body.body !== undefined) d.body = body.body;
     if (d.origin === 'ai') d.origin = 'ai_edited';

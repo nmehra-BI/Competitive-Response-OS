@@ -83,12 +83,14 @@ describe('WS8c mocks', () => {
   it('a change to the adoption assumption after approval invalidates it', async () => {
     preset('approved');
     session.signIn(people.maya.id);
+    const approved = await api(API.gates.package, { params: { id: gates.g2.id }, query: {} });
     const res = await api(API.assumptions.update, {
       params: { id: assumptions[0].id },
       ifMatch: 2,
       body: { value: '0.18', changeReason: 'Revised' },
     });
-    expect(res.invalidatedApprovalIds).toEqual([gates.g2.id]);
+    expect(res.invalidatedApprovalIds).toEqual(approved.approvals.map((a) => a.id));
+    expect(res.invalidatedApprovalIds).toHaveLength(1);
     const pkg = await api(API.gates.package, { params: { id: gates.g2.id }, query: {} });
     expect(pkg.gateRequest.status).toBe('invalidated');
     expect(pkg.approvals[0]!.effective).toBe(false);

@@ -182,6 +182,8 @@ export function outcomeView(): In<typeof OutcomeReviewView> {
         }
       : null,
     scaleGate: { blocked: true, unmet: scaleBlockers() },
+    rowVersion: s.reviewRowVersion,
+    extensionRequest: extensionRequest(),
   };
 }
 
@@ -315,9 +317,9 @@ export const handlers: HttpHandler[] = [
     if (viewerId !== people.maya.id)
       throw new MockProblem('FORBIDDEN', 'Only the case owner, Maya Rao, drafts the outcome review.');
     const s = ws8d();
-    // OutcomeReviewView has no row version in the frozen contract (WS8d change request): the
-    // client sends the review version; only its presence is enforced here.
     if (ifMatch === null) throw new MockProblem('PRECONDITION_REQUIRED', 'If-Match header is required.');
+    if (ifMatch !== s.reviewRowVersion)
+      throw new MockProblem('VERSION_CONFLICT', 'Someone saved this review. Reload to see the latest.');
     if (s.decision)
       throw new MockProblem('INVALID_TRANSITION', 'The decision is recorded; the review is closed.');
     if (body.recommendation !== undefined) {

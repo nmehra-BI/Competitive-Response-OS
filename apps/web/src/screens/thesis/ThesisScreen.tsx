@@ -8,6 +8,7 @@
  */
 import {
   API,
+  REVIEW_AREA_LABELS,
   ReviewArea,
   type Assumption,
   type Claim,
@@ -88,11 +89,6 @@ function reviewStatusOf(text: string): ReviewStatus | 'disagreement' | 'signed_s
     default:
       return 'pending';
   }
-}
-
-function humanize(v: string): string {
-  const s = v.replace(/_/g, ' ');
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function Origin({ origin }: { origin: 'human' | 'ai' | 'ai_edited' }) {
@@ -302,7 +298,7 @@ function AssignReviewerDialog({
           >
             {ReviewArea.options.map((a) => (
               <option key={a} value={a}>
-                {humanize(a)}
+                {REVIEW_AREA_LABELS[a]}
               </option>
             ))}
           </select>
@@ -668,18 +664,27 @@ export default function ThesisScreen() {
             'Open items that stop a gate',
             'bl',
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {data.blockers.map((b) => (
-                <div key={b.id} className="as-blocker">
-                  {/* Items for the upcoming G1 are pending reviews; items for a later gate block it. */}
-                  <ReviewStatusTag status={b.gate === 'G1' ? 'pending' : 'declined'} />
-                  <span className="as-blocker__text">{b.text}</span>
-                  <Person
-                    name={b.owner.displayName}
-                    initials={b.owner.initials}
-                    subtitle={b.dueOn ? `due ${fmtDay(b.dueOn)}` : undefined}
-                  />
-                </div>
-              ))}
+              {data.blockers
+                .filter((b) => b.status !== 'resolved')
+                .map((b) => (
+                  <div key={b.id} className="as-blocker">
+                    {/* The server's status (D-068); without it, items for the upcoming G1 are pending
+                      reviews and items for a later gate block it. */}
+                    <ReviewStatusTag
+                      status={
+                        (b.status ?? (b.gate === 'G1' ? 'pending' : 'blocker')) === 'pending'
+                          ? 'pending'
+                          : 'declined'
+                      }
+                    />
+                    <span className="as-blocker__text">{b.text}</span>
+                    <Person
+                      name={b.owner.displayName}
+                      initials={b.owner.initials}
+                      subtitle={b.dueOn ? `due ${fmtDay(b.dueOn)}` : undefined}
+                    />
+                  </div>
+                ))}
             </div>,
           )}
 

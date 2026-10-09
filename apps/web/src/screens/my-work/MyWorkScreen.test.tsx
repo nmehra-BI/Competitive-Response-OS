@@ -11,6 +11,7 @@ import { personRef } from '../../mocks/data';
 import { mock } from '../../mocks/define';
 import { mockServer, session } from '../../mocks/node';
 import { renderAt, resetAllMocks } from '../overview/test-utils';
+import { myWorkView } from './mocks';
 
 beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
@@ -96,9 +97,32 @@ describe('My Work', () => {
     expect(screen.getByText(/Owning tasks does not include approval rights\./)).toBeTruthy();
   });
 
-  it('Mark done sends tasks.update with the task row version as If-Match', async () => {
+  it('Mark done sends tasks.update with the work item row version as If-Match (D-068)', async () => {
     const seen: { ifMatch: number | null; status?: string }[] = [];
     mockServer.use(
+      mock(API.work.myWork, ({ viewerId }) => {
+        const v = myWorkView(viewerId);
+        return { ...v, items: v.items.map((w) => (w.id === t1.id ? { ...w, rowVersion: 4 } : w)) };
+      }),
+      mock(API.pilot.updateTask, ({ ifMatch, body }) => {
+        seen.push({ ifMatch, status: body.status });
+        return task('done', 5);
+      }),
+    );
+    session.signIn(people.jonas.id);
+    renderAt('/my-work');
+    const brief = await screen.findByRole('complementary', { name: 'Confirm 4 pilot sites and contacts' });
+    fireEvent.click(within(brief).getByRole('button', { name: 'Mark done' }));
+    await waitFor(() => expect(seen).toEqual([{ ifMatch: 4, status: 'done' }]));
+  });
+
+  it('without a row version on the work item, reads it from the pilot plan', async () => {
+    const seen: { ifMatch: number | null; status?: string }[] = [];
+    mockServer.use(
+      mock(API.work.myWork, ({ viewerId }) => {
+        const v = myWorkView(viewerId);
+        return { ...v, items: v.items.map(({ rowVersion: _omit, ...w }) => w) };
+      }),
       mock(API.pilot.get, () => plan()),
       mock(API.pilot.updateTask, ({ ifMatch, body }) => {
         seen.push({ ifMatch, status: body.status });

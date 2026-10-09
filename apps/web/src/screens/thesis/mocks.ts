@@ -334,6 +334,7 @@ export function thesisView(): ThesisView {
         owner: PEOPLE.lena,
         dueOn: '2026-11-20',
         gate: 'G2',
+        status: 'blocker',
       },
       {
         id: wsId(35, 2),
@@ -341,6 +342,7 @@ export function thesisView(): ThesisView {
         owner: PEOPLE.priya,
         dueOn: '2026-10-21',
         gate: 'G1',
+        status: 'pending',
       },
     ],
     reviewers: [

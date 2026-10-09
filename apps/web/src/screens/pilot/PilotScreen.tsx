@@ -1110,8 +1110,8 @@ function DraftDialog({
   const changed = useMemo(() => body !== draft.body, [body, draft.body]);
   const submit = async () => {
     try {
-      // MessageDraft carries no row version in the frozen contract (change request in WS8d notes).
-      await cmd.mutateAsync({ params: { id: draft.id }, body: { body }, ifMatch: 0 });
+      // Row version added by D-068; an API that predates it answers without one.
+      await cmd.mutateAsync({ params: { id: draft.id }, body: { body }, ifMatch: draft.rowVersion ?? 0 });
       onDone('Draft saved · it stays a draft and is not sent.');
       onClose();
     } catch (e) {

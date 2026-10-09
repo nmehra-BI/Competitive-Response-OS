@@ -147,12 +147,13 @@ describe('S10 Decisions · package', () => {
 describe('S10 Decisions · stale, refresh, superseded', () => {
   it('a material assumption change makes v3 stale: approval disabled; refresh creates v4; v3 superseded', async () => {
     session.signIn(people.maya.id);
+    const v3 = await api(API.gates.package, { params: { id: gates.g2.id }, query: {} });
     const res = await api(API.assumptions.update, {
       params: { id: assumptions[0].id },
       ifMatch: 1,
       body: { value: '0.18', changeReason: 'Revised after review' },
     });
-    expect(res.staleSnapshotIds).toEqual([gates.g2.id]);
+    expect(res.staleSnapshotIds).toEqual([v3.snapshot.id]);
 
     session.signIn(people.elena.id);
     renderAt('/me/cases/ME-104/decisions?gate=G2');

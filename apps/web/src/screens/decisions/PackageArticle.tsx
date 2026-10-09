@@ -4,7 +4,13 @@
  * content (what the approver reads is what gets hashed); live condition status comes from the
  * gate request.
  */
-import type { DecisionPackageView, GateCode, PersonRef, ReviewArea, Scenario } from '@growth-os/contracts';
+import {
+  REVIEW_AREA_LABELS,
+  type DecisionPackageView,
+  type GateCode,
+  type PersonRef,
+  type Scenario,
+} from '@growth-os/contracts';
 import {
   ConditionItem,
   DissentItem,
@@ -26,17 +32,6 @@ export const GATE_KIND: Record<GateCode, string> = {
   G2: 'Pilot',
   G3: 'Scale',
   X: 'Extension',
-};
-
-/** Review areas have no contract label map yet (change request in WS8c notes). */
-export const REVIEW_AREA_ROLE: Record<ReviewArea, string> = {
-  finance: 'Finance',
-  specialist: 'Specialist',
-  product: 'Product',
-  commercial: 'Commercial',
-  pilot_owner: 'Pilot owner',
-  operations: 'Operations',
-  sponsor: 'Sponsor',
 };
 
 /** Everyone the package names, by id (owners are ids in the frozen scope and conditions). */
@@ -155,8 +150,13 @@ export function PackageArticle({
         {pkg.changesSinceViewerLastSaw.length ? (
           <div className="ws8c-package__changes">
             <Icon name="compare" size={13} />
-            Changes since {compareTo ? `v${compareTo}` : 'you last viewed this package'}:{' '}
-            {pkg.changesSinceViewerLastSaw.join(' · ')}
+            Changes since{' '}
+            {compareTo
+              ? `v${compareTo}`
+              : pkg.changesSince
+                ? `v${pkg.changesSince.sinceVersion}, which you viewed on ${dayMonth(pkg.changesSince.viewedAt)}`
+                : 'you last viewed this package'}
+            : {pkg.changesSinceViewerLastSaw.join(' · ')}
           </div>
         ) : null}
         <div className="ws8c-ask">
@@ -342,7 +342,7 @@ export function PackageArticle({
             <ReviewerPositions
               rows={c.signOffs.map((p) => ({
                 reviewer: p.reviewer.displayName,
-                role: REVIEW_AREA_ROLE[p.area],
+                role: REVIEW_AREA_LABELS[p.area],
                 position: p.position,
                 scope: p.scopeText,
                 version: p.signedVersion ? `v${p.signedVersion}` : '—',

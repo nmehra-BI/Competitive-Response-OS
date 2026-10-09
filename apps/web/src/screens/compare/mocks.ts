@@ -13,6 +13,7 @@ import {
   type Comparison,
   type ComparisonAttribute,
   type ComparisonCell,
+  type EvidenceQuality,
   type RankingRow,
   type RankingWeights,
 } from '@growth-os/contracts';
@@ -140,6 +141,8 @@ function cellsFor(key: string, oppId: string): ComparisonCell[] {
       detailText: x.detail ?? null,
       unknown,
       incomparable: incomparable && boundaryBound,
+      evidenceQuality:
+        attribute === 'growth_evidence' && x.value ? (x.value.toLowerCase() as EvidenceQuality) : null,
       sources:
         key === 'OPP-07' && attribute === 'tam'
           ? sources
@@ -199,7 +202,13 @@ export function rank(c: CmpRec, w: Weights): { valid: boolean; ranking: RankingR
   });
   const ranked = rows.filter((x) => x.row.ranked).sort((a, b) => (b.h ?? 0) - (a.h ?? 0) || a.i - b.i);
   const rest = rows.filter((x) => !x.row.ranked);
-  return { valid, ranking: [...ranked, ...rest].map((x) => x.row) };
+  return {
+    valid,
+    ranking: [
+      ...ranked.map((x, i) => ({ ...x.row, rank: i + 1 })),
+      ...rest.map((x) => ({ ...x.row, rank: null })),
+    ],
+  };
 }
 
 const FORMULA =

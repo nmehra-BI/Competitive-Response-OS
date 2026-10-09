@@ -6,6 +6,7 @@
  */
 import {
   API,
+  GATE_REQUEST_STATUS_LABELS,
   GATE_STATUS_LABELS,
   type ConditionInput,
   type DecisionPackageView,
@@ -25,8 +26,8 @@ export function statusText(pkg: DecisionPackageView): string {
   const status = req.displayStatus;
   const decided = pkg.approvals.find((a) => a.disposition !== 'abstain');
   const when = decided ? ` · ${dayTime(decided.decidedAt)}` : '';
-  // GateStatus has no "withdrawn"; the request status carries it (change request in WS8c notes).
-  if (req.status === 'withdrawn') return 'Withdrawn';
+  // GateStatus has no "withdrawn"; the request status carries it (label map added by D-068).
+  if (req.status === 'withdrawn') return GATE_REQUEST_STATUS_LABELS.withdrawn;
   if (status === 'approved_with_conditions') {
     const n = req.conditions.length;
     return `${GATE_STATUS_LABELS[status]} · ${n} condition${n === 1 ? '' : 's'}${when}`;

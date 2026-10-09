@@ -184,22 +184,29 @@ function Brief({ item }: { item: WorkItem }) {
   const isTask = item.kind === 'task';
   const status = STATUS_BY_LABEL[item.statusText];
 
-  /** tasks.update needs the task's row version, read from the pilot plan (the S11 source of truth). */
+  /**
+   * tasks.update needs the task's row version: the work item carries it (D-068); an API that
+   * predates it is read through the pilot plan (the S11 source of truth).
+   */
+  const rowVersionOf = async (): Promise<number> => {
+    if (item.rowVersion !== undefined && item.rowVersion !== null) return item.rowVersion;
+    const plan = await qc.fetchQuery({
+      queryKey: queryKey(API.pilot.get, { caseRef: item.caseKey }),
+      queryFn: () => api(API.pilot.get, { params: { caseRef: item.caseKey } }),
+      staleTime: 0,
+    });
+    const task = plan.taskSet?.tasks.find((t) => t.id === item.id);
+    if (!task) throw new Error('task not in plan');
+    return task.rowVersion;
+  };
   const setStatus = async (next: TaskStatus) => {
     setBusy(true);
     setError(null);
     try {
-      const plan = await qc.fetchQuery({
-        queryKey: queryKey(API.pilot.get, { caseRef: item.caseKey }),
-        queryFn: () => api(API.pilot.get, { params: { caseRef: item.caseKey } }),
-        staleTime: 0,
-      });
-      const task = plan.taskSet?.tasks.find((t) => t.id === item.id);
-      if (!task) throw new Error('task not in plan');
       await api(API.pilot.updateTask, {
-        params: { id: task.id },
+        params: { id: item.id },
         body: { status: next },
-        ifMatch: task.rowVersion,
+        ifMatch: await rowVersionOf(),
       });
       await invalidateAfter(qc, API.pilot.updateTask.id);
     } catch (e) {
