@@ -9,7 +9,6 @@ import {
   type ActivityItem,
   type CaseStage,
   type GateCode,
-  type GateRequestStatus,
   type PortfolioOverview,
 } from '@growth-os/contracts';
 import { readAudit } from '../../../platform/audit-read';
@@ -17,7 +16,7 @@ import { query, type HandlerMap } from '../../../platform/pipeline';
 import { isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
 import { asOf, caseHref, policy, shortDate, subjectAt } from '../cases/access';
 import { accessibleCases } from '../cases';
-import { displayStatusOf, gateButtonLabel } from '../cases/gate-read';
+import { buttonLabel, displayStatus, scopeOf } from '../gates/lib/serialize';
 import { buildListRow } from '../cases/read';
 
 const GATE_NAME: Record<GateCode, string> = {
@@ -77,12 +76,7 @@ export const overviewHandlers: HandlerMap = {
         decisions.push({
           gateRequestId: g.id,
           caseKey: c.display_key,
-          buttonLabel: gateButtonLabel(
-            g.gate_code as GateCode,
-            g.requested_amount,
-            g.currency,
-            g.duration_days,
-          ),
+          buttonLabel: buttonLabel(g.gate_code as GateCode, scopeOf(g)),
           snapshotVersion: snap?.version ?? 1,
           dueText: g.submitted_at ? `Submitted ${shortDate(g.submitted_at)}` : 'Awaiting decision',
           href: caseHref(c.display_key, 'decision'),
@@ -92,10 +86,7 @@ export const overviewHandlers: HandlerMap = {
         .filter((g) => g.requested_amount !== null && g.currency !== null && g.gate_code !== 'G0')
         .map((g) => {
           const c = cases.find((x) => x.id === g.case_id)!;
-          const status = displayStatusOf(g.gate_code as GateCode, g.status as GateRequestStatus, {
-            allMet: true,
-            metCount: 1,
-          });
+          const status = displayStatus(g, { allMet: true, metCount: 1 });
           const approved = g.status === 'approved' || g.status === 'approved_with_conditions';
           return {
             caseKey: c.display_key,

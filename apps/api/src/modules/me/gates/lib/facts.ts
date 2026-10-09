@@ -3,9 +3,10 @@
  * then evaluated by the WS3 evaluator (`evaluateGate`). G3 lists every unmet precondition (D-039);
  * X accepts a cap placeholder for submission only (D-040).
  */
-import type { DecisionOutcome, GateCode, GateRequestStatus } from '@growth-os/contracts';
+import type { DecisionOutcome, GateCode, GateRequestStatus, GateStatus } from '@growth-os/contracts';
 import { sql, type Tx } from '@growth-os/db';
 import {
+  deriveGateDisplayStatus,
   evaluateGate,
   type GateEvaluation,
   type GateFacts,
@@ -13,7 +14,7 @@ import {
   type TargetFact,
 } from '@growth-os/domain';
 import { gatePolicy, type CaseLite } from './common';
-import { scopeOf, type GateRow } from './serialize';
+import { GATE_COLUMNS, scopeOf, type GateRow } from './serialize';
 
 /** numeric(24,8) → shortest exact text ("4.00000000" → "4"). */
 export function trimDecimal(v: string | null): string | null {
@@ -46,10 +47,18 @@ async function latestCommittedEconomics(tx: Tx, caseId: string) {
 
 export { latestCommittedEconomics, latestCommittedSizing };
 
-/** Distinct sources the case's sizing versions and claims cite. */
+/**
+ * Distinct sources of a case: its originating opportunity's sources, and the sources its sizing
+ * versions, cohorts and claims cite. One definition for G1 evidence, snapshot evidence and the header's
+ * freshness (D-072).
+ */
 export async function caseSourceIds(tx: Tx, caseId: string): Promise<string[]> {
   const r = await sql<{ id: string }>`
-    SELECT DISTINCT i.source_id AS id FROM me.sizing_input i
+    SELECT DISTINCT os.source_id AS id FROM me.opportunity_source os
+      JOIN platform.workflow_case wc ON wc.origin_type = 'opportunity' AND wc.origin_id = os.opportunity_id
+     WHERE wc.id = ${caseId}
+    UNION
+    SELECT DISTINCT i.source_id FROM me.sizing_input i
       JOIN me.sizing_version v ON v.id = i.sizing_version_id
      WHERE v.case_id = ${caseId} AND i.source_id IS NOT NULL
     UNION
@@ -345,4 +354,42 @@ export async function evaluate(tx: Tx, f: FactInput): Promise<GateEvaluation> {
   const facts = await loadGateFacts(tx, f);
   const policy = await gatePolicy(tx, f.gateCode);
   return evaluateGate(facts, policy.preconditionKeys);
+}
+
+const AFTER_REVIEW = new Set(['review_due', 'scale_approval_pending', 'scaling', 'closed']);
+
+/** The latest gate request of a code for a case (withdrawn requests excluded). */
+export async function latestCaseGate(tx: Tx, caseId: string, code: GateCode): Promise<GateRow | null> {
+  return (
+    ((await tx
+      .selectFrom('platform.gate_request')
+      .select([...GATE_COLUMNS])
+      .where('case_id', '=', caseId)
+      .where('gate_code', '=', code)
+      .where('status', '<>', 'withdrawn')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst()) as GateRow | undefined) ?? null
+  );
+}
+
+export interface CaseGateState {
+  gate: GateRow | null;
+  evaluation: GateEvaluation;
+  status: GateStatus;
+}
+
+/**
+ * The single source of a case gate's preconditions and display status (D-072): `gates.preconditions`,
+ * the case header rail and the overview all call this, so they cannot disagree.
+ */
+export async function caseGateState(tx: Tx, caseRow: CaseLite, code: GateCode): Promise<CaseGateState> {
+  const gate = await latestCaseGate(tx, caseRow.id, code);
+  const evaluation = await evaluate(tx, { gateCode: code, caseRow, gate });
+  const status = deriveGateDisplayStatus({
+    gateCode: code,
+    requestStatus: (gate?.status as GateRequestStatus | undefined) ?? null,
+    evaluation,
+    afterReview: AFTER_REVIEW.has(caseRow.stage),
+  });
+  return { gate, evaluation, status };
 }

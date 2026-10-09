@@ -3,6 +3,7 @@
  * scenario table rows are per-year only; the one-time investment is reported separately and cash
  * flow / payback stay "Not available".
  */
+import { formatContributionK, formatGrossContribution, formatScenarioRevenue } from '@growth-os/ui/format';
 import type { EconomicsOutput, EconomicsVersion, EconomicsView, ModelReview } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
 import type { Identity } from '../../../platform/context';
@@ -134,17 +135,17 @@ export function scenarioTable(o: EconomicsOutput): string[][] {
       return s ? f(s) : 'Not available';
     }),
   ];
-  const m = (x: { amount: string; currency: string }) => moneyLabel(x.amount, x.currency);
+  // Display copy follows the frozen format rules (packages/ui/src/format; fixture `expectedDisplay`).
+  type M = { amount: string; currency: string };
+  const rev = (x: M) => formatScenarioRevenue(x.amount, x.currency);
+  const gross = (x: M) => formatGrossContribution(x.amount, x.currency);
+  const k = (x: M) => formatContributionK(x.amount, x.currency);
   return [
     ['', 'Downside', 'Base', 'Upside'],
-    row('Annual revenue', (s) => m(s.annualRevenue)),
-    row('Gross contribution', (s) => m(s.grossContribution)),
-    row('Annual incremental opex', (s) => m(s.annualIncrementalOpex)),
-    row('Contribution after incremental opex', (s) =>
-      s.contributionAfterOpex.amount === '0.00'
-        ? `${m(s.contributionAfterOpex)} (break-even)`
-        : m(s.contributionAfterOpex),
-    ),
+    row('Annual revenue', (s) => rev(s.annualRevenue)),
+    row('Gross contribution', (s) => gross(s.grossContribution)),
+    row('Annual incremental opex', (s) => k(s.annualIncrementalOpex)),
+    row('Contribution after incremental opex', (s) => k(s.contributionAfterOpex)),
   ];
 }
 

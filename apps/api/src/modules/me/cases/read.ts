@@ -8,7 +8,7 @@ import type {
   EvidenceFreshness,
   GateCode,
   GateRailNode,
-  GateRequestStatus,
+  GateStatus,
   NextDecision,
   RailSegment,
 } from '@growth-os/contracts';
@@ -17,8 +17,9 @@ import type { Tx } from '@growth-os/db';
 import type { Identity } from '../../../platform/context';
 import { isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
 import { caseHref, moneyLabel, peopleMap, shortDate, toWorkflowCase, who, type CaseRecord } from './access';
-import { caseSourceIds, evaluateCaseGate } from './gate-facts';
-import { displayStatusOf, gateButtonLabel, type GateRow } from './gate-read';
+import { toCaseLite } from '../gates/lib/common';
+import { caseGateState, caseSourceIds } from '../gates/lib/facts';
+import { buttonLabel, displayStatus, gateById, scopeOf, type GateRow } from '../gates/lib/serialize';
 
 const COUNTRY: Record<string, string> = {
   DE: 'Germany',
@@ -89,40 +90,36 @@ function caption(gate: GateCode, g: GateRow | undefined): string {
 }
 
 export async function buildRail(tx: Tx, c: CaseRecord): Promise<RailInfo> {
-  const rows = (await tx
-    .selectFrom('platform.gate_request')
-    .selectAll()
-    .where('case_id', '=', c.id)
-    .orderBy('created_at', 'desc')
-    .execute()) as GateRow[];
+  const lite = toCaseLite(c);
   const gates: Partial<Record<GateCode, GateRow>> = {};
-  for (const r of rows) gates[r.gate_code as GateCode] ??= r;
+  const evaluations: RailInfo['evaluations'] = {};
+  const statuses: Partial<Record<GateCode, GateStatus>> = {};
+  // G1–G3 and X come from the same function as `gates.preconditions` (D-072), so they always agree.
+  for (const code of ['G1', 'G2', 'G3', 'X'] as const) {
+    const st = await caseGateState(tx, lite, code);
+    if (st.gate) gates[code] = st.gate;
+    if (code !== 'X') evaluations[code] = st.evaluation;
+    statuses[code] = st.status;
+  }
+  // G0 belongs to the mandate: its request is the mandate's G0, decided before the case existed.
   const mv = await mandateVersionOf(tx, c);
   if (mv?.g0) {
-    const g0 = (await tx
-      .selectFrom('platform.gate_request')
-      .selectAll()
-      .where('id', '=', mv.g0)
-      .executeTakeFirst()) as GateRow | undefined;
+    const g0 = await gateById(tx, mv.g0);
     if (g0) gates.G0 = g0;
   }
-  const evaluations: RailInfo['evaluations'] = {};
-  for (const g of ['G1', 'G2', 'G3'] as const) evaluations[g] = await evaluateCaseGate(tx, c, g);
+  const g0 = gates.G0;
+  statuses.G0 = g0
+    ? displayStatus(g0, { allMet: true, metCount: 1 })
+    : c.stage === 'draft_mandate'
+      ? 'not_started'
+      : 'approved';
   const codes: GateCode[] = ['G0', 'G1', 'G2', 'G3', ...(gates.X ? (['X'] as const) : [])];
-  const afterReview = ['review_due', 'scale_approval_pending'].includes(c.stage);
   const rail = codes.map((code): GateRailNode => {
     const g = gates[code];
     const ev = evaluations[code];
-    let status = displayStatusOf(
-      code,
-      (g?.status as GateRequestStatus) ?? null,
-      ev ?? { allMet: true, metCount: 1 },
-    );
-    if (code === 'G0' && !g) status = c.stage === 'draft_mandate' ? 'not_started' : 'approved';
-    if (code === 'G3' && afterReview && ev && !ev.allMet && (!g || g.status === 'draft')) status = 'blocked';
     return {
       gateCode: code,
-      status,
+      status: statuses[code]!,
       caption: caption(code, g),
       preconditionsMet: ev ? ev.metCount : null,
       preconditionsTotal: ev ? ev.total : null,
@@ -133,7 +130,7 @@ export async function buildRail(tx: Tx, c: CaseRecord): Promise<RailInfo> {
 }
 
 async function freshness(tx: Tx, c: CaseRecord, now: Date) {
-  const ids = [...(await caseSourceIds(tx, c))];
+  const ids = await caseSourceIds(tx, c.id);
   const rows = ids.length
     ? await tx
         .selectFrom('platform.source')
@@ -193,9 +190,7 @@ async function nextDecision(tx: Tx, c: CaseRecord, r: RailInfo): Promise<NextDec
     };
   const g = r.gates[pending.gateCode];
   const ev = r.evaluations[pending.gateCode];
-  const label = g
-    ? gateButtonLabel(pending.gateCode, g.requested_amount, g.currency, g.duration_days)
-    : `Prepare the ${pending.gateCode} request`;
+  const label = g ? buttonLabel(pending.gateCode, scopeOf(g)) : `Prepare the ${pending.gateCode} request`;
   const awaiting = g?.status === 'awaiting_decision' || g?.status === 'stale';
   const sponsor = who(people, c.sponsor_user_id);
   const blocked = !awaiting && ev !== undefined && !ev.allMet;

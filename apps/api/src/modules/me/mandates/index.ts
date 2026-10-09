@@ -29,7 +29,7 @@ import { pageOf } from '../../../platform/pagination';
 import { assertIfMatch, command, query, type HandlerMap } from '../../../platform/pipeline';
 import { isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
 import { machineRefusal, moneyLabel } from '../cases/access';
-import { toGateRequest, type GateRow } from '../cases/gate-read';
+import { toGateRequest, type GateRow } from '../gates/lib/serialize';
 
 type MandateRow = {
   id: string;

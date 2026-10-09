@@ -16,6 +16,9 @@ import {
 } from '@growth-os/domain';
 import { ApiError } from '../../../../platform/errors';
 import { peopleOf, type CaseLite, tenantIdSql } from './common';
+import { committedEconomicsSummary } from '../../economics/read';
+import { committedSizingSummary } from '../../sizing/read';
+import { committedThesis } from '../../thesis/read';
 import { caseSourceIds, defaultStopRules, latestCommittedEconomics, latestCommittedSizing } from './facts';
 import {
   contentOf,
@@ -191,6 +194,8 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
     assumptions.sort((x, y) => (order.get(x.assumptionId) ?? 1e6) - (order.get(y.assumptionId) ?? 1e6));
   }
 
+  // Sizing and economics summaries come from the WS4a read serializers (D-072): one text for the
+  // package, the brief and the seed. Unchanged versions carry over so the diff shows real changes.
   const sizingRow = await latestCommittedSizing(tx, caseId);
   let sizing: Content['sizing'] = null;
   if (sizingRow?.input_hash) {
@@ -200,14 +205,15 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
       version: sizingRow.version,
       state: 'committed',
     });
-    sizing =
-      prev?.sizing && prev.sizing.sizingVersionId === sizingRow.id
-        ? prev.sizing
-        : {
-            sizingVersionId: sizingRow.id,
-            inputHash: sizingRow.input_hash,
-            summary: sizingSummary(sizingRow),
-          };
+    if (prev?.sizing && prev.sizing.sizingVersionId === sizingRow.id) sizing = prev.sizing;
+    else {
+      const sum = await committedSizingSummary(tx, caseId);
+      sizing = {
+        sizingVersionId: sizingRow.id,
+        inputHash: sum?.inputHash ?? sizingRow.input_hash,
+        summary: sum?.summary ?? `Sizing v${sizingRow.version}`,
+      };
+    }
   }
   const econRow = await latestCommittedEconomics(tx, caseId);
   let economics: Content['economics'] = null;
@@ -218,11 +224,21 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
       version: econRow.version,
       state: 'committed',
     });
-    economics =
-      prev?.economics && prev.economics.economicsVersionId === econRow.id
-        ? prev.economics
-        : economicsBlock(econRow.id, econRow.input_hash, econRow.output);
+    if (prev?.economics && prev.economics.economicsVersionId === econRow.id) economics = prev.economics;
+    else {
+      const sum = await committedEconomicsSummary(tx, caseId);
+      if (sum)
+        economics = {
+          economicsVersionId: sum.economicsVersionId,
+          inputHash: sum.inputHash,
+          tableText: sum.tableText,
+          note: sum.note,
+        };
+    }
   }
+  // First snapshot: the committed thesis states the recommendation and the alternatives. Like the
+  // other narrative fields they carry over on refresh; the thesis version is not pinned.
+  const thesis = prev ? null : await committedThesis(tx, caseId);
 
   // Evidence: carried over when unchanged, else the case's cited sources.
   let evidenceSummary = prev?.evidenceSummary;
@@ -335,10 +351,18 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
     ask: prev?.ask ?? defaultAsk(code, scope.amount, scope.currency, scope.durationDays),
     scope,
     recommendation:
-      prev?.recommendation ?? `Decide on ${ME_GATES[code].name.toLowerCase()} within the stated scope.`,
-    alternatives: prev?.alternatives ?? [
-      { name: 'No entry.', meaning: 'Stop here and keep the requested budget.', isNoEntry: true },
-    ],
+      prev?.recommendation ??
+      thesis?.fields.recommendation?.value ??
+      `Decide on ${ME_GATES[code].name.toLowerCase()} within the stated scope.`,
+    alternatives:
+      prev?.alternatives ??
+      (thesis?.fields.alternatives.length
+        ? thesis.fields.alternatives.map((a) => ({
+            name: a.name,
+            meaning: a.meaning,
+            isNoEntry: a.isNoEntry,
+          }))
+        : [{ name: 'No entry.', meaning: 'Stop here and keep the requested budget.', isNoEntry: true }]),
     evidenceSummary,
     assumptions,
     validationResults,
@@ -380,54 +404,6 @@ function defaultAsk(
     default:
       return 'Approve the scope.';
   }
-}
-
-function sizingSummary(r: { version: number; output: unknown }): string {
-  const o = r.output as {
-    ladder?: {
-      tam?: { population: number; value?: { amount: string } };
-      sam?: { population: number; value?: { amount: string }; available?: boolean };
-      reachablePool?: { population: number };
-    };
-  } | null;
-  const l = o?.ladder;
-  if (!l?.tam) return `Sizing v${r.version}`;
-  const sam =
-    l.sam?.available === false ? 'Not available' : `${grouped(String(l.sam?.population ?? ''))} sites`;
-  return `Sizing v${r.version}: TAM ${grouped(String(l.tam.population))} sites · SAM ${sam} · Reachable ${grouped(String(l.reachablePool?.population ?? ''))} sites`;
-}
-
-function economicsBlock(id: string, inputHash: string, output: unknown): NonNullable<Content['economics']> {
-  const o = output as {
-    scenarios?: {
-      annualRevenue: { amount: string; currency: string };
-      grossContribution: { amount: string; currency: string };
-      annualIncrementalOpex: { amount: string; currency: string };
-      contributionAfterOpex: { amount: string; currency: string };
-    }[];
-    oneTimeInvestment?: { amount?: string; currency?: string; unavailable?: true };
-  } | null;
-  const sc = o?.scenarios ?? [];
-  const row = (
-    label: string,
-    k: 'annualRevenue' | 'grossContribution' | 'annualIncrementalOpex' | 'contributionAfterOpex',
-  ) => [label, ...sc.map((s) => fmtCompact(s[k].amount, s[k].currency))];
-  const one = o?.oneTimeInvestment;
-  return {
-    economicsVersionId: id,
-    inputHash,
-    tableText: [
-      ['', 'Downside', 'Base', 'Upside'],
-      row('Annual revenue', 'annualRevenue'),
-      row('Gross contribution', 'grossContribution'),
-      row('Annual incremental opex', 'annualIncrementalOpex'),
-      row('Contribution after incremental opex', 'contributionAfterOpex'),
-    ],
-    note:
-      one && one.amount
-        ? `One-time investment ${fmtCompact(one.amount, one.currency)}, kept separate. Cash flow and payback not available.`
-        : 'One-time investment not available. Cash flow and payback not available.',
-  };
 }
 
 export function resultSummary(observations: unknown): string {

@@ -5,7 +5,7 @@
  * the WS4b notes), and recurring and one-time money never meet.
  */
 import { GatePolicyBody, type GateCode, type PersonRef } from '@growth-os/contracts';
-import { sql, type Tx } from '@growth-os/db';
+import { approvalEffectivenessFor, sql, type Tx } from '@growth-os/db';
 import {
   ME_GATES,
   type ApprovalEffectiveness,
@@ -65,32 +65,16 @@ export async function gatePolicy(tx: Tx, gateCode: GateCode): Promise<GatePolicy
   );
 }
 
-/** Whether a gate's approval still authorizes execution (approval_invalidation is an event). */
-export async function approvalEffectiveness(
+/**
+ * Whether a gate's approval still authorizes execution at `now`: the shared rule in `@growth-os/db`
+ * (D-075), the same one the outbox worker re-checks at send time.
+ */
+export function approvalEffectiveness(
   tx: Tx,
   gateRequestId: string | null,
+  now: Date,
 ): Promise<ApprovalEffectiveness> {
-  if (!gateRequestId) return 'missing';
-  const gate = await tx
-    .selectFrom('platform.gate_request')
-    .select(['status', 'current_snapshot_id'])
-    .where('id', '=', gateRequestId)
-    .executeTakeFirst();
-  if (!gate) return 'missing';
-  if (gate.status === 'invalidated') return 'invalidated';
-  if (gate.status === 'expired') return 'expired';
-  if (gate.status !== 'approved' && gate.status !== 'approved_with_conditions') return 'missing';
-  const approvals = await tx
-    .selectFrom('platform.approval as a')
-    .leftJoin('platform.approval_invalidation as i', 'i.approval_id', 'a.id')
-    .select(['a.id', 'i.kind'])
-    .where('a.gate_request_id', '=', gateRequestId)
-    .where('a.snapshot_id', '=', gate.current_snapshot_id ?? '')
-    .where('a.disposition', 'in', ['approve', 'approve_with_conditions'])
-    .execute();
-  if (approvals.length === 0) return 'missing';
-  if (approvals.some((a) => a.kind === null)) return 'effective';
-  return approvals.some((a) => a.kind === 'expired') ? 'expired' : 'invalidated';
+  return approvalEffectivenessFor(tx, gateRequestId, now);
 }
 
 /** "€120k", "€15k", "€1,250": a display label only (button labels, never arithmetic). */

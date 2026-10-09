@@ -38,15 +38,13 @@ import {
   type CaseLite,
 } from './lib/common';
 import { gateAction, gateVisible, holdsAdmin, loadGateCtx, type GateCtx } from './lib/access';
-import { evaluate } from './lib/facts';
+import { caseGateState, evaluate } from './lib/facts';
 import { applyInvalidations, moveCase, pinsForSnapshots, SYSTEM_GATE } from './lib/moves';
 import { buildPackage, diffChanges, gateResource } from './lib/package';
 import {
   contentOf,
-  displayStatus,
   dissentOfCase,
   gateById,
-  GATE_COLUMNS,
   snapshotById,
   toCondition,
   toGateRequest,
@@ -351,26 +349,7 @@ export const gateHandlers: HandlerMap = {
     authorize: (ctx, c) => caseVisible(ctx.identity.subject, c),
     handle: async (ctx, { tx }, c) => {
       const code = ctx.params.gateCode;
-      const gate = (await tx
-        .selectFrom('platform.gate_request')
-        .select([...GATE_COLUMNS])
-        .where('case_id', '=', c.id)
-        .where('gate_code', '=', code)
-        .where('status', '<>', 'withdrawn')
-        .orderBy('created_at', 'desc')
-        .executeTakeFirst()) as GateRow | undefined;
-      const ev = await evaluate(tx, { gateCode: code, caseRow: c, gate: gate ?? null });
-      const afterReview = ['review_due', 'scale_approval_pending', 'scaling', 'closed'].includes(c.stage);
-      const status =
-        gate && !['draft', 'withdrawn'].includes(gate.status)
-          ? displayStatus(gate, ev)
-          : displayStatus({ gate_code: code, status: 'draft' }, ev) === 'ready_to_submit'
-            ? 'ready_to_submit'
-            : code === 'G3' && afterReview
-              ? 'blocked'
-              : ev.metCount === 0
-                ? 'not_started'
-                : 'preconditions_open';
+      const { gate, evaluation: ev, status } = await caseGateState(tx, c, code);
       return {
         gateCode: code,
         status,

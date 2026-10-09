@@ -5,6 +5,7 @@
  * placeholders flagged `sam.available = false`, SOM is empty and lineage values are removed; the
  * blocking checks carry the explanation ("SAM … is larger than TAM …").
  */
+import { formatMarketSpend, formatScenarioRevenue } from '@growth-os/ui/format';
 import type {
   Cohort,
   CohortOverlap,
@@ -20,7 +21,7 @@ import type { Tx } from '@growth-os/db';
 import type { Identity } from '../../../platform/context';
 import { effectiveAccess, entitlementsFor } from '../../../platform/entitlements';
 import { isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
-import { moneyLabel, peopleMap, who } from '../cases/access';
+import { peopleMap, who } from '../cases/access';
 import { chipsFor, sourceChips } from '../cases/sources';
 import { valueString } from '../assumptions/read';
 import { sizingVersions, type SizingVersionRow } from './model';
@@ -345,12 +346,12 @@ export async function committedSizingSummary(
     version: v.version,
     inputHash: o.inputHash,
     summary: [
-      `TAM ${moneyLabel(o.ladder.tam.value.amount, o.ladder.tam.value.currency)}/year`,
-      `SAM ${moneyLabel(o.ladder.sam.value.amount, o.ladder.sam.value.currency)}/year`,
+      `TAM ${formatMarketSpend(o.ladder.tam.value.amount, o.ladder.tam.value.currency)}`,
+      `SAM ${formatMarketSpend(o.ladder.sam.value.amount, o.ladder.sam.value.currency)}`,
       `Reachable ${o.ladder.reachablePool.population} unique ${unit}`,
       ...(base
         ? [
-            `SOM Base Year ${v.horizon_years} ${moneyLabel(base.annualRevenue.amount, base.annualRevenue.currency)} annual revenue`,
+            `SOM Base Year ${v.horizon_years} ${formatScenarioRevenue(base.annualRevenue.amount, base.annualRevenue.currency)} annual revenue`,
           ]
         : []),
     ].join(' · '),

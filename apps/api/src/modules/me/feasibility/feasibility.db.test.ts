@@ -4,10 +4,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API, FeasibilityView } from '@growth-os/contracts';
-import { evaluateGate } from '@growth-os/domain';
 import { analyticsFor, api, auditFor, inTenant, world, type World } from '../cases/test-support';
-import { g2Facts, g3Facts } from '../cases/gate-facts';
 import { caseById } from '../cases/access';
+import { caseByRef } from '../gates/lib/common';
+import { caseGateState } from '../gates/lib/facts';
 
 let w: World;
 beforeAll(async () => {
@@ -85,8 +85,8 @@ describe('feasibility', () => {
       await inTenant(w, D(), (tx) => tx.selectFrom('platform.material_change').select('id').execute()),
     ).toEqual([]);
     const [g2, g3] = await inTenant(w, D(), async (tx) => {
-      const c = await caseById(tx, 'ME-104');
-      return [evaluateGate(await g2Facts(tx, c)), evaluateGate(await g3Facts(tx, c))];
+      const c = (await caseByRef(tx, 'ME-104'))!;
+      return [(await caseGateState(tx, c, 'G2')).evaluation, (await caseGateState(tx, c, 'G3')).evaluation];
     });
     expect(g2.preconditions.find((p) => p.key === 'specialist_sign_off')!.met).toBe(true);
     expect(g3.preconditions.find((p) => p.key === 'readiness_reassessment')!.met).toBe(false);
