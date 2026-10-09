@@ -25,6 +25,26 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
 
 
+### Build status overview (Wave 3 integrated, 2026-10-09)
+
+Wave 3 delivered the back end: WS4a (discover and assess API), WS4b (decide, execute, review API), WS6 (simulated
+connector, outbox worker, task sync) and WS5 (analysis harness, skills, evals). **All 146 endpoints have handlers.**
+The screens still run on MSW in `pnpm dev:mock`; the API is proven by DB suites, four joint suites across the streams
+(`apps/api/test/db/joint/`, D-080) and the API smoke test.
+
+| ID | Status | API code | Proving tests | Open |
+|---|---|---|---|---|
+| WF-01 | Implemented | `me/mandates`, `me/gates`, `platform/directory`, `me/catalogue` | `mandates.db`, `gates.db` (G0), `directory.db` | — |
+| WF-02 | Implemented | `me/opportunities`, `me/comparisons`, `analysis` (discovery) | `opportunities.db`, `comparisons.db`, `discovery.db`, joint `proposal-to-records` | — |
+| WF-03 | Implemented | `me/sizing`, `me/lineage` | `sizing.db`, `lineage.db` | site list unseeded |
+| WF-04 | Implemented | `me/economics`, `me/assumptions` | `economics.db`, `assumptions.db` | xlsx export (CR-WS4a-5) |
+| WF-05 | Implemented | `me/assumptions`, `me/thesis`, `me/experiments` | `assumptions.db`, `thesis.db`, `experiments.db` | PQ-13 |
+| WF-06 | Implemented | `me/gates`, `platform/materiality.ts`, `packages/db/src/approval.ts` | `gates.db`, `security/approval`, `agreement.db`, `package-views.db`, joint `assumption-pauses-writes` | PQ-1 |
+| WF-07 | Implemented (simulated Jira) | `me/pilot`, `tasksync`, worker `jobs/outbox`, `packages/connectors` | `pilot.db`, `tasksync.db`, `connector-faults/*`, joint `pilot-to-simulator`, `g1-to-validation-send` | PQ-13, PQ-15 |
+| WF-08 | Implemented | `me/outcomes`, `me/gates` (G3, X), `platform/reviews`, `platform/work`, `me/budget` | `outcomes.db`, `gates.db` (step 28), `reviews.db`, `work.db`, `budget.db` | PQ-2, readiness |
+| WF-09 | Implemented (fixture provider) | `packages/ai`, worker `jobs/analysis`, `analysis`, `skills`, `evals` | `run.db`, `gateway.db`, `analysis.db`, `proposals.db`, evals smoke | live provider check |
+| WF-10 | Implemented | `platform/evidence`, worker gateway access | evidence suites, `gateway.db` | CR-WS5-1 |
+
 ### Build status overview (Wave 2 integrated, 2026-10-09)
 
 Wave 1 delivered the domain (WS2 engines, WS3 machines/policy/materiality/timers), the platform runtime
@@ -129,6 +149,14 @@ autosave with If-Match and handle `VERSION_CONFLICT`. Tests: `MandateScreen.test
 Interim: owner pickers use the dev persona list and scope fields are read-only until `people.list` and
 `catalogue.scopeOptions` land (D-068).
 
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/mandates/` (`mandates.*`: submission lists every
+missing field together, G0 preconditions via the shared evaluator, snapshot with `subject: mandate`, resubmission after
+a return supersedes the old snapshot), `apps/api/src/modules/me/gates/` (deciding G0 runs the mandate machine, sets
+`g0_gate_request_id`, moves `cases.createDirect` cases out of Draft mandate), `apps/api/src/modules/platform/directory/` and
+`apps/api/src/modules/me/catalogue/` (`people.list`, `catalogue.scopeOptions` for the owner and scope pickers, D-079). Tests:
+`me/mandates/mandates.db.test.ts`, `me/gates/gates.db.test.ts` (G0 for MD-90 / ME-120, return → resubmit),
+`platform/directory/directory.db.test.ts`, `apps/api/test/db/security/tenancy.test.ts`.
+
 #### UI walkthrough (WF-01)
 
 | Step | Who | Screen | Route |
@@ -205,6 +233,14 @@ incomparable boundary until excluded, previews weights ("Total 110% — must be 
 shows "Rank 1 of 2 · Score 2.70 of 3" (D-067). Tests: `OpportunitiesScreen.test.tsx`, `CompareScreen.test.tsx`,
 `compare-mocks.test.ts`, `e2e/discovery-journey.spec.ts` (steps 1–5).
 
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/opportunities/` (list with discovery health from the
+discovery connections, D-074; shortlist, dismiss, merge, restore, convert with an optional title → ME-104 on
+`aster-start`), `apps/api/src/modules/me/comparisons/` (ranking engine order and `rank`, Unknown cells null, growth-evidence quality),
+`apps/api/src/modules/analysis/` (`opportunities.requestDiscovery` → `mandate-to-search-plan` run, partial with "1 source unavailable",
+candidates as proposals; accepting one goes through `createOpportunityFromProposal`, D-076). Tests:
+`me/opportunities/opportunities.db.test.ts` (steps 2, 3, 5), `me/comparisons/comparisons.db.test.ts` (step 4),
+`analysis/discovery.db.test.ts` (step 2), `apps/api/test/db/joint/proposal-to-records.test.ts`.
+
 #### UI walkthrough (WF-02)
 
 | Step | Who | Screen | Route |
@@ -279,6 +315,13 @@ draft edits with undo, duplicate-cohort resolution, restricted site list, compar
 sizing hides ladder values (D-066). Tests: `SizingScreen.test.tsx`, `sizing/mocks.test.ts`, `engine.test.ts`
 (fixture hashes), `e2e/assessment.spec.ts` (step 8 and variants).
 
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/sizing/` (draft inputs follow the assumption register
+and are pinned at commit; one stored calculation per input hash; a blocked result is redacted with every rung flagged
+`available: false`, D-081; commit runs materiality `model_version_changed`), `apps/api/src/modules/me/lineage/` (exact values, inputs one
+level, "Used by" through the measure chain). Tests: `me/sizing/sizing.db.test.ts` (steps 6–8, blocked SAM > TAM,
+v3 commit staling G2 v3), `me/lineage/lineage.db.test.ts` (step 8). Gap: `sizing.population` reads `platform.site`,
+which Aster does not seed.
+
 #### UI walkthrough (WF-03)
 
 | Step | Who | Screen | Route |
@@ -333,6 +376,12 @@ with "Recalculated" cells; recurring and one-time cards with "Do not add" betwee
 "Not available" with the missing inputs; capped upside; finance review; dispute form and thread (one register
 with S09, D-061); Draft / Snapshot toggle (snapshots never recompute). Tests: `EconomicsScreen.test.tsx`,
 `adapter.test.ts`, `e2e/assessment.spec.ts` (step 9).
+
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/economics/` (draft drivers and overrides, engine
+results, what-must-be-true, commit with materiality, finance review request/sign with checked and not-checked lists,
+CSV export with per-year and one-time sections apart; the scenario table uses the frozen display rules, D-072),
+`apps/api/src/modules/me/assumptions/` (versions, disputes, replies, resolution). Tests: `me/economics/economics.db.test.ts` (steps 9,
+16), `me/assumptions/assumptions.db.test.ts` (steps 9, 19). Deferred: xlsx export (CR-WS4a-5).
 
 #### UI walkthrough (WF-04)
 
@@ -407,6 +456,13 @@ Register (table and 2×2, no combined score), dispute thread with "Resolve with 
 EXP-03 with pre-registered thresholds, "Plan locked at G1", Amendment 1 with the original struck through,
 append-only results ("Met · 9 of 8"), decision taken. Tests: `ValidationScreen.test.tsx`, `register.test.ts`,
 `ThesisScreen.test.tsx`, `e2e/validate-decide.spec.ts` (steps 10–11, 13–14), `e2e/assessment.spec.ts` (S05).
+
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/assumptions/` and `challenges.*` (dispute, reply,
+resolve by the disputing reviewer or sponsor), `apps/api/src/modules/me/thesis/` (claims with kinds, AI drafts accepted or discarded by
+a person, blocker status, D-081), `apps/api/src/modules/me/experiments/` (create, draft edits until the G1 lock, amendments as new plan
+versions with a reason, append-only results with period and source, materiality on amendments and results, D-086).
+Tests: `me/assumptions/assumptions.db.test.ts`, `me/thesis/thesis.db.test.ts`, `me/experiments/experiments.db.test.ts`
+(steps 10, 13, 14). Open: who authors validation tasks (PQ-13).
 
 #### UI walkthrough (WF-05)
 
@@ -498,6 +554,15 @@ proposed conditions (D-067). Variants: stale (refresh creates v4, "See what chan
 unauthorized reviewer, G1 history, superseded v3, invalidated, expired, withdrawn; printable decision brief.
 Tests: `DecisionsScreen.test.tsx`, `decisions/mocks.test.ts`, `app/shell.test.tsx` (connected panel, D-064),
 `e2e/validate-decide.spec.ts` (steps 17–20 and variants).
+
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/gates/` (preconditions from the shared
+`caseGateState`, D-072; create, submit, refresh with supersede, withdraw, package with read receipts and
+`changesSince`, D-078; snapshot diff; decide in the D-073 order with conditions C1/C2; positions, dissent, conditions
+met; material changes and resolution), `apps/api/src/platform/materiality.ts` (tenant time zone, D-077),
+`packages/db/src/approval.ts` (one approval-effectiveness rule, D-075). Tests: `me/gates/gates.db.test.ts` (steps 10,
+11, 17, 19, 20, 28), `apps/api/test/db/security/approval.test.ts` (steps 18, 29), `me/gates/agreement.db.test.ts`,
+`me/gates/package-views.db.test.ts`, `platform/materiality.db.test.ts`,
+`apps/api/test/db/joint/assumption-pauses-writes.test.ts`.
 
 #### UI walkthrough (WF-06)
 
@@ -612,6 +677,48 @@ sync status, never a gate). Tests: `pilot/mocks.test.ts`, `PilotScreen.test.tsx`
 `mocks/precedence.test.ts`, `e2e/ws8d-execute-review.spec.ts` (steps 21–24, variants),
 `e2e/validate-decide.spec.ts` (VAL tasks), `e2e/work-and-reviews.spec.ts`.
 
+**Build status (Wave 3, 2026-10-09):** Implemented (simulated Jira; a live connector is not in the MVP). API:
+`apps/api/src/modules/me/pilot/` (`pilot.activate` lists unowned tasks and open blocking conditions together, commits the plan
+version, locks the task set authorized by G2, opens the outcome review, D-087; scope change runs materiality),
+`apps/api/src/modules/tasksync/` (`taskSync.get/preview/send/retry/exportCsv`, dev fault routes), worker
+`apps/worker/src/jobs/outbox/` (`outbox.dispatch`, `outbox.reconcile`, `outbox.sweep`: claim → call → record with a
+lease, reconcile before every re-send, re-check at claim, D-083), `packages/connectors/src/simulated/` (D-084),
+`packages/db/src/approval.ts`. Tests: `me/pilot/pilot.db.test.ts` (steps 21–22, scope change),
+`tasksync/tasksync.db.test.ts` (step 12), `apps/api/test/connector-faults/{partial,timeout,expired-token,crash,concurrent-retry,invalidated}.test.ts`
+(steps 22–24 and variants), `apps/api/test/db/joint/pilot-to-simulator.test.ts` (steps 21–23, no stand-ins),
+`apps/api/test/db/joint/g1-to-validation-send.test.ts` (step 12 from a G1 decision),
+`apps/worker/src/jobs/timers/timers.db.test.ts` (expiry pauses queued links). Open: validation tasks have no authoring
+endpoint (PQ-13); the retried task takes the next free key (PQ-15).
+
+**As built (Wave 3).** The flow above holds with these differences:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Jonas as Jonas Klein (pilot owner)
+  participant API
+  participant DB
+  participant Worker
+  participant Sim as Simulated Jira (sim schema)
+  Jonas->>API: POST /me/cases/ME-104/pilot-plan/activate
+  API->>DB: plan version committed + current, task set (owner = plan version, authorized by G2), outcome review v1
+  Jonas->>API: POST /me/task-sets/:id/previews
+  API->>DB: task_sync_preview (content hash, 30 min) + links in_preview with their stable keys
+  Jonas->>API: POST /me/task-sets/:id/sync {previewId, previewHash}
+  API->>DB: lock task set, 6 links sending + 6 outbox rows (authorization_ref.gateRequestId = G2) + jobs, one tx
+  loop each due row (dispatch job or minute sweep)
+    Worker->>DB: tx 1 lock row, re-check connection, approval (shared rule), plan current, sender role; lease 60 s
+    alt attempts > 0 or Checking
+      Worker->>Sim: findByIdempotencyKey(key) first
+    end
+    Worker->>Sim: createTask(key) outside any transaction
+    Worker->>DB: tx 3 record Confirmed (key) or Failed / Checking / retry_scheduled, audit + analytics
+  end
+  Note over Worker,DB: sweep moves expired leases to Checking, searches paused-while-Checking rows once, resumes paused_connector after reconnect
+  Jonas->>API: POST /me/task-sets/:id/retry (failed only, same keys, payload from the fixed mapping)
+  Worker->>Sim: createTask(same key) → next free key (PIL-n)
+```
+
 #### UI walkthrough (WF-07)
 
 | Step | Who | Screen | Route |
@@ -681,6 +788,15 @@ neutral result glyph (never red, D-066), recommendation marked "RECOMMENDATION �
 decision, "Request extension €[cap]" with its own cap (the placeholder is allowed, D-068), the X request after a
 reload (`extensionRequest`), "Request scale approval" disabled with the unmet G3 preconditions. Tests:
 `OutcomesScreen.test.tsx`, `AdminScreen.test.tsx` (History), `e2e/ws8d-execute-review.spec.ts` (steps 25–28, 30).
+
+**Build status (Wave 3, 2026-10-09):** Implemented. API: `apps/api/src/modules/me/outcomes/` (append-only observations with period
+and source compared with the approved G2 snapshot's targets, a stated result only for non-numeric thresholds, D-081;
+review draft with If-Match on `rowVersion`; decision via the case machine; `outcomes.requestExtension` → X1 with the
+€[cap] placeholder when the cap is null, the only `extension_requested`, D-071; `extensionRequest` on the review),
+`apps/api/src/modules/me/gates/` (G3 refused while unmet, four blockers, D-039), `apps/api/src/modules/platform/reviews/`, `apps/api/src/modules/platform/work/`
+(task `rowVersion`), `apps/api/src/modules/me/budget/`. Tests: `me/outcomes/outcomes.db.test.ts` (steps 25–27), `me/gates/gates.db.test.ts`
+(step 28), `platform/reviews/reviews.db.test.ts`, `platform/work/work.db.test.ts`, `me/budget/budget.db.test.ts`.
+Gap: `readiness` is always empty (no table).
 
 #### UI walkthrough (WF-08)
 
@@ -764,6 +880,49 @@ its run job.
 `?run=`). The run itself, its checkpoints and proposals wait for WS5. Tests: `ThesisScreen.test.tsx`,
 `AdminScreen.test.tsx`.
 
+**Build status (Wave 3, 2026-10-09):** Implemented with the fixture provider; the Claude provider is tested only
+against a mocked client. Code: `packages/ai/src/` (harness, fixture and Claude providers, tool gateway with seven
+read-only tools, skill loader, output checks, untrusted wrapping), `apps/worker/src/jobs/analysis/` (`analysis.run`,
+Postgres run store with atomic step + checkpoint commits, DB-backed tool handlers with the requester's access),
+`apps/api/src/modules/analysis/` (nine endpoints; `AnalysisRun.output`, D-081), `skills/*` (ten skills with fixtures, schemas, evals),
+`evals/` (smoke: 20 cases, 14 suites). Tests: `apps/worker/src/jobs/analysis/run.db.test.ts` (checkpoint and resume
+after a restart reuse tool results; budget → partial; provider error → failed "Stopped — your work is saved"),
+`apps/worker/src/jobs/analysis/gateway.db.test.ts` (SRC-030 denied · not summarised; injected instructions do
+nothing), `analysis/analysis.db.test.ts` (AI down), `analysis/proposals.db.test.ts` (step 26: recommendation is not a
+decision), `analysis/discovery.db.test.ts`, `apps/api/test/db/joint/proposal-to-records.test.ts`, `pnpm evals:smoke`.
+
+**As built (Wave 3).** Differences from the diagram above: the request answers 202 with the job enqueued in the same
+transaction; the worker rebuilds the provider request from the persisted checkpoint every turn and commits each step
+atomically with it (a cancelled run refuses the commit); a tool budget reached ends the run `partial`, while time,
+cost or token budgets end it `failed` and resumable; accepting a claim adds an **AI draft** claim through WS4a's
+writer and a person still accepts it as a fact (D-076).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Maya as Maya Rao
+  participant API
+  participant DB
+  participant Worker as Worker (analysis.run)
+  participant Prov as Provider (fixture default)
+  participant GW as Tool gateway
+  Maya->>API: POST /me/cases/ME-104/analysis-runs {skill, goal}
+  API->>DB: agent_run queued + graphile job (same tx), audit analysis_run.requested
+  API-->>Maya: 202 Queued
+  Worker->>DB: running (system actor), checkpoint v1
+  loop each turn (rebuilt from the checkpoint)
+    Worker->>Prov: request (instructions, case context, stored results, untrusted evidence blocks)
+    Prov-->>Worker: tool calls or submit_output
+    Worker->>GW: allowlist → budget → tenant + requester access → schema → entitlements
+    Worker->>DB: one tx: step row, tool_call (redacted args + hash), usage, checkpoint
+  end
+  Worker->>DB: validated output → proposals (uncited → unknown), run completed / partial
+  Maya->>API: POST /me/proposals/:id/decision {accept, editedPayload}
+  API->>DB: createClaimFromProposal → claim proposed (origin ai_edited), proposal edited_and_accepted
+  Maya->>API: POST /me/claims/:id/accept
+  API->>DB: claim accepted by Maya (a fact only now)
+```
+
 #### UI walkthrough (WF-09)
 
 | Step | Who | Screen | Route |
@@ -836,6 +995,11 @@ boundary; restricted ("Restricted source · no excerpt shown", Request access, n
 deleted with provenance and fingerprint; superseded with "Open SRC-014"; stale; fact / inference / assumption
 panel; Challenge, Mark stale, Replace, Inspect impacted cases ("Cases you cannot access are not listed or
 counted."). Tests: `EvidenceScreen.test.tsx`, `lib/api-client.test.ts`, `e2e/ws8d-execute-review.spec.ts` (S13).
+
+**Build status (Wave 3, 2026-10-09):** Implemented. API as in Wave 1 (`apps/api/src/modules/platform/evidence/`); the analysis
+gateway now applies the same entitlement rules in the worker (`apps/worker/src/jobs/analysis/access.ts`; a shared module
+is CR-WS5-1, deferred with a parity test to write). Tests: the evidence DB suites,
+`apps/worker/src/jobs/analysis/gateway.db.test.ts`.
 
 #### UI walkthrough (WF-10)
 
