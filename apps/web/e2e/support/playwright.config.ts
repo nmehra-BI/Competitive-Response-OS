@@ -1,5 +1,6 @@
 /**
- * Playwright config for apps/web (journey, variants, a11y). Run: `pnpm test:e2e`.
+ * Playwright config for apps/web (journey, variants, a11y) on the MSW mocks. Run: `pnpm test:e2e`.
+ * The real-stack project (API + worker + seeded Postgres) is `playwright.real.config.ts`.
  *
  * - E2E_BASE_URL set → test that running app (CI: real API + seeded aster-start).
  * - otherwise → start Vite on 5174. With E2E_MOCKS=1 (default when no API is reachable) the app
@@ -18,6 +19,8 @@ const port = Number(process.env.E2E_PORT ?? 5174);
 export default defineConfig({
   testDir: resolve(here, '..'),
   testMatch: '**/*.spec.ts',
+  // Real-stack specs run in the `real` project (playwright.real.config.ts, D-092).
+  testIgnore: ['**/aster-journey.spec.ts', '**/real/**'],
   fullyParallel: !mocks, // mock state lives per browser page; parallel is fine, but keep runs deterministic
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

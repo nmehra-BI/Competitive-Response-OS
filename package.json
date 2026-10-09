@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:db": "vitest run --project db",
     "test:e2e": "pnpm --filter @growth-os/web run test:e2e",
+    "test:e2e:real": "pnpm --filter @growth-os/web run test:e2e:real",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
