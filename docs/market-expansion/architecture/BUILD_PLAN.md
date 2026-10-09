@@ -210,7 +210,7 @@ analytics. Times follow the fixture journey moments.
 | 25 | Jonas | Record actuals: 3 of 4 paid use (billing), effort above assumption (effort log), buyer fit mixed | Not met · Not met · Inconclusive with periods and sources; `outcome_recorded` |
 | 26 | Maya | Outcomes: recommendation "Revise and extend validation" with causal limitations | Recommendation card marked "not a decision" |
 | 27 | Elena | Record decision Revise and extend; Maya requests extension €[cap] (placeholder) | Decision recorded; stage Validation; X1 Awaiting decision; `extension_requested` |
-| 28 | Maya | Try "Request scale approval" | Disabled: "G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist scale-readiness review incomplete"; API `PRECONDITIONS_UNMET` |
+| 28 | Maya | Try "Request scale approval" | Disabled: "G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget stated"; the "Why?" list shows all four blockers; API `PRECONDITIONS_UNMET` with four `blockers` (interim per decisions.md D-039, open product question PQ-1) |
 | 29 | Admin | S14: authority matrix shows "No G3 approver… Authority gap"; diagnostics show tool events only | Admin cannot approve any gate (`FORBIDDEN`) |
 | 30 | Any | History tab | Every step above appears once in audit order with actor and version |
 

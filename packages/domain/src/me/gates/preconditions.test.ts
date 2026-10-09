@@ -175,6 +175,27 @@ describe('PreconditionEvaluator', () => {
     ).toBe('blocked');
   });
 
+  it('G3 with honest step-28 facts lists every unmet precondition (D-039 interim)', () => {
+    // At step 28 no scale budget is requested and economics/capacity were not refreshed after the pilot.
+    const e = evaluateGate({
+      ...g3Aster,
+      economicsUpdatedAfterPilot: false,
+      capacityReviewed: false,
+      scope: { amount: null, currency: null },
+    });
+    expect(e.allMet).toBe(false);
+    expect(e.blockers.map((b) => b.key)).toEqual([...ME_GATES.G3.preconditionKeys]);
+    expect(e.summary).toBe(
+      'G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget stated',
+    );
+    expect(e.blockers.map((b) => b.message)).toEqual([
+      'Demand threshold · 3 of 4 met; 4 of 4 required',
+      'Specialist scale-readiness review · incomplete',
+      'Economics and capacity · not updated after the pilot',
+      'Scale budget · not stated',
+    ]);
+  });
+
   it('G3 passes only when the demand threshold is met AND a specialist signs for scale', () => {
     const met = asterTargets.map((t) =>
       t.metricKey === 'paid_use_continuation' ? { ...t, observedValue: '4', result: 'met' as const } : t,

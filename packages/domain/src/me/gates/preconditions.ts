@@ -126,7 +126,8 @@ const ok = (): KeyResult => ({ met: true, detail: null, short: null });
 const no = (detail: string, short?: string): KeyResult => ({
   met: false,
   detail,
-  short: short ?? detail.charAt(0).toLowerCase() + detail.slice(1),
+  // The summary joins clauses with "; ", so a sentence's final full stop is dropped.
+  short: short ?? (detail.charAt(0).toLowerCase() + detail.slice(1)).replace(/\.$/, ''),
 });
 
 const text = (v: string | null | undefined) => typeof v === 'string' && v.trim().length > 0;
@@ -285,13 +286,23 @@ export const PRECONDITION_KEYS: Readonly<Record<string, KeyFn>> = {
       ? ok()
       : no('Specialist scale-readiness review · incomplete', 'specialist scale-readiness review incomplete'),
   ),
+  // Copy follows the fixture's "<what> · <state>" pattern (D-039: every unmet precondition is listed).
   updated_economics_and_capacity: forGate<G3Facts>('G3', (f) => {
-    if (!f.economicsUpdatedAfterPilot) return no('Update the economics with pilot actuals.');
-    if (!f.capacityReviewed) return no('Review capacity for scale.');
+    if (!f.economicsUpdatedAfterPilot && !f.capacityReviewed)
+      return no(
+        'Economics and capacity · not updated after the pilot',
+        'economics and capacity not updated after the pilot',
+      );
+    if (!f.economicsUpdatedAfterPilot)
+      return no('Economics · not updated with pilot actuals', 'economics not updated with pilot actuals');
+    if (!f.capacityReviewed)
+      return no('Capacity for scale · not reviewed', 'capacity for scale not reviewed');
     return ok();
   }),
   approved_scale_budget: forGate<G3Facts>('G3', (f) =>
-    positiveAmount(f.scope.amount, f.scope.currency) ? ok() : no('State the scale budget.'),
+    positiveAmount(f.scope.amount, f.scope.currency)
+      ? ok()
+      : no('Scale budget · not stated', 'no scale budget stated'),
   ),
 
   // --- X -------------------------------------------------------------------
