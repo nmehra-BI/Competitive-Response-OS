@@ -18,6 +18,8 @@ import { searchHandlers } from './platform/search';
 import { assumptionHandlers } from './me/assumptions';
 import { caseHandlers } from './me/cases';
 import { comparisonHandlers } from './me/comparisons';
+import { economicsHandlers } from './me/economics';
+import { lineageHandlers } from './me/lineage';
 import { mandateHandlers } from './me/mandates';
 import { opportunityHandlers } from './me/opportunities';
 import { sizingHandlers } from './me/sizing';
@@ -36,4 +38,6 @@ export const handlers: HandlerMap = {
   ...mandateHandlers,
   ...opportunityHandlers,
   ...sizingHandlers,
+  ...economicsHandlers,
+  ...lineageHandlers,
 };
