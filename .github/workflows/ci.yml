@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgres://me_app:me_app_dev@localhost:5432/growth_os
+      DATABASE_OWNER_URL: postgres://me_owner:me_owner_dev@localhost:5432/growth_os
+      DATABASE_WORKER_URL: postgres://me_worker:me_worker_dev@localhost:5432/growth_os
+      ANALYSIS_PROVIDER: fixture
+      AUTH_MODE: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Create database and roles
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE me_owner LOGIN PASSWORD 'me_owner_dev' NOSUPERUSER NOBYPASSRLS;
+          CREATE ROLE me_app LOGIN PASSWORD 'me_app_dev' NOSUPERUSER NOBYPASSRLS;
+          CREATE ROLE me_worker LOGIN PASSWORD 'me_worker_dev' NOSUPERUSER NOBYPASSRLS;
+          CREATE DATABASE growth_os OWNER me_owner;
+          SQL
+          psql -h localhost -U postgres -d growth_os -c "GRANT CONNECT ON DATABASE growth_os TO me_app, me_worker; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+      - run: pnpm db:migrate
+      - run: pnpm test:db
+      - run: pnpm evals:smoke
+      - run: pnpm --filter @growth-os/web build

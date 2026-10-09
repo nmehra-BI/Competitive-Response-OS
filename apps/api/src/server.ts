@@ -1,6 +1,6 @@
 /**
  * API server. Registers every endpoint from the frozen registry. A module replaces the default
- * "not implemented" handler by exporting a handler map keyed by operation id (see modules/README.md).
+ * "not implemented" handler by exporting a handler map keyed by operation id (see modules/index.ts).
  */
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
