@@ -4,9 +4,12 @@
  * the hashed snapshots and tenant isolation between two seeded tenants.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { EconomicsOutput, SizingOutput } from '@growth-os/contracts';
+import { ECONOMICS_ENGINE_VERSION, SIZING_ENGINE_VERSION } from '@growth-os/domain';
 import { expectedSizing, gates, people, sources } from '@growth-os/fixtures-aster';
 import { createDb, sql, withTenant, type Db } from '../src';
 import { AlreadySeededError, randomRemap, seedAster, type SeedResult } from '../src/seed';
+import { economicsGoldenMismatches, sizingGoldenMismatches } from '../src/seed/outputs';
 
 let db: Db;
 let start: SeedResult;
@@ -163,10 +166,16 @@ describe('aster-demo', () => {
     await inTenant(demo, async (tx) => {
       const calc = await tx
         .selectFrom('platform.calculation_result')
-        .select(['engine', 'output', 'blocked'])
+        .select(['engine', 'engine_version', 'output', 'blocked'])
         .orderBy('engine')
         .execute();
       expect(calc.map((x) => x.engine)).toEqual(['economics', 'sizing']);
+      // Produced by the real WS2 engines (no "+aster-golden" stand-in) and equal to every golden value.
+      expect(calc.map((x) => x.engine_version)).toEqual([ECONOMICS_ENGINE_VERSION, SIZING_ENGINE_VERSION]);
+      expect(calc.every((x) => !x.blocked)).toBe(true);
+      expect(economicsGoldenMismatches(EconomicsOutput.parse(calc[0]!.output))).toEqual([]);
+      expect(sizingGoldenMismatches(SizingOutput.parse(calc[1]!.output))).toEqual([]);
+      expect(SizingOutput.parse(calc[1]!.output).lineage.length).toBeGreaterThan(0);
       const sizing = calc[1]!.output as {
         ladder: { tam: { value: { amount: string } }; sam: { value: { amount: string } } };
       };

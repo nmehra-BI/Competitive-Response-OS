@@ -433,7 +433,7 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
     .execute();
 
   const econInput = R.json(economicsV2Input);
-  const econ = await economicsRun(econInput, economicsMeta.exclusionsText);
+  const econ = await economicsRun(econInput);
   const econCalcId = randomUUID();
   await tx
     .insertInto('platform.calculation_result')
