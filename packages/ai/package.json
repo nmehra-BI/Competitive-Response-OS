@@ -1,0 +1,19 @@
+{
+  "name": "@growth-os/ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bounded analysis agent: provider adapter (fixture default, Claude by env), skill loader, read-only tool gateway contract, harness with budgets and checkpoints.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "evals:smoke": "tsx ../../evals/src/run.ts --provider fixture --suite smoke"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}
