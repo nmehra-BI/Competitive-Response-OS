@@ -1,0 +1,38 @@
+[
+  {
+    "type": "final",
+    "output": {
+      "summary": "One partner-led experiment tests adoption and price with paid commitments; decision rules cover every outcome.",
+      "proposals": [
+        {
+          "type": "experiment_design",
+          "assumptionIds": ["${id:key=ASM-01}", "${id:key=ASM-04}"],
+          "hypothesis": "At least 4 of 20 selected sites sign a paid pilot commitment at the stated annual price, and at least 8 complete a discovery interview.",
+          "method": "Partner-led outreach and discovery interviews after G1 approval",
+          "sampleText": "20 sites from the reachable pool, selected by size and process, via the approved partner channel",
+          "metrics": [
+            { "name": "Completed discovery interviews", "thresholdText": "≥ 8" },
+            { "name": "Paid pilot commitments", "thresholdText": "≥ 4" }
+          ],
+          "decisionRules": [
+            { "condition": "≥ 4 commitments", "action": "prepare G2 pilot request" },
+            { "condition": "2–3 commitments", "action": "revise thesis and offer" },
+            { "condition": "< 2 commitments", "action": "stop or redesign" }
+          ],
+          "couldFalsify": "Fewer than 2 paid commitments from 20 qualified sites would contradict 20% adoption at this price."
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "A selected sample of 20 sites cannot establish the adoption rate of the whole pool; it can only falsify it.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": ["Response rate of partner-led outreach"],
+      "notChecked": ["Specialist requirements (separate review)"]
+    }
+  }
+]

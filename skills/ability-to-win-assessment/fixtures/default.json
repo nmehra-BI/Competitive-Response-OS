@@ -1,0 +1,54 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "atw-1", "tool": "portfolio.get_product", "args": {} },
+      { "callId": "atw-2", "tool": "crm.get_authorized_accounts", "args": { "countryCode": "DE" } },
+      { "callId": "atw-3", "tool": "evidence.get", "args": { "sourceKey": "SRC-021" } }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Five specialist questions drafted. The CRM is not connected, so installed-base overlap is unknown. Regulatory scope is an open blocker until the specialist signs.",
+      "proposals": [
+        {
+          "type": "feasibility_question",
+          "dimension": "Regulatory",
+          "question": "Which food-safety and water-discharge certifications must the monitoring system hold before a pilot at a German food plant, and does the current certificate cover them?"
+        },
+        {
+          "type": "feasibility_question",
+          "dimension": "Product fit",
+          "question": "Which dashboard and alert changes does a food-processing water workflow need compared with current customers?"
+        },
+        {
+          "type": "feasibility_question",
+          "dimension": "Channel",
+          "question": "Which partner regions cover German food plants, and who owns installation at each site?"
+        },
+        {
+          "type": "feasibility_question",
+          "dimension": "Operations",
+          "question": "How many installation and support hours per site can operations commit during a pilot?"
+        },
+        {
+          "type": "feasibility_question",
+          "dimension": "Competition",
+          "question": "Which incumbent monitoring vendors already serve the targeted sites, and on what contract terms?"
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Regulatory scope is an open blocker until the specialist review is signed.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": ["Installed-base overlap: CRM not connected", "Specialist requirements"],
+      "notChecked": ["CRM accounts", "Competitor contracts"]
+    }
+  }
+]

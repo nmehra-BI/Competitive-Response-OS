@@ -1,0 +1,12 @@
+[
+  {
+    "id": "pp-default",
+    "skill": "pilot-plan",
+    "subject": "ME-104",
+    "suites": ["provenance-coverage", "material-unknowns"],
+    "expect": {
+      "status": "completed",
+      "proposalTypes": ["pilot_task", "pilot_task", "pilot_task", "pilot_task", "pilot_task", "message_draft"]
+    }
+  }
+]

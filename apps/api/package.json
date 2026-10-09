@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.0.1",
     "@fastify/multipart": "^9.4.0",
+    "@growth-os/ai": "workspace:*",
     "@growth-os/connectors": "workspace:*",
     "@growth-os/contracts": "workspace:*",
     "@growth-os/db": "workspace:*",

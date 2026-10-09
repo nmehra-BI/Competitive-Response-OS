@@ -1,0 +1,12 @@
+[
+  {
+    "id": "or-default",
+    "skill": "outcome-review",
+    "subject": "ME-104",
+    "suites": ["provenance-coverage", "material-unknowns", "unsupported-precision"],
+    "expect": {
+      "status": "completed",
+      "proposalTypes": ["outcome_review_draft", "claim"]
+    }
+  }
+]

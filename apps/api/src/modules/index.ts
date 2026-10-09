@@ -9,6 +9,7 @@
  *   analysis/   analysis runs and proposals                                                  (WS5)
  */
 import type { HandlerMap } from '../server';
+import { analysisHandlers } from './analysis';
 import { adminHandlers } from './platform/admin';
 import { auditHandlers } from './platform/audit';
 import { authHandlers } from './platform/auth';
@@ -62,4 +63,5 @@ export const handlers: HandlerMap = {
   ...reviewHandlers,
   ...workHandlers,
   ...taskSyncHandlers,
+  ...analysisHandlers,
 };

@@ -1,0 +1,44 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "mbd-1", "tool": "portfolio.get_product", "args": {} },
+      { "callId": "mbd-2", "tool": "evidence.get", "args": { "sourceKey": "SRC-014" } }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Boundary proposal: count food-processing sites in Germany that run a process-water treatment step; annual monitoring spend per site.",
+      "proposals": [
+        {
+          "type": "market_boundary",
+          "marketUnit": "Annual spend on water monitoring per food-processing site",
+          "populationUnit": "site",
+          "includes": ["German food-processing sites with a process-water treatment step"],
+          "excludes": ["Beverage bottlers", "One-time installation spend", "Sites outside Germany"]
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "About 5,000 food-processing sites in Germany operate a process-water treatment step.",
+            "kind": "evidence",
+            "evidenceIds": ["${passage:SRC-014}"],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Sites, not companies, are the buying unit: sites of one parent buy separately.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": ["Whether parent companies centralise purchasing for some sites"],
+      "notChecked": ["Trade registry records", "CRM accounts"]
+    }
+  }
+]

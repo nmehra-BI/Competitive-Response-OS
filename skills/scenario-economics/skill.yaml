@@ -1,24 +1,27 @@
 # Skill bundle (D-019). Skills confer no permissions: tools are still checked by the gateway.
 key: scenario-economics
-version: 0.1.0
+version: 1.0.0
 owner: WS5 (AI/analysis) with domain reviewer sign-off
-status: stub
+status: active
+subject: case
 purpose: >-
-  Propose scenario drivers with bases and run the deterministic economics tool. Keeps one-time money separate.
+  Explain the downside, base and upside economics from the deterministic engine and state what must be
+  true for each. Recurring and one-time money stay separate.
 screens: [S08]
-prd: [ME-07]
-allowed_tools: [evidence.get, economics.calculate]
-output_schema: SkillOutput # @growth-os/contracts entities/analysis.ts
-allowed_proposal_types: [assumption_value, claim]
+prd: [ME-08]
+allowed_tools: [economics.calculate, sizing.calculate, evidence.get]
+output_schema: SkillOutput # see output.schema.json
+allowed_proposal_types: [claim, assumption_value]
 budget:
-  wall_time_ms: 300000 # PRD §13: bounded initial brief within 5 minutes
-  max_tool_calls: 40
-  max_input_tokens: 120000
-  max_output_tokens: 8000
+  wall_time_ms: 300000
+  max_tool_calls: 30
+  max_input_tokens: 100000
+  max_output_tokens: 6000
+  max_cost_micros: 1500000
 model: config:ANALYSIS_MODEL # configuration only; never an identifier in code
 never:
   - approve, decide, sign or record outcomes
-  - present an assumption or inference as evidence
-  - cite an evidence id that was not returned to this run
-  - use restricted or unentitled source content
+  - sum, subtract or compare per-year money with one-time money
+  - state cash flow or payback (not available in the MVP)
+  - compute a number in prose instead of calling economics.calculate
   - produce probability or confidence scores

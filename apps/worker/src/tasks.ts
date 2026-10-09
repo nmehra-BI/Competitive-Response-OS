@@ -5,6 +5,7 @@
  */
 import type { TaskList } from 'graphile-worker';
 import type { Db, ObjectStore } from '@growth-os/db';
+import { analysisTasks } from './jobs/analysis';
 import { analyticsTasks } from './jobs/analytics';
 import { evidenceTasks } from './jobs/evidence';
 import { createTimerTasks, type TimerOptions } from './jobs/timers';
@@ -22,5 +23,6 @@ export function createTaskList(deps: WorkerDeps): TaskList {
     ...analyticsTasks({ db: deps.db }),
     ...createTimerTasks(deps.db, deps.timers),
     ...createOutboxTasks(deps.db),
+    ...analysisTasks({ db: deps.db }),
   };
 }

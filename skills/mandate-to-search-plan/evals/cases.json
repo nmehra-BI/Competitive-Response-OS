@@ -1,0 +1,72 @@
+[
+  {
+    "id": "msp-default",
+    "skill": "mandate-to-search-plan",
+    "subject": "MD-21",
+    "suites": [
+      "citation-validity",
+      "provenance-coverage",
+      "source-faithfulness",
+      "discovery-relevance",
+      "duplicate-population",
+      "material-unknowns"
+    ],
+    "expect": {
+      "status": "partial",
+      "proposalTypes": [
+        "search_plan",
+        "opportunity_candidate",
+        "opportunity_candidate",
+        "opportunity_candidate"
+      ],
+      "duplicateOf": [
+        {
+          "name": "German dairy plants",
+          "key": "OPP-07"
+        },
+        {
+          "name": "German food-processing plants",
+          "key": "OPP-07"
+        }
+      ],
+      "curatedCandidates": ["German food-processing plants", "German dairy plants"],
+      "manualBaselineRecall": 0.5
+    }
+  },
+  {
+    "id": "msp-budget",
+    "skill": "mandate-to-search-plan",
+    "subject": "MD-21",
+    "fixture": "budget",
+    "budget": {
+      "maxToolCalls": 2
+    },
+    "suites": ["citation-validity", "provenance-coverage"],
+    "expect": {
+      "status": "partial"
+    }
+  },
+  {
+    "id": "msp-repair",
+    "skill": "mandate-to-search-plan",
+    "subject": "MD-21",
+    "fixture": "repair",
+    "suites": ["malformed-output"],
+    "expect": {
+      "status": "completed",
+      "proposalTypes": ["search_plan"]
+    }
+  },
+  {
+    "id": "msp-malformed",
+    "skill": "mandate-to-search-plan",
+    "subject": "MD-21",
+    "fixture": "malformed",
+    "suites": ["malformed-output"],
+    "expect": {
+      "status": "failed",
+      "errorCode": "malformed_output",
+      "proposalTypes": []
+    }
+  }
+]

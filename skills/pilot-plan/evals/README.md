@@ -1,1 +1,3 @@
-Labelled evaluation cases for this skill (see evals/README.md for the format and metrics).
+# Evaluation cases · pilot-plan
+
+`cases.json` lists this skill's cases for `pnpm evals:smoke` (format: `evals/README.md`).

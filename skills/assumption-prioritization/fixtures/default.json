@@ -1,0 +1,40 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [{ "callId": "ap-1", "tool": "economics.calculate", "args": "${json:subject.economicsInput}" }]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Adoption, price and reachable pool decide the case; adoption is untested and disputed, so it goes first.",
+      "proposals": [
+        {
+          "type": "assumption_priority",
+          "assumptionId": "${id:key=ASM-01}",
+          "suggestedSensitivity": "high",
+          "reason": "Base adoption sets SOM and every scenario; it is weakly evidenced and disputed."
+        },
+        {
+          "type": "assumption_priority",
+          "assumptionId": "${id:key=ASM-04}",
+          "suggestedSensitivity": "high",
+          "reason": "Annual price per site scales revenue and contribution in every scenario."
+        },
+        {
+          "type": "assumption_priority",
+          "assumptionId": "${id:key=ASM-05}",
+          "suggestedSensitivity": "medium",
+          "reason": "The reachable pool bounds SOM; partner coverage is not yet confirmed site by site."
+        },
+        {
+          "type": "assumption_priority",
+          "assumptionId": "${id:key=ASM-08}",
+          "suggestedSensitivity": "low",
+          "reason": "Capacity only binds in the upside scenario."
+        }
+      ],
+      "unknowns": ["Specialist requirements have no evidence yet"],
+      "notChecked": ["Correlation between price and adoption"]
+    }
+  }
+]

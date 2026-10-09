@@ -16,7 +16,7 @@ describe('cronItemsFrom', () => {
 });
 
 describe('worker task list', () => {
-  it('registers the WS1 evidence/analytics tasks, the WS3 timers and the WS6 outbox, and schedules all of them', async () => {
+  it('registers the WS1 evidence/analytics tasks, the WS3 timers, the WS5 analysis run and the WS6 outbox, and schedules all of them', async () => {
     const { createTaskList } = await import('./tasks');
     const { createDb, createObjectStore } = await import('@growth-os/db');
     // createDb does not connect until a query runs; no database is needed here.
@@ -25,6 +25,7 @@ describe('worker task list', () => {
     const names = Object.keys(taskList).sort();
     expect(names).toEqual(
       [
+        JOBS.analysisRun, // WS5
         JOBS.analyticsFlush,
         JOBS.evidenceFreshness,
         JOBS.evidenceIngest,
