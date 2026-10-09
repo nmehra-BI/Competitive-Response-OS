@@ -210,6 +210,8 @@ export async function buildPackage(
     viewerId: string;
     version?: number;
     compareTo?: number;
+    /** The version this viewer last opened and when (`platform.gate_request_view`), if ever. */
+    lastSeen?: { version: number; viewedAt: Date } | null;
   },
 ): Promise<DecisionPackageView | null> {
   const { gate, caseRow, subject, viewerId } = input;
@@ -324,11 +326,16 @@ export async function buildPackage(
     }
   }
 
-  // "Changes since": against the requested version, else the snapshot this one superseded.
+  // "Changes since" (D-078): against the requested version; else against the version this viewer last
+  // opened (nothing when it is this one); a first-time viewer sees the changes from the snapshot this
+  // one superseded.
   let changes: string[] = [];
+  const seen = input.lastSeen ?? null;
   const against = input.compareTo
     ? snaps.find((s) => s.version === input.compareTo)
-    : snaps.find((s) => s.superseded_by_snapshot_id === snap.id);
+    : seen
+      ? snaps.find((s) => s.version === seen.version)
+      : snaps.find((s) => s.superseded_by_snapshot_id === snap.id);
   if (against && against.id !== snap.id) changes = diffChanges(contentOf(against), content).map(changeLine);
 
   return {
@@ -362,6 +369,7 @@ export async function buildPackage(
       receivedApprovals: received,
     },
     changesSinceViewerLastSaw: changes,
+    changesSince: seen ? { sinceVersion: seen.version, viewedAt: seen.viewedAt.toISOString() } : null,
     staleBanner: snap.status === 'stale' ? staleBanner(snap.stale_reason ?? 'an input changed') : null,
     gateHistory,
   };

@@ -519,6 +519,12 @@ export const gateHandlers: HandlerMap = {
     load: (ctx, tx) => loadGateCtx(tx, ctx.params.id),
     authorize: (ctx, g) => gateVisible(ctx.identity.subject, g, 'case.read_brief'),
     handle: async (ctx, { tx }, g) => {
+      const seen = await tx
+        .selectFrom('platform.gate_request_view')
+        .select(['snapshot_version', 'viewed_at'])
+        .where('gate_request_id', '=', g.gate.id)
+        .where('user_id', '=', ctx.userId)
+        .executeTakeFirst();
       const view = await buildPackage(tx, {
         gate: g.gate,
         caseRow: g.caseRow,
@@ -526,8 +532,28 @@ export const gateHandlers: HandlerMap = {
         viewerId: ctx.userId,
         version: ctx.query.version,
         compareTo: ctx.query.compareTo,
+        lastSeen: seen ? { version: seen.snapshot_version, viewedAt: seen.viewed_at } : null,
       });
       if (!view) throw notFound();
+      // Read receipt (D-078): the current version a person opened, for the next "Changes since".
+      // Not business state and never audited; older versions opened on purpose do not move it back.
+      if (ctx.identity.kind === 'human' && !ctx.query.version)
+        await tx
+          .insertInto('platform.gate_request_view')
+          .values({
+            tenant_id: tenantIdSql,
+            gate_request_id: g.gate.id,
+            user_id: ctx.userId,
+            snapshot_version: view.snapshot.version,
+            viewed_at: ctx.now,
+          })
+          .onConflict((oc) =>
+            oc.columns(['gate_request_id', 'user_id']).doUpdateSet({
+              snapshot_version: view.snapshot.version,
+              viewed_at: ctx.now,
+            }),
+          )
+          .execute();
       return view;
     },
   }),
