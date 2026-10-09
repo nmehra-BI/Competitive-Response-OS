@@ -147,6 +147,23 @@ export const taskSyncHandlers: HandlerMap = {
         } catch (e) {
           if (!(e instanceof ConnectorError)) throw e;
           connectionStatus = e.kind === 'token_expired' ? 'expired' : 'unavailable';
+          // A connection-level failure seen by the dry run is recorded (as the worker does on send), so
+          // S11 and S14 show "connection expired" and offer the CSV export (D-104).
+          if (e.connectionLevel) {
+            await t.tx
+              .updateTable('platform.connection')
+              .set({ status: connectionStatus })
+              .where('id', '=', s.connection!.id)
+              .execute();
+            await t.audit({
+              action: 'connection.status_changed',
+              objectType: 'connection',
+              objectId: s.connection!.id,
+              caseId: s.kase.id,
+              summary: `${s.connection!.name}: connected → ${connectionStatus} (seen at preview)`,
+              details: { from: 'connected', to: connectionStatus },
+            });
+          }
         }
       }
       if (connectionStatus !== 'connected')

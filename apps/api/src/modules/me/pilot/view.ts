@@ -343,13 +343,23 @@ export async function pilotView(
     tx,
     conds.flatMap((x) => [x.owner_user_id, x.added_by]),
   );
-  const setId = (current ?? draft)?.task_set_id ?? null;
+  // A scope-change version has no task set of its own until it is re-authorized: keep showing the
+  // plan's latest task set, whose sent tasks stay confirmed and unsent ones pause (never-rule 10).
+  const latestSet = await tx
+    .selectFrom('platform.task_set as s')
+    .innerJoin('me.pilot_plan_version as v', 'v.id', 's.owner_id')
+    .select('s.id')
+    .where('s.owner_type', '=', 'pilot_plan_version')
+    .where('v.pilot_plan_id', '=', plan.id)
+    .orderBy('v.version', 'desc')
+    .executeTakeFirst();
+  const setId = (current ?? draft)?.task_set_id ?? latestSet?.id ?? null;
   const taskSet = setId ? await taskSetView(tx, setId) : null;
   const act = await activationFacts(tx, plan, draft, now);
   const conn = taskSet?.connectionId
     ? await tx
         .selectFrom('platform.connection')
-        .select(['status', 'name'])
+        .select(['status', 'name', 'provider'])
         .where('id', '=', taskSet.connectionId)
         .executeTakeFirst()
     : undefined;
@@ -390,7 +400,8 @@ export async function pilotView(
       conn && conn.status !== 'connected'
         ? {
             status: conn.status as 'expired',
-            title: `${conn.name}: ${conn.status.replace(/_/g, ' ')}`,
+            // "Jira connection expired" (S11 prototype); the connection's own name is shown on S14.
+            title: `${conn.provider.startsWith('jira') ? 'Jira' : conn.name} connection ${conn.status.replace(/_/g, ' ')}`,
             body: 'Internal tasks continue. Reconnect the task tool or export CSV instead.',
           }
         : null,

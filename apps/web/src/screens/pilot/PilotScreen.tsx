@@ -1002,13 +1002,19 @@ function ScopeDialog({
   onDone: (n: string) => void;
 }) {
   const [text, setText] = useState('');
+  const [ceiling, setCeiling] = useState('');
   const [err, setErr] = useState<unknown>(null);
   const cmd = useCommand(API.pilot.requestScopeChange);
+  const ceilingOk = ceiling.trim() === '' || /^\d+(\.\d{1,2})?$/.test(ceiling.trim());
   const submit = async () => {
     try {
       await cmd.mutateAsync({
         params: { caseRef },
-        body: { description: text.trim(), requestedChanges: {} },
+        body: {
+          description: text.trim(),
+          // A new spend ceiling is a material change: the approval stops applying (D-087, never-rule 10).
+          requestedChanges: ceiling.trim() ? { budgetCeiling: Number(ceiling).toFixed(2) } : {},
+        },
       });
       onDone('Scope change requested · it needs a new authorization before anything changes.');
       onClose();
@@ -1024,8 +1030,8 @@ function ScopeDialog({
         <>
           <Button
             variant="primary"
-            disabled={!text.trim() || cmd.isPending}
-            disabledReason="Describe the change first."
+            disabled={!text.trim() || !ceilingOk || cmd.isPending}
+            disabledReason={!ceilingOk ? 'Enter the ceiling as an amount.' : 'Describe the change first.'}
             onClick={submit}
           >
             Request scope change
@@ -1040,6 +1046,18 @@ function ScopeDialog({
         Changing budget, sites or dates needs a new authorization. The current plan keeps running.
       </p>
       <TextAreaField label="What should change and why?" required value={text} onChange={setText} />
+      <label className="gos-field">
+        <span>
+          New budget ceiling (EUR) <span className="gos-field__hint">(optional)</span>
+        </span>
+        <input
+          className="gos-input"
+          inputMode="decimal"
+          value={ceiling}
+          aria-invalid={ceilingOk ? undefined : true}
+          onChange={(e) => setCeiling(e.target.value)}
+        />
+      </label>
       {err ? <ProblemBanner error={err} /> : null}
     </DialogFrame>
   );
