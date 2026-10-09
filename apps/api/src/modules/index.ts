@@ -20,6 +20,7 @@ import { caseHandlers } from './me/cases';
 import { comparisonHandlers } from './me/comparisons';
 import { mandateHandlers } from './me/mandates';
 import { opportunityHandlers } from './me/opportunities';
+import { sizingHandlers } from './me/sizing';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -34,4 +35,5 @@ export const handlers: HandlerMap = {
   ...comparisonHandlers,
   ...mandateHandlers,
   ...opportunityHandlers,
+  ...sizingHandlers,
 };

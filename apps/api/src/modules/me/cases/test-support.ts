@@ -4,7 +4,7 @@
  */
 import { API, type EndpointDef } from '@growth-os/contracts';
 import { withTenant, type Tx } from '@growth-os/db';
-import { assumptions as fixtureAssumptions, opportunities } from '@growth-os/fixtures-aster';
+import { assumptions as fixtureAssumptions, opportunities, sources as fixtureSources } from '@growth-os/fixtures-aster';
 import {
   call,
   createTestApp,
@@ -109,4 +109,54 @@ export async function registerAssumptions(w: World, tenant: string, caseKey: str
     ids[a.inputKey] = (res.json() as { id: string }).id;
   }
   return ids;
+}
+
+export const sourceId = (s: SeededTenant, key: string) => s.id(fixtureSources.find((x) => x.key === key)!.id);
+
+/** Step 6 setup: the sizing v2 inputs of the fixture entered through `sizing.saveDraft`. */
+export async function enterSizing(w: World, tenant: string, caseKey: string, asm: Record<string, string>) {
+  const maya = await w.cookie(tenant, 'maya');
+  const s = w.tenants[tenant]!;
+  let res = await api(w, API.sizing.saveDraft, maya, {
+    params: { caseRef: caseKey },
+    ifMatch: 0,
+    body: {
+      method: 'aggregate_overlap',
+      horizonYears: 3,
+      boundary: {
+        marketUnit: 'annual spend on water monitoring',
+        populationUnit: 'site',
+        currency: 'EUR',
+        priceYear: 2026,
+        annualizationMethod: null,
+      },
+      inputs: [
+        { inputKey: 'tam_site_count', value: '5000', unit: 'sites', sourceId: sourceId(s, 'SRC-014'), assumptionId: null },
+        ...(
+          [
+            ['annual_spend_per_site', 'currency_per_year_per_site'],
+            ['reachable_pool', 'sites'],
+            ['adoption_rate.downside', 'rate'],
+            ['adoption_rate.base', 'rate'],
+            ['adoption_rate.upside', 'rate'],
+            ['capacity', 'customers'],
+          ] as const
+        ).map(([k, unit]) => ({ inputKey: k, value: '0', unit, sourceId: null, assumptionId: asm[k]! })),
+      ],
+      cohorts: [
+        { id: null, name: 'Size-qualified', rule: '≥ size threshold', siteCount: 1400, sourceId: sourceId(s, 'SRC-014') },
+        { id: null, name: 'Process-qualified', rule: 'Uses the target water process', siteCount: 1100, sourceId: sourceId(s, 'SRC-021') },
+      ],
+    },
+  });
+  if (res.statusCode !== 200) throw new Error(`sizing draft ${res.statusCode} ${res.body}`);
+  const view = API.sizing.saveDraft.response.parse(res.json());
+  const [a, b] = view.draft!.cohorts;
+  res = await api(w, API.sizing.saveDraft, maya, {
+    params: { caseRef: caseKey },
+    ifMatch: view.draft!.rowVersion,
+    body: { overlaps: [{ cohortAId: a!.id, cohortBId: b!.id, overlapCount: 500 }] },
+  });
+  if (res.statusCode !== 200) throw new Error(`sizing overlaps ${res.statusCode} ${res.body}`);
+  return API.sizing.saveDraft.response.parse(res.json());
 }
