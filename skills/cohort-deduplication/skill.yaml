@@ -1,0 +1,24 @@
+# Skill bundle (D-019). Skills confer no permissions: tools are still checked by the gateway.
+key: cohort-deduplication
+version: 0.1.0
+owner: WS5 (AI/analysis) with domain reviewer sign-off
+status: stub
+purpose: >-
+  Identify duplicate cohorts and propose overlap by site identity. Never merges sites of separate buyers.
+screens: [S06]
+prd: [ME-05]
+allowed_tools: [evidence.get, crm.get_authorized_accounts, sizing.calculate]
+output_schema: SkillOutput # @growth-os/contracts entities/analysis.ts
+allowed_proposal_types: [cohort_dedup]
+budget:
+  wall_time_ms: 300000 # PRD §13: bounded initial brief within 5 minutes
+  max_tool_calls: 40
+  max_input_tokens: 120000
+  max_output_tokens: 8000
+model: config:ANALYSIS_MODEL # configuration only; never an identifier in code
+never:
+  - approve, decide, sign or record outcomes
+  - present an assumption or inference as evidence
+  - cite an evidence id that was not returned to this run
+  - use restricted or unentitled source content
+  - produce probability or confidence scores

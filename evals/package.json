@@ -1,0 +1,15 @@
+{
+  "name": "@growth-os/evals",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evaluation suites for the analysis skills (PRD §12). Smoke runs use the fixture provider.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@growth-os/ai": "workspace:*",
+    "@growth-os/contracts": "workspace:*"
+  }
+}

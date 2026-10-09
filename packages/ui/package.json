@@ -1,0 +1,27 @@
+{
+  "name": "@growth-os/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Growth OS design system: tokens ported from the approved prototype, number/label formatting rules, accessible components.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens/tokens.css"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*",
+    "decimal.js": "^10.4.3"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "react": "^18.3.1",
+    "@growth-os/fixtures-aster": "workspace:*"
+  }
+}
