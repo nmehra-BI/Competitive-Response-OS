@@ -25,6 +25,16 @@ export interface A11yOptions {
 }
 
 export async function axeViolations(page: Page, opts: A11yOptions = {}) {
+  // Let finite entrance animations (e.g. the lineage drawer's fade-in) settle: axe would otherwise
+  // measure contrast on half-transparent text.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished.catch(() => undefined)),
+    ),
+  );
   let builder = new AxeBuilder({ page }).withTags(WCAG_TAGS);
   for (const s of opts.include ?? []) builder = builder.include(s);
   for (const s of opts.exclude ?? []) builder = builder.exclude(s);

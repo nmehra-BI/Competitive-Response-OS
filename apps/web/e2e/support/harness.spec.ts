@@ -68,7 +68,8 @@ test('every route passes axe (WCAG 2.2 AA) for the operator persona', async ({
   loginAs,
   expectAccessible,
 }) => {
-  test.setTimeout(180_000); // one axe run per route; real screens take ~1–2 s each
+  // One full page load and one axe run per route; built screens (WS8) take ~1–2 s each.
+  test.setTimeout(180_000);
   await loginAs('maya');
   for (const [id, url] of Object.entries(ROUTE_SAMPLES)) {
     if (id === 'login') continue;

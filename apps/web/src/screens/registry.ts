@@ -27,4 +27,8 @@ export const SCREENS: Partial<Record<RouteId, ScreenComponent>> = {
   compare: lazy(() => import('./compare/CompareScreen')),
   myWork: lazy(() => import('./my-work/MyWorkScreen')),
   reviews: lazy(() => import('./reviews/ReviewsScreen')),
+  caseThesis: lazy(() => import('./thesis/ThesisScreen')),
+  caseSizing: lazy(() => import('./sizing/SizingScreen')),
+  caseFeasibility: lazy(() => import('./feasibility/FeasibilityScreen')),
+  caseEconomics: lazy(() => import('./economics/EconomicsScreen')),
 };

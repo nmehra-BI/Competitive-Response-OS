@@ -159,7 +159,10 @@ describe('MSW mocks', () => {
 
   it('unmocked endpoints answer like the skeleton API', async () => {
     session.signIn(people.maya.id);
-    const p = api(API.sizing.get, { params: { caseRef: 'ME-104' }, query: {} });
+    // (WS8b) sizing.get is now mocked by screens/sizing/mocks.ts; use an endpoint no screen mocks.
+    const p = api(API.dev.simulatedIssues, {
+      query: { connectionId: '00000000-0000-4000-8000-000000000000' },
+    });
     expect(await problemOf(p)).toBe('INTERNAL');
   });
 });
