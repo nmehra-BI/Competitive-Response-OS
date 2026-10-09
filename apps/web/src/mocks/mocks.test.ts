@@ -46,6 +46,26 @@ describe('MSW mocks', () => {
     for (const id of MOCKED_ENDPOINT_IDS) expect(ids.has(id)).toBe(true);
   });
 
+  it('serves the directory like the API: people with roles, scope options per viewer (D-079)', async () => {
+    session.signIn(people.maya.id);
+    const { items } = await api(API.directory.people, { query: {} });
+    expect(items.map((p) => p.displayName)).toContain('Elena Fischer');
+    expect(items.map((p) => p.displayName)).not.toContain('Analysis assistant');
+    expect(items.find((p) => p.id === people.admin.id)).toMatchObject({ roles: ['tenant_admin'] });
+    const sponsors = await api(API.directory.people, { query: { role: 'sponsor' } });
+    expect(sponsors.items.map((p) => p.displayName)).toEqual(['Elena Fischer']);
+    const scope = await api(API.directory.scopeOptions, { query: {} });
+    expect(scope.businessUnits.map((b) => b.name)).toEqual(['BU Water']);
+    expect(scope.countries).toContain('DE');
+    expect(
+      await problemOf(
+        api(API.directory.people, { query: { businessUnitId: '00000000-0000-4000-8000-000000000000' } }),
+      ),
+    ).toBe('NOT_FOUND');
+    session.signIn(people.admin.id);
+    expect((await api(API.directory.scopeOptions, { query: {} })).businessUnits).toHaveLength(2);
+  });
+
   it('requires a session like the real API', async () => {
     expect(await problemOf(api(API.auth.me))).toBe('UNAUTHENTICATED');
   });

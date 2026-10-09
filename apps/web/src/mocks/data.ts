@@ -15,6 +15,7 @@ import {
   type DecisionPackageView,
   type DecisionSnapshot,
   type DevPersona,
+  type DirectoryPerson,
   type GateRailNode,
   type GateRequest,
   type GateStatus,
@@ -23,6 +24,8 @@ import {
   type PersonRef,
   type RailSegment,
   type ReviewRequest,
+  type RoleCode,
+  type ScopeOptions,
   type SearchHit,
   type Viewer,
   type WorkItem,
@@ -44,7 +47,9 @@ import {
   opportunities,
   people,
   pilotTasks,
+  products,
   roleAssignments,
+  segments,
   sizingV2Input,
   sources,
   tenant,
@@ -1537,5 +1542,55 @@ export function adminConnections() {
       issueType: m.issueType,
       assigneeMap: {},
     })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Directory (D-068 §12–13): people.list and catalogue.scopeOptions, mirroring the API rules (D-079)
+// ---------------------------------------------------------------------------
+
+/** Active people with a role: never the agent; the administrator only with the admin role. */
+export function directoryPeople(query: { businessUnitId?: string; role?: RoleCode }): DirectoryPerson[] {
+  const byUser = new Map<string, { roles: Set<RoleCode>; bus: Set<string>; tenantWide: boolean }>();
+  for (const r of roleAssignments) {
+    const e = byUser.get(r.userId) ?? { roles: new Set(), bus: new Set(), tenantWide: false };
+    e.roles.add(r.role as RoleCode);
+    if (r.businessUnitId) e.bus.add(r.businessUnitId);
+    else e.tenantWide = true;
+    byUser.set(r.userId, e);
+  }
+  return [...byUser.entries()]
+    .filter(([id]) => HUMANS.some((h) => h.id === id))
+    .filter(([, e]) => !query.role || e.roles.has(query.role))
+    .filter(([, e]) => !query.businessUnitId || e.tenantWide || e.bus.has(query.businessUnitId))
+    .map(([id, e]) => ({
+      ...personRef(id),
+      roles: [...e.roles].sort(),
+      businessUnitIds: e.tenantWide ? [] : [...e.bus].sort(),
+    }))
+    .sort((x, y) => x.displayName.localeCompare(y.displayName) || x.id.localeCompare(y.id));
+}
+
+/** Business units the viewer can see, the catalogue, and the countries the tenant's mandates use. */
+export function scopeOptions(viewerId: string, businessUnitId?: string): ScopeOptions | null {
+  const mine = roleAssignments.filter((r) => r.userId === viewerId);
+  const tenantWide = mine.some((r) => r.businessUnitId === null);
+  const visible = businessUnits.filter((b) => tenantWide || mine.some((r) => r.businessUnitId === b.id));
+  if (businessUnitId && !visible.some((b) => b.id === businessUnitId)) return null;
+  const countries = [
+    ...new Set([
+      ...mandate.versions.flatMap((v) => ('geographyCodes' in v ? [...v.geographyCodes] : [])),
+      ...opportunities.map((o) => o.countryCode),
+    ]),
+  ].sort();
+  return {
+    businessUnits: visible
+      .map((b) => ({ id: b.id, key: b.key, name: b.name }))
+      .sort((x, y) => x.name.localeCompare(y.name)),
+    products: products.map((x) => ({ id: x.id, key: x.key, name: x.name })),
+    segments: segments
+      .map((x) => ({ id: x.id, key: x.key, name: x.name }))
+      .sort((x, y) => x.name.localeCompare(y.name)),
+    countries,
   };
 }

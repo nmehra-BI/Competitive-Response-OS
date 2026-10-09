@@ -6,7 +6,7 @@
  * they are collected automatically by `allHandlers()` and take precedence over these.
  */
 import { API } from '@growth-os/contracts';
-import { people } from '@growth-os/fixtures-aster';
+import { businessUnits, people } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
 import {
   activity,
@@ -15,6 +15,7 @@ import {
   caseListRows,
   decisionPackage,
   devPersonas,
+  directoryPeople,
   findCase,
   G2_HASH,
   G2_SNAPSHOT_ID,
@@ -27,6 +28,7 @@ import {
   overview,
   preconditions,
   reviewRequests,
+  scopeOptions,
   search,
   viewerFor,
   workItems,
@@ -40,6 +42,8 @@ const HUMAN_IDS: Set<string> = new Set(
     .filter((p) => p.kind === 'human')
     .map((p) => p.id),
 );
+
+const BU_IDS: Set<string> = new Set(businessUnits.map((b) => b.id));
 
 export const handlers: HttpHandler[] = [
   // ----- Auth (dev persona picker) -----
@@ -55,6 +59,18 @@ export const handlers: HttpHandler[] = [
     return undefined;
   }),
   mock(API.auth.me, ({ viewerId }) => viewerFor(viewerId!)),
+
+  // ----- Directory (D-068 §12–13, D-079): same rules as the API -----
+  mock(API.directory.people, ({ query, viewerId }) => {
+    if (!HUMAN_IDS.has(viewerId!)) throw new MockProblem('AGENT_IDENTITY_FORBIDDEN', 'Only people.');
+    if (query.businessUnitId && !BU_IDS.has(query.businessUnitId)) throw notFound();
+    return { items: directoryPeople(query) };
+  }),
+  mock(API.directory.scopeOptions, ({ query, viewerId }) => {
+    const o = scopeOptions(viewerId!, query.businessUnitId);
+    if (!o) throw notFound();
+    return o;
+  }),
 
   // ----- Shell: search, overview, case list, inboxes -----
   mock(API.search.search, ({ query }) => ({ hits: search(query.q, query.limit) })),
@@ -235,6 +251,8 @@ export const MOCKED_ENDPOINT_IDS = [
   API.auth.devLogin.id,
   API.auth.logout.id,
   API.auth.me.id,
+  API.directory.people.id,
+  API.directory.scopeOptions.id,
   API.search.search.id,
   API.overview.portfolio.id,
   API.overview.listCases.id,

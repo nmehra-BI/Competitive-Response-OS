@@ -34,6 +34,8 @@ import { outcomeHandlers } from './me/outcomes';
 import { pilotHandlers } from './me/pilot';
 import { reviewHandlers } from './platform/reviews';
 import { workHandlers } from './platform/work';
+import { directoryHandlers } from './platform/directory';
+import { catalogueHandlers } from './me/catalogue';
 import { taskSyncHandlers } from './tasksync';
 
 export const handlers: HandlerMap = {
@@ -64,4 +66,6 @@ export const handlers: HandlerMap = {
   ...workHandlers,
   ...taskSyncHandlers,
   ...analysisHandlers,
+  ...directoryHandlers,
+  ...catalogueHandlers,
 };
