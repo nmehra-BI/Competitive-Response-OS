@@ -18,25 +18,30 @@ export const ASTER_TENANT = 'a57e0001-0000-4000-8000-000000000001';
 export type SeedProfile = 'aster-start' | 'aster-demo';
 
 /** Drop, migrate and seed the e2e database. Call in `test.beforeAll` of every real spec file. */
-export function resetStack(profile: SeedProfile = 'aster-start'): void {
-  execFileSync('npx', ['tsx', 'src/cli/e2e-reset.ts', profile], {
-    cwd: resolve(root, 'packages/db'),
-    env: { ...process.env, ...REAL.dbEnv, E2E_DB_RESET: '1', NODE_ENV: 'development' },
-    stdio: 'pipe',
-    timeout: 120_000,
-  });
+export function resetStack(profile: SeedProfile = 'aster-start', opts: { otherTenant?: boolean } = {}): void {
+  execFileSync(
+    'npx',
+    ['tsx', 'src/cli/e2e-reset.ts', profile, ...(opts.otherTenant ? ['--with-other-tenant'] : [])],
+    {
+      cwd: resolve(root, 'packages/db'),
+      env: { ...process.env, ...REAL.dbEnv, E2E_DB_RESET: '1', NODE_ENV: 'development' },
+      stdio: 'pipe',
+      timeout: 120_000,
+    },
+  );
 }
 
 /** Run read-only SQL as the owner inside the Aster tenant context (RLS applies). */
 export async function sqlRows<T extends Record<string, unknown>>(
   text: string,
   params: unknown[] = [],
+  tenantId: string = ASTER_TENANT,
 ): Promise<T[]> {
   const client = new pg.Client({ connectionString: REAL.dbEnv.DATABASE_OWNER_URL });
   await client.connect();
   try {
     await client.query('BEGIN READ ONLY');
-    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [ASTER_TENANT]);
+    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
     const r = await client.query<T>(text, params);
     await client.query('COMMIT');
     return r.rows;
@@ -130,4 +135,30 @@ export async function setConnectorFaults(
 export async function advanceClock(page: Page, to: string): Promise<void> {
   const r = await apiCall(page, 'PUT', '/dev/clock', { to });
   if (r.status !== 200) throw new Error(`dev clock ${r.status} ${JSON.stringify(r.json)}`);
+}
+
+/** Tenants other than Aster (seeded with `resetStack(…, { otherTenant: true })`). */
+export async function otherTenantIds(): Promise<string[]> {
+  const client = new pg.Client({ connectionString: REAL.dbEnv.DATABASE_OWNER_URL });
+  await client.connect();
+  try {
+    const r = await client.query<{ id: string }>('SELECT id FROM platform.list_tenant_ids() AS id');
+    return r.rows.map((x) => x.id).filter((id) => id !== ASTER_TENANT);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Test-only write as the owner inside the Aster tenant (RLS and guard triggers apply). */
+export async function sqlExec(text: string, params: unknown[] = []): Promise<void> {
+  const client = new pg.Client({ connectionString: REAL.dbEnv.DATABASE_OWNER_URL });
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [ASTER_TENANT]);
+    await client.query(text, params);
+    await client.query('COMMIT');
+  } finally {
+    await client.end();
+  }
 }

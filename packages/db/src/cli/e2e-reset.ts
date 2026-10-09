@@ -3,6 +3,7 @@
  *
  *   E2E_DB_RESET=1 DATABASE_OWNER_URL=…/growth_os_pe tsx src/cli/e2e-reset.ts aster-start
  *
+ * Pass `--with-other-tenant` to add an isolated second tenant (cross-tenant specs).
  * Drops the app schemas, re-applies every migration, empties the job queue (jobs from the previous
  * run must never act on the new seed; cron bookkeeping is kept) and seeds the profile. Refuses unless
  * E2E_DB_RESET=1, outside NODE_ENV=production, and only for a database whose name ends in `_pe` or
@@ -15,6 +16,8 @@ import { migrateDatabase } from '../migrate';
 import { SEED_PROFILES, seedAster, type SeedProfile } from '../seed';
 
 const profile = (process.argv[2] ?? 'aster-start') as SeedProfile;
+/** `--with-other-tenant`: also seed an isolated aster-demo copy (random ids) for cross-tenant specs. */
+const withOther = process.argv.includes('--with-other-tenant');
 
 function databaseName(url: string): string {
   return decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
@@ -50,7 +53,11 @@ async function main(): Promise<void> {
   const db = createDb('owner', 2);
   try {
     const r = await seedAster(db, { profile });
-    console.log(`e2e-reset: ${name} · ${r.profile} · ${r.audits} audit events`);
+    console.warn(`e2e-reset: ${name} · ${r.profile} · ${r.audits} audit events`);
+    if (withOther) {
+      const o = await seedAster(db, { profile: 'aster-demo', isolated: true });
+      console.warn(`e2e-reset: other tenant ${o.tenantSlug} (${o.tenantId})`);
+    }
   } finally {
     await db.destroy();
   }

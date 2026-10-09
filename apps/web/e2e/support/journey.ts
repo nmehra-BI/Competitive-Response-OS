@@ -5,7 +5,7 @@
  * run; only the data entry is not a UI form. Everything after this is driven through the screens.
  */
 import type { Page } from '@playwright/test';
-import { assumptions, people, pilotMilestones, pilotTasks } from '@growth-os/fixtures-aster';
+import { assumptions, gates, people, pilotMilestones, pilotTasks } from '@growth-os/fixtures-aster';
 import { apiCall } from './real';
 
 const sourceIdOf = async (page: Page, key: string) => {
@@ -191,4 +191,61 @@ export async function enterPilotTasks(page: Page, caseKey: string): Promise<void
     200,
     'pilot dependencies',
   );
+}
+
+const G2_ID = 'a57e0015-0000-4000-8000-000000000003';
+
+/** aster-demo: Elena approves G2 v3 with C1 and C2 as the fixture records them (API; the UI path is the journey). */
+export async function approveDemoG2(page: Page, login: (who: 'elena' | 'jonas') => Promise<void>) {
+  await login('elena');
+  const pkg = must(
+    await apiCall<{ snapshot: { id: string; contentHash: string } }>(
+      page,
+      'GET',
+      `/me/gate-requests/${G2_ID}/package`,
+    ),
+    200,
+    'G2 package',
+  );
+  must(
+    await apiCall(page, 'POST', `/me/gate-requests/${G2_ID}/decisions`, {
+      snapshotId: pkg.snapshot.id,
+      snapshotHash: pkg.snapshot.contentHash,
+      disposition: 'approve_with_conditions',
+      rationale: 'Thresholds met; bounded pilot tests the disputed adoption assumption.',
+      note: null,
+      conditions: gates.g2.conditions.map((c) => ({
+        text: c.text,
+        ownerId: c.ownerId,
+        dueOn: c.dueOn,
+        dueRule: c.dueRule,
+        flag: c.blocksExecution ? 'blocks_execution' : 'monitor_only',
+      })),
+      delegateToUserId: null,
+    }),
+    201,
+    'approve G2',
+  );
+}
+
+/** aster-demo: G2 approved, C1 met and the pilot activated by Jonas (API). */
+export async function activateDemoPilot(page: Page, login: (who: 'elena' | 'jonas') => Promise<void>) {
+  await approveDemoG2(page, login);
+  await login('jonas');
+  const pkg = must(
+    await apiCall<{ gateRequest: { conditions: { id: string; key: string }[] } }>(
+      page,
+      'GET',
+      `/me/gate-requests/${G2_ID}/package`,
+    ),
+    200,
+    'G2 package',
+  );
+  const c1 = pkg.gateRequest.conditions.find((c) => c.key === 'C1')!;
+  must(
+    await apiCall(page, 'POST', `/me/conditions/${c1.id}/met`, { evidence: 'Signed site list (4 sites)' }),
+    200,
+    'C1 met',
+  );
+  must(await apiCall(page, 'POST', '/me/cases/ME-104/pilot-plan/activate'), 200, 'activate');
 }

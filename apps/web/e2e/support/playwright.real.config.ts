@@ -74,7 +74,19 @@ export default defineConfig({
       ? { executablePath: process.env.E2E_CHROMIUM_PATH }
       : undefined,
   },
-  projects: [{ name: 'real', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'real',
+      testIgnore: ['**/real/ai-down.spec.ts'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // AI down (ANALYSIS_ENABLED=false): the whole journey again, completed by hand, plus the refusal.
+      name: 'real-ai-down',
+      testMatch: ['aster-journey.spec.ts', 'real/ai-down.spec.ts'],
+      use: { ...devices['Desktop Chrome'], baseURL: REAL.aiDownWebUrl },
+    },
+  ],
   webServer: [
     api(REAL.apiPort, true),
     api(REAL.aiDownApiPort, false),
