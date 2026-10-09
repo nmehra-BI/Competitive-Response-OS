@@ -5,7 +5,8 @@
   "description": "Postgres schema (SQL migrations with RLS), typed Kysely client with tenant context, seed runner.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./seed": "./src/seed/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

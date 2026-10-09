@@ -36,9 +36,9 @@ export class AlreadySeededError extends Error {
 
 export async function seedAster(
   db: Db,
-  opts: { profile: SeedProfile; isolated?: boolean } = { profile: 'aster-start' },
+  opts: { profile: SeedProfile; isolated?: boolean; remap?: Remap } = { profile: 'aster-start' },
 ): Promise<SeedResult> {
-  const R: Remap = opts.isolated ? randomRemap() : identityRemap;
+  const R: Remap = opts.remap ?? (opts.isolated ? randomRemap() : identityRemap);
   const tenantId = R.id(tenant.id);
   const tenantSlug = R.tag ? `${tenant.slug}-${R.tag}` : tenant.slug;
   const s = await withTenant(

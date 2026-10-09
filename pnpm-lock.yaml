@@ -59,6 +59,9 @@ importers:
       '@growth-os/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@growth-os/fixtures-aster':
+        specifier: workspace:*
+        version: link:../../fixtures/aster
       fastify:
         specifier: ^5.2.0
         version: 5.12.5

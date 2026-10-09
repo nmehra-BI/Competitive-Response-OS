@@ -122,8 +122,15 @@ export function createAuditWriter(): PlatformAuditWriter {
       envelope: Omit<AnalyticsEnvelope, 'name' | 'eventId'>,
       props: Record<string, unknown>,
     ) {
-      const safeProps = AnalyticsProps[name].parse(props);
-      const env = AnalyticsEnvelope.strict().parse({ ...envelope, name, eventId: randomUUID() });
+      const p = AnalyticsProps[name].safeParse(props);
+      if (!p.success)
+        throw new AuditGuardError(
+          `analytics ${name} props outside the PRD §17 whitelist: ${p.error.issues.map((i) => i.path.join('.') || i.message).join(', ')}`,
+        );
+      const e = AnalyticsEnvelope.strict().safeParse({ ...envelope, name, eventId: randomUUID() });
+      if (!e.success) throw new AuditGuardError(`analytics ${name} envelope invalid`);
+      const safeProps = p.data;
+      const env = e.data;
       await tx
         .insertInto('platform.analytics_event')
         .values({

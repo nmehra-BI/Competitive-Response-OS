@@ -17,6 +17,7 @@
     "@growth-os/contracts": "workspace:*",
     "@growth-os/db": "workspace:*",
     "@growth-os/domain": "workspace:*",
+    "@growth-os/fixtures-aster": "workspace:*",
     "fastify": "^5.2.0",
     "zod": "^3.24.1"
   }

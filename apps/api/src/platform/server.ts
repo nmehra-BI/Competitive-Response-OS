@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import { randomUUID } from 'node:crypto';
-import { API_PREFIX, ENDPOINTS, HEADERS } from '@growth-os/contracts';
+import { API_PREFIX, ENDPOINTS, HEADERS, type EndpointDef } from '@growth-os/contracts';
 import { createDb, createObjectStore } from '@growth-os/db';
 import { loadConfig, type PlatformConfig } from './config';
 import type { PlatformDeps } from './context';
@@ -27,6 +27,8 @@ export interface ServerOptions {
   /** Injected services (tests). Missing ones are created from the environment. */
   deps?: Partial<PlatformDeps>;
   config?: Partial<PlatformConfig>;
+  /** Endpoints to register. Defaults to the frozen registry; tests may add synthetic ones. */
+  endpoints?: readonly EndpointDef[];
 }
 
 const CORRELATION_ID = /^[\w.:-]{1,100}$/;
@@ -93,7 +95,7 @@ export async function buildServer(opts: ServerOptions): Promise<FastifyInstance>
 
   app.get('/healthz', async () => ({ ok: true }));
 
-  for (const def of ENDPOINTS) {
+  for (const def of opts.endpoints ?? ENDPOINTS) {
     if (def.auth === 'dev_only' && opts.authMode !== 'dev') continue;
     const handler = opts.handlers[def.id];
     app.route({
