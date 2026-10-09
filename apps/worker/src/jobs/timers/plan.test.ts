@@ -39,6 +39,19 @@ describe('planApprovalExpiry', () => {
     ]);
   });
 
+  it('returns a pilot-approved case to Pilot approval pending when G2 expires (D-035)', () => {
+    const p = planApprovalExpiry([{ ...g2, caseStage: 'pilot_approved' }], '2026-12-12T00:00:00+01:00', TZ);
+    expect(p.expire[0]?.caseMove).toEqual({
+      from: 'pilot_approved',
+      to: 'pilot_approval_pending',
+      auditAction: 'case.stage_changed',
+    });
+    // Any other stage: the gate expires, the case machine refuses the move, nothing else changes.
+    const q = planApprovalExpiry([{ ...g2, caseStage: 'validation' }], '2026-12-12T00:00:00+01:00', TZ);
+    expect(q.expire[0]?.to).toBe('expired');
+    expect(q.expire[0]?.caseMove).toBeUndefined();
+  });
+
   it('does not expire before expires_at', () => {
     const p = planApprovalExpiry([g2], '2026-12-11T23:58:59+01:00', TZ);
     expect(p.expire).toEqual([]);

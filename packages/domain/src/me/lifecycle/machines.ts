@@ -25,6 +25,7 @@ export type CaseStageCommand =
   | 'g2_returned_or_withdrawn'
   | 'g2_approved'
   | 'g2_invalidated'
+  | 'g2_expired' // D-035 (CR-WS3-3)
   | 'pilot_activated'
   | 'pilot_window_ended'
   | 'start_review'
@@ -83,6 +84,16 @@ export const CASE_TRANSITIONS: readonly Transition<CaseStage, CaseStageCommand>[
     by: 'system',
     guards: [],
     note: 'returns for review; executed writes preserved; unsent writes paused',
+  },
+  {
+    // D-035 (CR-WS3-3): an unused G2 approval expired (timers.approval_expiry). Same target as an
+    // invalidation, so a new G2 request can be prepared and decided from Pilot approval pending.
+    from: 'pilot_approved',
+    command: 'g2_expired',
+    to: 'pilot_approval_pending',
+    by: 'system',
+    guards: [],
+    note: 'approval expired unused; nothing was executed under it',
   },
   {
     from: 'pilot_approved',

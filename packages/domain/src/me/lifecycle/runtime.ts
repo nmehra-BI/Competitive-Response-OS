@@ -398,6 +398,7 @@ export function followOnForGate(
       if (returned) return { ...none, case: 'g2_returned_or_withdrawn' };
       if (approved) return { ...none, case: 'g2_approved' };
       if (command === 'invalidate') return { ...none, case: 'g2_invalidated' };
+      if (command === 'expire') return { ...none, case: 'g2_expired' };
       return none;
     case 'G3':
       if (submitted) return { ...none, case: 'g3_submitted' };

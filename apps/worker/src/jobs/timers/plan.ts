@@ -4,7 +4,7 @@
  * state machines, so a timer can never do what the transition table does not allow.
  */
 import type { CaseStage, ExperimentLifecycle, GateCode, GateRequestStatus } from '@growth-os/contracts';
-import { caseMachine, gateRequestMachine } from '@growth-os/domain';
+import { caseMachine, followOnForGate, gateRequestMachine } from '@growth-os/domain';
 
 const TIMER = { kind: 'system', reason: 'timer' } as const;
 
@@ -23,6 +23,8 @@ export interface ExpiryCandidate {
   executed: boolean;
   /** Approve/approve-with-conditions approvals on the gate with no invalidation row yet. */
   effectiveApprovalIds: readonly string[];
+  /** Current stage of the gate's case (null for a standalone mandate gate). */
+  caseStage?: CaseStage | null;
 }
 
 export interface ExpiryAction {
@@ -35,6 +37,8 @@ export interface ExpiryAction {
   auditAction: string;
   /** e.g. "Approval expired unused (expiry 11 Dec 2026)". */
   reason: string;
+  /** Case follow-on (D-035: G2 pilot_approved → pilot_approval_pending), when the case machine allows it. */
+  caseMove?: { from: CaseStage; to: CaseStage; auditAction: string };
 }
 
 export interface ExpiryPlan {
@@ -68,7 +72,14 @@ export function planApprovalExpiry(
       plan.skipped.push({ gateRequestId: c.gateRequestId, reasons: r.reasons });
       continue;
     }
+    const follow = followOnForGate(c.gateCode, 'expire', c.status);
+    let caseMove: ExpiryAction['caseMove'];
+    if (follow.case && c.caseId && c.caseStage) {
+      const m = caseMachine.apply(c.caseStage, follow.case, TIMER, {});
+      if (m.ok && m.changed) caseMove = { from: m.from, to: m.to, auditAction: 'case.stage_changed' };
+    }
     plan.expire.push({
+      ...(caseMove ? { caseMove } : {}),
       gateRequestId: c.gateRequestId,
       caseId: c.caseId,
       gateCode: c.gateCode,

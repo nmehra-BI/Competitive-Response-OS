@@ -48,8 +48,10 @@ export async function loadExpiryCandidates(tx: Tx, now: string): Promise<ExpiryC
     expires_at: Date | string | null;
     executed: boolean;
     approval_ids: string[];
+    case_stage: CaseStage | null;
   }>`
     SELECT g.id, g.case_id, g.gate_code, g.status, g.expires_at,
+      (SELECT c.stage FROM platform.workflow_case c WHERE c.id = g.case_id) AS case_stage,
       (g.gate_code IN ('G0','G3')
         OR EXISTS (SELECT 1 FROM me.pilot_plan pp WHERE pp.gate_request_id = g.id AND pp.activated_at IS NOT NULL)
         OR EXISTS (SELECT 1 FROM me.experiment e WHERE e.locked_by_gate_request_id = g.id
@@ -75,6 +77,7 @@ export async function loadExpiryCandidates(tx: Tx, now: string): Promise<ExpiryC
     expiresAt: iso(row.expires_at),
     executed: row.executed,
     effectiveApprovalIds: row.approval_ids,
+    caseStage: row.case_stage,
   }));
 }
 
@@ -123,6 +126,23 @@ export async function applyExpiry(tx: Tx, a: ExpiryAction, ctx: TimerContext): P
         pausedWrites: paused.rows.length,
       })}::jsonb,
       ${AUTHZ('timer:approval_expiry')}::jsonb, ${ctx.correlationId})`.execute(tx);
+
+  // D-035: an expired G2 returns the case to Pilot approval pending (a new G2 request is needed).
+  if (a.caseMove && a.caseId) {
+    const moved = await sql<{ row_version: number }>`
+      UPDATE platform.workflow_case SET stage = ${a.caseMove.to}
+       WHERE id = ${a.caseId} AND stage = ${a.caseMove.from}
+       RETURNING row_version`.execute(tx);
+    const row = moved.rows[0];
+    if (row)
+      await sql`
+        INSERT INTO platform.audit_event (tenant_id, actor_user_id, actor_kind, actor_role, action, object_type,
+          object_id, object_version, case_id, summary, details, authz_context, correlation_id)
+        VALUES (platform.current_tenant_id(), NULL, 'system', NULL, ${a.caseMove.auditAction}, 'case',
+          ${a.caseId}, ${row.row_version}, ${a.caseId}, ${'Pilot approval expired unused. A new G2 request is needed.'},
+          ${JSON.stringify({ from: a.caseMove.from, to: a.caseMove.to, reason: 'g2_expired' })}::jsonb,
+          ${AUTHZ('timer:approval_expiry')}::jsonb, ${ctx.correlationId})`.execute(tx);
+  }
   return true;
 }
 

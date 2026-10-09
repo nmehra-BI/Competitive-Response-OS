@@ -123,6 +123,7 @@ const CASE_ALLOWED: AllowedTransition<CaseStage, CaseStageCommand>[] = [
   ['pilot_approval_pending', 'g2_approved', 'pilot_approved', 'system'],
   ['pilot_approved', 'g2_invalidated', 'pilot_approval_pending', 'system'],
   ['pilot_running', 'g2_invalidated', 'pilot_approval_pending', 'system'],
+  ['pilot_approved', 'g2_expired', 'pilot_approval_pending', 'system'],
   ['pilot_approved', 'pilot_activated', 'pilot_running', 'system'],
   ['pilot_running', 'pilot_window_ended', 'review_due', 'system'],
   ['pilot_running', 'start_review', 'review_due', 'human'],
@@ -155,6 +156,7 @@ describeMachine({
     'g2_returned_or_withdrawn',
     'g2_approved',
     'g2_invalidated',
+    'g2_expired',
     'pilot_activated',
     'pilot_window_ended',
     'start_review',
@@ -379,7 +381,9 @@ describe('followOnForGate', () => {
     expect(followOnForGate('G2', 'withdraw', 'awaiting_decision').case).toBe('g2_returned_or_withdrawn');
     expect(followOnForGate('G2', 'withdraw', 'draft').case).toBeNull();
     expect(followOnForGate('G2', 'invalidate').case).toBe('g2_invalidated');
-    expect(followOnForGate('G2', 'expire').case).toBeNull();
+    // D-035: an expired, unused G2 approval returns the case to Pilot approval pending.
+    expect(followOnForGate('G2', 'expire').case).toBe('g2_expired');
+    expect(followOnForGate('G1', 'expire').case).toBeNull();
     expect(followOnForGate('G3', 'submit').case).toBe('g3_submitted');
     expect(followOnForGate('G3', 'approve').case).toBe('g3_approved');
     expect(followOnForGate('G0', 'return_for_revision').mandate).toBe('return');

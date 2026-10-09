@@ -81,6 +81,9 @@ async function inTenantTx(fn: (tx: Tx, w: World) => Promise<void>): Promise<void
           ${grant}, ${session}, 'approve_with_conditions', 'Bounded pilot', ${randomUUID()})`.execute(tx);
       await sql`UPDATE platform.gate_request SET status = 'approved_with_conditions',
           expires_at = '2026-12-11T23:59:00+01:00' WHERE id = ${w.gate}`.execute(tx);
+      await sql`UPDATE platform.workflow_case SET stage = 'pilot_approved' WHERE id = ${w.caseId}`.execute(
+        tx,
+      );
       await fn(tx, w);
       throw new Rollback();
     });
@@ -142,6 +145,19 @@ describe('timers.approval_expiry (db)', () => {
           action: 'gate.approval_expired',
           actor_kind: 'system',
           summary: 'Approval expired unused (expiry 11 Dec 2026)',
+        },
+      ]);
+
+      // D-035: the case returns to Pilot approval pending so a new G2 request can be decided.
+      const c = await sql<{ stage: string }>`
+        SELECT stage FROM platform.workflow_case WHERE id = ${w.caseId}`.execute(tx);
+      expect(c.rows[0]?.stage).toBe('pilot_approval_pending');
+      const caseAudit = await sql<{ action: string; details: { from: string; to: string } }>`
+        SELECT action, details FROM platform.audit_event WHERE object_id = ${w.caseId}`.execute(tx);
+      expect(caseAudit.rows).toEqual([
+        {
+          action: 'case.stage_changed',
+          details: { from: 'pilot_approved', to: 'pilot_approval_pending', reason: 'g2_expired' },
         },
       ]);
 
