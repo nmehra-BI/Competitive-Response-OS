@@ -314,9 +314,11 @@ export const outcomeEndpoints = {
     params: CaseParams,
     body: z.object({
       parentGateRequestId: Id,
-      spendCap: DecimalString,
+      // Null = the PRD placeholder ("€[cap]", "[duration] days"): submittable, never approvable
+      // (D-040, widened by D-068).
+      spendCap: DecimalString.nullable(),
       currency: CurrencyCode,
-      durationDays: z.number().int().positive(),
+      durationDays: z.number().int().positive().nullable(),
       ownerId: Id,
       scopeItems: z.array(z.string()).min(1),
     }),

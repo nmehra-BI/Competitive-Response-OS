@@ -138,11 +138,12 @@ export function rankOpportunities(
     });
   });
   ranked.sort((a, b) => b.score.comparedTo(a.score) || a.index - b.index);
-  return { valid: true, ranking: [...ranked.map((x) => x.row), ...unranked] };
+  // `rank` is the 1-based position among ranked rows (ties keep input order), D-068.
+  return { valid: true, ranking: [...ranked.map((x, i) => ({ ...x.row, rank: i + 1 })), ...unranked] };
 }
 
 function notRanked(opportunityId: string, reason: string): RankingRow {
-  return { opportunityId, ranked: false, score: null, reason };
+  return { opportunityId, ranked: false, score: null, reason, rank: null };
 }
 
 export function createRankingEngine(): RankingEngine {

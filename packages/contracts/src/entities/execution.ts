@@ -32,7 +32,7 @@ import {
   Sha256Hex,
   Unavailable,
 } from '../primitives';
-import { Condition } from './gate';
+import { Condition, GateRequest } from './gate';
 
 export const ExternalSync = z.object({
   status: SyncStatus,
@@ -172,6 +172,8 @@ export const MessageDraft = z.object({
   origin: z.enum(['human', 'ai', 'ai_edited']),
   status: z.literal('draft'), // MVP never sends prospect communications (PRD §3, S11)
   notice: z.literal('Draft — not authorized to send'),
+  /** If-Match for `pilot.updateMessageDraft`. Additive (D-068). */
+  rowVersion: RowVersion.optional(),
 });
 export type MessageDraft = z.infer<typeof MessageDraft>;
 
@@ -291,6 +293,10 @@ export const OutcomeReviewView = z.object({
     .nullable(),
   decision: DecisionRecord.nullable(),
   scaleGate: z.object({ blocked: z.boolean(), unmet: z.array(Blocker) }),
+  /** If-Match for `outcomes.saveReviewDraft`. Additive (D-068). */
+  rowVersion: RowVersion.optional(),
+  /** The open or decided extension (X) request after this review, if any. Additive (D-068). */
+  extensionRequest: GateRequest.nullable().optional(),
 });
 export type OutcomeReviewView = z.infer<typeof OutcomeReviewView>;
 
@@ -299,7 +305,7 @@ export type OutcomeReviewView = z.infer<typeof OutcomeReviewView>;
 // ---------------------------------------------------------------------------
 
 export const WorkItem = z.object({
-  id: Id,
+  id: Id, // for kind 'task': the task id (tasks.update, tasks.reportBlocker)
   kind: z.enum(['task', 'experiment', 'review_request', 'condition', 'gate_decision']),
   title: z.string(),
   caseId: Id,
@@ -318,5 +324,7 @@ export const WorkItem = z.object({
       measuredAgainst: z.string(),
     })
     .nullable(),
+  /** For kind 'task': the task row version, the If-Match for `tasks.update`. Additive (D-068). */
+  rowVersion: RowVersion.nullable().optional(),
 });
 export type WorkItem = z.infer<typeof WorkItem>;

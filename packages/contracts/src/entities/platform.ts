@@ -21,6 +21,11 @@ export const Tenant = z.object({
   name: z.string(),
   dataResidency: z.string(), // e.g. "eu"
   illustrative: z.boolean(), // true for the Aster sample workspace: UI shows the illustrative-data bar
+  /**
+   * IANA time zone for tenant-local dates (stale reasons, pilot window ends, "16 Oct"). Absent →
+   * Europe/Berlin (D-047, D-049). Additive (D-068).
+   */
+  timeZone: z.string().min(1).optional(),
 });
 export type Tenant = z.infer<typeof Tenant>;
 

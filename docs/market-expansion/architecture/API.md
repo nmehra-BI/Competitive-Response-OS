@@ -228,6 +228,13 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 |---|---|---|---|---|---|
 | `search.query` | `GET /search` | Find cases, opportunities, assumptions, experiments and sources the viewer can access. Restricted source text is never searched. → 200 | SEARCH | ME-16 | — |
 
+### Directory (people and scope options, D-068)
+
+| Operation | Method and path | Request → response | Screens | PRD | Headers |
+|---|---|---|---|---|---|
+| `people.list` | `GET /people` | People for pickers outside a case (mandate owner, case owner on convert) and names on Administration: active human principals with a role, optional `businessUnitId` and `role` filters. Never agents or services. Added by D-068. → 200 | S02, S03, S14 | ME-01, ME-16 | — |
+| `catalogue.scopeOptions` | `GET /me/scope-options` | Business units the viewer can see, the tenant product and segment catalogue, and the countries in use, with names, for the S02 scope fields. Added by D-068. → 200 | S02, S14 | ME-01 | — |
+
 ### Comments
 
 | Operation | Method and path | Request → response | Screens | PRD | Headers |
@@ -415,7 +422,7 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 | `outcomes.recordObservation` | `POST /me/cases/:caseRef/outcome-observations` | Record an actual with period and source. Edits append a new version (supersedesId). → 201 | S12, MYWORK | ME-14 | Idempotency-Key, human session |
 | `outcomes.saveReviewDraft` | `PATCH /me/cases/:caseRef/outcome-review` | Edit learned / changes next / causal limitations / recommendation (recommendation is not a decision). → 200 | S12 | ME-14 | If-Match |
 | `outcomes.decide` | `POST /me/cases/:caseRef/outcome-decisions` | Sponsor records stop / revise / extend / proceed. "scale" is not accepted here: scale needs a G3 gate request. Extend requires an X gate request with its own cap. → 201 | S12 | ME-14, §4 | Idempotency-Key, human session |
-| `outcomes.requestExtension` | `POST /me/cases/:caseRef/extension-requests` | Convenience: create and submit an X gate request with its own spend cap and scope. Does not unblock G3. → 201 | S12 | ME-14, §6 | Idempotency-Key, human session |
+| `outcomes.requestExtension` | `POST /me/cases/:caseRef/extension-requests` | Convenience: create and submit an X gate request with its own spend cap and scope. Does not unblock G3. `spendCap` / `durationDays` may be null (the PRD placeholder; submittable, never approvable — D-040, D-068). → 201 | S12 | ME-14, §6 | Idempotency-Key, human session |
 
 ### Evidence (S13)
 

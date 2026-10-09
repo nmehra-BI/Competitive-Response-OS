@@ -1,13 +1,21 @@
 /** FROZEN endpoints: auth, viewer, overview, case list, My Work, Reviews inbox, search. */
 import { z } from 'zod';
-import { CaseStage } from '../enums';
+import { CaseStage, RoleCode } from '../enums';
 import { AccessScope, DataSourceHealth, Page, PageQuery } from '../http';
 import { CaseListRow } from '../entities/case';
-import { Viewer } from '../entities/platform';
+import { BusinessUnit, Viewer } from '../entities/platform';
 import { ReviewRequest } from '../entities/gate';
 import { WorkItem } from '../entities/execution';
 import { ActivityItem } from '../entities/audit';
-import { DisplayKey, Id, IsoDateTime, Money, MoneyOrUnavailable, PersonRef } from '../primitives';
+import {
+  CountryCode,
+  DisplayKey,
+  Id,
+  IsoDateTime,
+  Money,
+  MoneyOrUnavailable,
+  PersonRef,
+} from '../primitives';
 import { CaseParams, endpoint, IdParams, Rationale } from './endpoint';
 
 // ----- Auth (pilot: dev persona picker; D-017) -----
@@ -231,6 +239,49 @@ export const commentEndpoints = {
     params: CaseParams,
     body: z.object({ targetType: z.string(), targetId: Id, body: z.string().min(1) }),
     response: z.object({ id: Id }),
+  }),
+};
+
+// ----- Directory: people and scope options (D-068, CR-WS8a-1/2, CR-WS8d-4) -----
+
+/** A person who can be named in a picker: a human principal with at least one role in the tenant. */
+export const DirectoryPerson = PersonRef.extend({
+  roles: z.array(RoleCode),
+  businessUnitIds: z.array(Id), // scopes of those roles; empty = all business units
+});
+export type DirectoryPerson = z.infer<typeof DirectoryPerson>;
+
+export const ScopeOptions = z.object({
+  businessUnits: z.array(BusinessUnit),
+  products: z.array(z.object({ id: Id, key: z.string(), name: z.string() })),
+  segments: z.array(z.object({ id: Id, key: z.string(), name: z.string() })),
+  /** Countries the tenant works in (ISO codes; screens render names with Intl.DisplayNames). */
+  countries: z.array(CountryCode),
+});
+export type ScopeOptions = z.infer<typeof ScopeOptions>;
+
+export const directoryEndpoints = {
+  people: endpoint({
+    id: 'people.list',
+    method: 'GET',
+    path: '/people',
+    summary:
+      'People for pickers outside a case (mandate owner, case owner on convert) and names on Administration: active human principals with a role, optionally filtered by business unit and role. Never agents or services. Added by D-068.',
+    screens: ['S02', 'S03', 'S14'],
+    prd: ['ME-01', 'ME-16'],
+    query: z.object({ businessUnitId: Id.optional(), role: RoleCode.optional() }),
+    response: z.object({ items: z.array(DirectoryPerson) }),
+  }),
+  scopeOptions: endpoint({
+    id: 'catalogue.scopeOptions',
+    method: 'GET',
+    path: '/me/scope-options',
+    summary:
+      'Business units the viewer can see, the tenant product and segment catalogue, and the countries in use, with names, for the S02 scope fields. Added by D-068.',
+    screens: ['S02', 'S14'],
+    prd: ['ME-01'],
+    query: z.object({ businessUnitId: Id.optional() }),
+    response: ScopeOptions,
   }),
 };
 

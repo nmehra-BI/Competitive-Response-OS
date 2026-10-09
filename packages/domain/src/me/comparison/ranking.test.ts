@@ -40,6 +40,11 @@ describe('ranking properties', () => {
         out.ranking.forEach((x) => RankingRow.parse(x));
         const scores = out.ranking.filter((x) => x.ranked).map((x) => Number(x.score));
         expect(scores, label).toEqual([...scores].sort((a, b) => b - a));
+        // rank is the 1-based position among ranked rows; unranked rows carry null (D-068)
+        expect(
+          out.ranking.map((x) => x.rank),
+          label,
+        ).toEqual(out.ranking.map((x, i) => (x.ranked ? i + 1 : null)));
         expect(engine.rank(rows, w), label).toEqual(out);
       },
     );

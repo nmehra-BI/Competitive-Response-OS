@@ -251,6 +251,8 @@ export const ComparisonCell = z.object({
   unknown: z.boolean(),
   incomparable: z.boolean(),
   sources: z.array(SourceChip),
+  /** Growth-evidence cells: the evidence quality behind `valueText`. Additive (D-068). */
+  evidenceQuality: EvidenceQuality.nullable().optional(),
 });
 export type ComparisonCell = z.infer<typeof ComparisonCell>;
 
@@ -267,6 +269,8 @@ export const RankingRow = z.object({
   ranked: z.boolean(),
   score: DecimalString.nullable(),
   reason: z.string().nullable(), // "Not ranked — 2 inputs missing", "Excluded until normalized"
+  /** 1-based rank among ranked rows (ties keep input order); null when not ranked. Additive (D-068). */
+  rank: z.number().int().positive().nullable().optional(),
 });
 export type RankingRow = z.infer<typeof RankingRow>;
 

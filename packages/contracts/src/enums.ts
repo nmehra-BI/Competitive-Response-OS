@@ -177,6 +177,19 @@ export const GateRequestStatus = z.enum([
   'expired',
 ]);
 export type GateRequestStatus = z.infer<typeof GateRequestStatus>;
+/** Labels for the stored request status (e.g. "Withdrawn", which has no GateStatus). Added by D-068. */
+export const GATE_REQUEST_STATUS_LABELS = labels(GateRequestStatus, {
+  draft: 'Draft',
+  awaiting_decision: 'Awaiting decision',
+  stale: 'Stale',
+  approved: 'Approved',
+  approved_with_conditions: 'Approved with conditions',
+  returned_for_revision: 'Returned for revision',
+  not_approved: 'Not approved',
+  withdrawn: 'Withdrawn',
+  invalidated: 'Invalidated',
+  expired: 'Expired',
+});
 
 /** Display status on the rail and approval panel. Derived from request + preconditions. */
 export const GateStatus = z.enum([
@@ -447,6 +460,25 @@ export const ReviewArea = z.enum([
   'sponsor',
 ]);
 export type ReviewArea = z.infer<typeof ReviewArea>;
+/** Reviewer areas as screens name them (S05 assign reviewer, S10 sign-offs). Added by D-068. */
+export const REVIEW_AREA_LABELS = labels(ReviewArea, {
+  finance: 'Finance',
+  specialist: 'Specialist',
+  product: 'Product',
+  commercial: 'Commercial',
+  pilot_owner: 'Pilot owner',
+  operations: 'Operations',
+  sponsor: 'Sponsor',
+});
+
+/** S05 thesis blocker state: pending (not started), blocker (blocks its gate), resolved. Added by D-068. */
+export const ThesisBlockerStatus = z.enum(['pending', 'blocker', 'resolved']);
+export type ThesisBlockerStatus = z.infer<typeof ThesisBlockerStatus>;
+export const THESIS_BLOCKER_STATUS_LABELS = labels(ThesisBlockerStatus, {
+  pending: 'Pending',
+  blocker: 'Blocker',
+  resolved: 'Resolved',
+});
 
 export const ReviewRequestStatus = z.enum(['open', 'responded', 'cancelled']);
 export type ReviewRequestStatus = z.infer<typeof ReviewRequestStatus>;

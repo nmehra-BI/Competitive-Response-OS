@@ -269,6 +269,14 @@ export const DecisionPackageView = z.object({
   positions: z.array(ReviewerPositionRecord),
   panel: ApprovalPanelState,
   changesSinceViewerLastSaw: z.array(z.string()),
+  /**
+   * What `changesSinceViewerLastSaw` is measured against: "Changes since v2, which you viewed on
+   * 24 Nov". Null when the viewer never opened this request. Additive (D-068).
+   */
+  changesSince: z
+    .object({ sinceVersion: z.number().int().positive(), viewedAt: IsoDateTime })
+    .nullable()
+    .optional(),
   staleBanner: z.object({ title: z.string(), body: z.string() }).nullable(),
   gateHistory: z.array(
     z.object({

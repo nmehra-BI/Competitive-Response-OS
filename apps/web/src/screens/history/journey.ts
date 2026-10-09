@@ -107,9 +107,10 @@ export interface Ws8dState {
     at: string;
   } | null;
   extension: {
-    spendCap: string;
+    /** Null = the PRD placeholder "€[cap]" / "[duration] days" (D-040, D-068). */
+    spendCap: string | null;
     currency: string;
-    durationDays: number;
+    durationDays: number | null;
     ownerId: string;
     scopeItems: string[];
     by: string;

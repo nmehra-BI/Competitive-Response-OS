@@ -9,6 +9,7 @@ import {
   RegisterGroup,
   Scenario,
   Sensitivity,
+  ThesisBlockerStatus,
   VersionState,
 } from '../enums';
 import {
@@ -140,7 +141,15 @@ export const ThesisView = z.object({
   criticalAssumptions: z.array(Assumption), // top 5 from the register
   disagreements: z.array(Challenge),
   blockers: z.array(
-    z.object({ id: Id, text: z.string(), owner: PersonRef, dueOn: IsoDate.nullable(), gate: z.string() }),
+    z.object({
+      id: Id,
+      text: z.string(),
+      owner: PersonRef,
+      dueOn: IsoDate.nullable(),
+      gate: z.string(),
+      /** Additive (D-068); absent → the S05 rule (blocks the next gate → Pending, a later one → Blocker). */
+      status: ThesisBlockerStatus.optional(),
+    }),
   ),
   reviewers: z.array(z.object({ person: PersonRef, area: z.string(), status: z.string() })),
 });

@@ -341,15 +341,22 @@ describe('golden: comparison ranking vs Aster fixture (S04, weights v1 40/30/30)
     const r = ranking.rank(rows(true), weights);
     expect(r.valid).toBe(true);
     expect(r.ranking).toEqual([
-      { opportunityId: idOf('OPP-07'), ranked: true, score: '2.70', reason: null },
-      { opportunityId: idOf('OPP-16'), ranked: true, score: '1.70', reason: null },
+      { opportunityId: idOf('OPP-07'), ranked: true, score: '2.70', reason: null, rank: 1 },
+      { opportunityId: idOf('OPP-16'), ranked: true, score: '1.70', reason: null, rank: 2 },
       {
         opportunityId: idOf('OPP-14'),
         ranked: false,
         score: null,
         reason: 'Not ranked — 1 input missing (channel access)',
+        rank: null,
       },
-      { opportunityId: idOf('OPP-09'), ranked: false, score: null, reason: 'Excluded until normalized' },
+      {
+        opportunityId: idOf('OPP-09'),
+        ranked: false,
+        score: null,
+        reason: 'Excluded until normalized',
+        rank: null,
+      },
     ]);
   });
 

@@ -330,3 +330,40 @@ task set in test setup with direct inserts that follow §6's conventions (G2 app
 | WS6 → WS4b, timers | outbox conventions in §6 (`authorization_ref.gateRequestId`, `aggregate_type`, `aggregate_id`) |
 | WS4b → WS8c/d | `gates.package` returns the snapshot id + hash the connected `ApprovalPanel` binds to (D-059) |
 | all → PE | Requests for `apps/api/src/platform/**`, contracts or migrations go in your notes as CRs; the PE integrates Wave 3 in the order WS4a → WS4b → WS6 → WS5 |
+
+---
+
+## 8. Contract additions after Wave 1 (for Wave 3 integration)
+
+Added by the PE at the Wave 2 screen integration (D-068, `decisions.md`), after the Wave 3 streams branched.
+Every change is **additive and backward compatible**: new optional response fields, two new GET endpoints, two
+new label maps, and one request field widened to accept null. Code built against the Wave 1 contracts still
+compiles and its responses still validate. At the Wave 3 integration the PE (or the owning stream, by CR) wires
+the API side listed in the last column; until then the web app falls back where the field is absent.
+
+| # | Contract change | Where | API side to wire at Wave 3 integration | Owner |
+|---|---|---|---|---|
+| 1 | `OutcomeReviewView.rowVersion?: RowVersion` | `entities/execution.ts` | `outcomes.get` returns the review row version; `outcomes.saveReviewDraft` checks If-Match against it (`assertIfMatch`) | WS4b |
+| 2 | `OutcomeReviewView.extensionRequest?: GateRequest \| null` | `entities/execution.ts` | `outcomes.get` includes the latest X request whose parent is this case's G2 | WS4b |
+| 3 | `MessageDraft.rowVersion?: RowVersion` | `entities/execution.ts` | `pilot.get` / `pilot.messageDrafts` return it; `pilot.updateMessageDraft` checks If-Match against it | WS4b |
+| 4 | `WorkItem.rowVersion?: RowVersion \| null`; `WorkItem.id` is the task id for kind `task` | `entities/execution.ts` | `work.mine` sets `rowVersion` on task items (the `tasks.update` If-Match) | WS4b |
+| 5 | `RankingRow.rank?: number \| null` (1-based among ranked rows; null when not ranked) | `entities/case.ts` | Already produced by `createRankingEngine()` in `@growth-os/domain`; `comparisons.get/previewRanking/applyWeights` pass it through | WS4a |
+| 6 | `ComparisonCell.evidenceQuality?: EvidenceQuality \| null` | `entities/case.ts` | `comparisons.get` sets it on `growth_evidence` cells | WS4a |
+| 7 | `FeasibilityAssessment.questionDetail?: string \| null` | `entities/models.ts` | `feasibility.get` returns the full question (specialist review: the request's question text) | WS4a |
+| 8 | `ThesisView.blockers[].status?: ThesisBlockerStatus` (`pending` · `blocker` · `resolved`) + `THESIS_BLOCKER_STATUS_LABELS` | `entities/assumption.ts`, `enums.ts` | `thesis.get` sets it (resolved blockers may be omitted) | WS4a |
+| 9 | `DecisionPackageView.changesSince?: { sinceVersion, viewedAt } \| null` | `entities/gate.ts` | `gates.package` returns the version and time the viewer last opened this request (null when never) | WS4b |
+| 10 | `Tenant.timeZone?: string` (IANA; absent → Europe/Berlin) | `entities/platform.ts` | **Migration** (PE at integration, after the Wave 3 migrations): `ALTER TABLE platform.tenant ADD COLUMN time_zone text NOT NULL DEFAULT 'Europe/Berlin'`; `auth.me` returns it; materiality stale reasons and the pilot-window timer read it instead of the constant | PE + WS1 code |
+| 11 | `outcomes.requestExtension` body: `spendCap: DecimalString \| null`, `durationDays: int \| null` | `api/execute.ts` | Null means the PRD placeholder (`€[cap]`, `[duration] days`): set `XFacts.capPlaceholder = true`; the request is submittable, never approvable (D-040, D-045) | WS4b |
+| 12 | New `people.list` — `GET /people?businessUnitId=&role=` → `{ items: DirectoryPerson[] }` (`PersonRef` + `roles` + `businessUnitIds`) | `api/shell.ts` (`API.directory.people`) | Active human principals with ≥ 1 role in the tenant, filtered by role scope; never agents/services; tenant admins only listed with their admin role. Readable by any human with a role. Cross-tenant and unauthenticated tests as usual | WS4a |
+| 13 | New `catalogue.scopeOptions` — `GET /me/scope-options?businessUnitId=` → `ScopeOptions` (`businessUnits`, `products`, `segments`, `countries`) | `api/shell.ts` (`API.directory.scopeOptions`) | Business units the viewer can see; `platform.product` and `platform.segment`; countries used by the tenant's mandates and opportunities | WS4a |
+| 14 | New label maps `REVIEW_AREA_LABELS`, `GATE_REQUEST_STATUS_LABELS` | `enums.ts` | None (labels only) | — |
+
+API behaviour clarified (no contract change, D-068):
+
+- `gates.decide` with `approve_with_conditions` may repeat the package's **proposed** conditions verbatim (S10 sends
+  them so the approver approves what was proposed); conditions equal to a proposed one (same text) are the same
+  condition, never duplicates.
+- `assumptions.update` returns **snapshot ids** in `staleSnapshotIds` and **approval ids** in `invalidatedApprovalIds`
+  (the field names), never gate request ids.
+- The registry has **146** endpoints (144 + `people.list`, `catalogue.scopeOptions`); both answer
+  `500 "Not implemented yet"` until wired.

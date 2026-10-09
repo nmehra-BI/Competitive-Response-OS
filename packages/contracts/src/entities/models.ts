@@ -171,6 +171,8 @@ export const FeasibilityAssessment = z.object({
   caseId: Id,
   dimension: FeasibilityDimension,
   question: z.string(),
+  /** Full question text where `question` is the short label (S07 specialist section). Additive (D-068). */
+  questionDetail: z.string().nullable().optional(),
   evidenceText: z.string(),
   reviewer: PersonRef,
   status: ReviewStatus,

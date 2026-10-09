@@ -3,7 +3,14 @@
  * every endpoint has a unique id and unique method+path, at least one screen and PRD reference.
  */
 import type { EndpointDef } from './endpoint';
-import { authEndpoints, commentEndpoints, overviewEndpoints, searchEndpoints, workEndpoints } from './shell';
+import {
+  authEndpoints,
+  commentEndpoints,
+  directoryEndpoints,
+  overviewEndpoints,
+  searchEndpoints,
+  workEndpoints,
+} from './shell';
 import { comparisonEndpoints, mandateEndpoints, opportunityEndpoints } from './discovery';
 import {
   assumptionEndpoints,
@@ -32,6 +39,7 @@ export const API = {
   work: workEndpoints,
   search: searchEndpoints,
   comments: commentEndpoints,
+  directory: directoryEndpoints,
   mandates: mandateEndpoints,
   opportunities: opportunityEndpoints,
   comparisons: comparisonEndpoints,
