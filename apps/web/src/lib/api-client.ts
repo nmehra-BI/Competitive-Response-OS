@@ -29,6 +29,23 @@ export interface CallOptions<P, Q, B> {
   /** Required for endpoints with `ifMatch: true`: the row version from the last read. */
   ifMatch?: number;
   signal?: AbortSignal;
+  /**
+   * The file part for a multipart endpoint (`evidence.upload`, D-051). The body travels as the
+   * JSON `metadata` part, the file as the `file` part; the server hashes both for idempotency.
+   */
+  file?: Blob;
+}
+
+/**
+ * Endpoints the API reads as `multipart/form-data` (D-051): a `metadata` JSON part plus one file.
+ * The frozen registry has no multipart flag, so the client lists them (CR-WS1-1, no contract change).
+ */
+export const MULTIPART_ENDPOINT_IDS: ReadonlySet<string> = new Set(['evidence.upload']);
+
+function fileNameOf(file: Blob, body: unknown): string {
+  if (typeof File !== 'undefined' && file instanceof File && file.name) return file.name;
+  const named = (body as { fileName?: unknown } | undefined)?.fileName;
+  return typeof named === 'string' && named ? named : 'upload';
 }
 
 export type ApiParams<D extends EndpointDef> = z.input<D['params']>;
@@ -80,13 +97,25 @@ export async function api<D extends EndpointDef>(
     if (opts.ifMatch === undefined) throw new Error(`${def.id} requires If-Match`);
     headers[HEADERS.ifMatch] = `"${opts.ifMatch}"`;
   }
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  let body: BodyInit | undefined;
+  if (MULTIPART_ENDPOINT_IDS.has(def.id)) {
+    if (!opts.file) throw new Error(`${def.id} requires a file (multipart/form-data)`);
+    const form = new FormData();
+    form.append('metadata', JSON.stringify(opts.body ?? {}));
+    form.append('file', opts.file, fileNameOf(opts.file, opts.body));
+    body = form; // the browser sets the multipart boundary in Content-Type
+  } else if (opts.file) {
+    throw new Error(`${def.id} does not accept a file`);
+  } else if (opts.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(opts.body);
+  }
 
   const res = await fetch(absolute(buildPath(def, opts.params, opts.query)), {
     method: def.method,
     headers,
     credentials: 'same-origin',
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    body,
     signal: opts.signal,
   });
   if (res.status === 204) return undefined as ApiResponse<D>;

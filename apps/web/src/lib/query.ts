@@ -199,6 +199,8 @@ export interface CommandVars<D extends EndpointDef> {
   body?: ApiBody<D>;
   query?: ApiQuery<D>;
   ifMatch?: number;
+  /** File part for a multipart endpoint (`evidence.upload`). */
+  file?: Blob;
 }
 
 /**
@@ -221,8 +223,11 @@ export function useCommand<D extends EndpointDef>(
           query: vars.query,
           ifMatch: vars.ifMatch,
           idempotencyKey: key,
+          file: vars.file,
         });
-      return def.idempotent ? intent.run({ p: vars.params, b: vars.body }, call) : call();
+      // A different file is a different intent (new key); the same file retries with the same key.
+      const f = vars.file ? { size: vars.file.size, type: vars.file.type } : undefined;
+      return def.idempotent ? intent.run({ p: vars.params, b: vars.body, f }, call) : call();
     },
     onSuccess: async (data) => {
       await invalidateAfter(qc, def.id);

@@ -20,6 +20,7 @@ export default defineConfig({
           ],
           exclude: ['**/node_modules/**', '**/*.db.test.ts'],
           environment: 'node',
+          setupFiles: ['./apps/web/src/test-setup.ts'],
         },
       },
       {
