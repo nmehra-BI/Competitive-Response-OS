@@ -46,7 +46,9 @@ export function decidedNote(pkg: DecisionPackageView): string | null {
   const req = pkg.gateRequest;
   const v = pkg.snapshot.version;
   if (req.status === 'withdrawn') return `v${v} was withdrawn by its author. Nothing can be decided on it.`;
-  const a = pkg.approvals.find((x) => x.disposition !== 'abstain') ?? pkg.approvals[0];
+  // Only decisions on the snapshot on screen count (an earlier version's decision is history).
+  const onSnapshot = pkg.approvals.filter((x) => x.snapshotId === pkg.snapshot.id);
+  const a = onSnapshot.find((x) => x.disposition !== 'abstain') ?? onSnapshot[0];
   if (!a) return null;
   // WS3 runtime next-action copy for approvals that stopped authorizing anything.
   if (req.status === 'expired') return 'The approval expired unused. Prepare a new request.';
@@ -98,6 +100,7 @@ export function DecisionPanel({
   const canWithdraw = isAuthor && !note && (req.status === 'awaiting_decision' || req.status === 'stale');
 
   let secondary: ReactNode = null;
+  let lockBody: ReactNode = null;
   if (note && req.gateCode === 'G2' && req.displayStatus.startsWith('approved')) {
     secondary = (
       <div>
@@ -108,21 +111,23 @@ export function DecisionPanel({
     );
   } else if (!note && !pkg.panel.canDecide && !isApprover && viewer) {
     const approver = pkg.panel.chain.find((c) => c.state === 'waiting')?.approver.displayName;
-    secondary = (
+    lockBody = (
+      <>
+        Viewing as {viewer.displayName}.
+        {approver ? ` Only ${approver} can decide ${req.gateCode} v${s.version}.` : ''}
+        {canWithdraw ? ' You can comment or withdraw the package.' : ''}
+      </>
+    );
+    secondary = canWithdraw ? (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-        <p style={{ margin: 0, fontSize: 13 }}>
-          Viewing as {viewer.displayName}.
-          {approver ? ` Only ${approver} can decide ${req.gateCode} v${s.version}.` : ''}
-          {canWithdraw ? ' You can comment or withdraw the package.' : ''}
-        </p>
-        {canWithdraw && !withdrawing ? (
+        {!withdrawing ? (
           <div>
             <Button variant="secondary" onClick={() => setWithdrawing(true)}>
               {`Withdraw v${s.version}`}
             </Button>
           </div>
         ) : null}
-        {canWithdraw && withdrawing ? (
+        {withdrawing ? (
           <form
             className="ws8c-stack"
             onSubmit={(e) => {
@@ -156,7 +161,7 @@ export function DecisionPanel({
           </form>
         ) : null}
       </div>
-    );
+    ) : null;
   }
 
   return (
@@ -177,6 +182,7 @@ export function DecisionPanel({
       error={decide.error ? <ProblemBanner error={decide.error} /> : null}
       decidedNote={note}
       secondaryAction={secondary}
+      lockBody={lockBody}
       onDecide={(sub) => {
         // Approving a package approves the conditions it proposes, verbatim, plus any added now.
         const approving = APPROVE.has(sub.disposition);

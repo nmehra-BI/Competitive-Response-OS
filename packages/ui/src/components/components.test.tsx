@@ -7,6 +7,7 @@ import {
   Banner,
   Button,
   ChartTable,
+  DataTable,
   IllustrativeDataBar,
   RestrictedValue,
   relativeTime,
@@ -137,6 +138,24 @@ describe('ApprovalPanelView', () => {
     );
     expect(screen.getByText('You authored this package and cannot approve it.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Approve pilot/ })).toBeNull();
+  });
+
+  it('renders the lock banner body under the policy reason', () => {
+    render(
+      <ApprovalPanelView
+        {...panelProps}
+        panel={panel({
+          canDecide: false,
+          allowedDispositions: [],
+          cannotDecideReason: 'You authored this package and cannot approve it.',
+        })}
+        lockBody="Viewing as Maya Rao. Only Elena Fischer can decide G2 v3."
+        secondaryAction={<button type="button">Withdraw v3</button>}
+      />,
+    );
+    const body = screen.getByText('Viewing as Maya Rao. Only Elena Fischer can decide G2 v3.');
+    expect(body.className).toBe('gos-banner__body');
+    expect(screen.getByRole('button', { name: 'Withdraw v3' })).toBeTruthy();
   });
 
   it('disables approval with a visible reason when stale', () => {
@@ -362,5 +381,53 @@ describe('primitives', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Table' }));
     expect(screen.getByRole('table', { name: 'Customers' })).toBeTruthy();
+  });
+});
+
+describe('DataTable scroll region', () => {
+  const props = {
+    ariaLabel: 'Pilot tasks',
+    columns: [{ key: 'name', header: 'Name', cell: (r: { id: string }) => r.id }],
+    rows: [{ id: 'PIL-11' }],
+    rowKey: (r: { id: string }) => r.id,
+  };
+
+  it('is a named, keyboard-focusable region when overflow cannot be measured', () => {
+    render(<DataTable {...props} />);
+    const region = screen.getByRole('region', { name: 'Pilot tasks (scrollable)' });
+    expect(region.tabIndex).toBe(0);
+  });
+
+  it('is not a tab stop when its content fits, and becomes one when it overflows', () => {
+    let fire: () => void = () => {};
+    let overflow = false;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          fire = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const sw = vi
+      .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+      .mockImplementation(() => (overflow ? 900 : 300));
+    const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+    try {
+      const { container } = render(<DataTable {...props} />);
+      const scroller = container.querySelector<HTMLElement>('.gos-table-scroll')!;
+      expect(scroller.getAttribute('tabindex')).toBeNull();
+      expect(screen.queryByRole('region')).toBeNull();
+      overflow = true;
+      fire();
+      expect(scroller.tabIndex).toBe(0);
+      expect(screen.getByRole('region', { name: 'Pilot tasks (scrollable)' })).toBeTruthy();
+    } finally {
+      sw.mockRestore();
+      cw.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });

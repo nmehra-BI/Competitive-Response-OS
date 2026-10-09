@@ -235,6 +235,11 @@ export interface ApprovalPanelViewProps {
   onDecide?: (d: DecisionSubmission) => void;
   /** Extra action for viewers who cannot decide (e.g. "Withdraw v3" for the author). */
   secondaryAction?: ReactNode;
+  /**
+   * Body of the lock banner shown to viewers who cannot decide, under the policy reason (e.g.
+   * "Viewing as Maya Rao. Only Elena Fischer can decide G2 v3."). Additive (D-064).
+   */
+  lockBody?: ReactNode;
   /** Shown after a decision was recorded. */
   decidedNote?: string | null;
 }
@@ -272,6 +277,7 @@ export function ApprovalPanelView(props: ApprovalPanelViewProps) {
     onDecide,
     secondaryAction,
     decidedNote,
+    lockBody,
   } = props;
   const [mode, setMode] = useState<Mode | null>(null);
   const [rationale, setRationale] = useState('');
@@ -401,6 +407,7 @@ export function ApprovalPanelView(props: ApprovalPanelViewProps) {
             tone="lock"
             live={false}
             title={panel.cannotDecideReason ?? 'You cannot decide this gate.'}
+            body={lockBody}
             actions={secondaryAction}
           />
         </div>

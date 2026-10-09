@@ -23,8 +23,12 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/**
+ * The "decided" note. Only an effective approval on the snapshot on screen counts: after a return
+ * for revision and a resubmission, the earlier version's decision must not hide the actions.
+ */
 export function decidedNoteFor(pkg: DecisionPackageView): string | null {
-  const a = pkg.approvals.find((x) => x.effective);
+  const a = pkg.approvals.find((x) => x.effective && x.snapshotId === pkg.snapshot.id);
   if (!a) return null;
   const v = pkg.snapshot.version;
   if (a.disposition === 'approve' || a.disposition === 'approve_with_conditions') {

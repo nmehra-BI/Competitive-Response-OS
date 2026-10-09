@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /** Shell, case layout and the connected approval panel against the MSW fixture mocks. */
+import { API } from '@growth-os/contracts';
 import { gates, people } from '@growth-os/fixtures-aster';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { api } from '../lib/api-client';
 import { createQueryClient } from '../lib/query';
 import { G2_HASH, G2_SNAPSHOT_ID } from '../mocks/data';
 import { mockServer, resetMockState, resetReplay, session } from '../mocks/node';
-import { ApprovalPanel } from './connected/ApprovalPanel';
+import { ApprovalPanel, decidedNoteFor } from './connected/ApprovalPanel';
 import { AppProviders } from './providers';
 import { buildRoutes } from './router';
 
@@ -113,5 +115,37 @@ describe('connected ApprovalPanel', () => {
       </AppProviders>,
     );
     expect(await screen.findByText(/The package changed since you opened it/)).toBeTruthy();
+  });
+});
+
+describe('decidedNoteFor', () => {
+  it('counts only an effective approval on the snapshot on screen', async () => {
+    session.signIn(people.elena.id);
+    const before = await api(API.gates.package, { params: { id: gates.g2.id }, query: {} });
+    expect(decidedNoteFor(before)).toBeNull();
+    const after = await api(API.gates.decide, {
+      params: { id: gates.g2.id },
+      idempotencyKey: 'decided-note',
+      body: {
+        snapshotId: before.snapshot.id,
+        snapshotHash: before.snapshot.contentHash,
+        disposition: 'approve_with_conditions',
+        rationale: 'Thresholds met',
+        note: null,
+        conditions: before.gateRequest.conditions.map((c) => ({
+          text: c.text,
+          ownerId: c.owner.id,
+          dueOn: c.dueOn,
+          dueRule: c.dueRule,
+          flag: c.flag,
+        })),
+        delegateToUserId: null,
+      },
+    });
+    expect(decidedNoteFor(after)).toMatch(/^Approved for v3 only\./);
+    // The same approval read on a newer snapshot (resubmitted after a return) is history only.
+    const newer = '00000000-0000-4000-8000-0000000000f4';
+    const resubmitted = { ...after, snapshot: { ...after.snapshot, id: newer, version: 4 } };
+    expect(decidedNoteFor(resubmitted)).toBeNull();
   });
 });
