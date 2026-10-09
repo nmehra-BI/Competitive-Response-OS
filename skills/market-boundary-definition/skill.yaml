@@ -1,20 +1,23 @@
 # Skill bundle (D-019). Skills confer no permissions: tools are still checked by the gateway.
 key: market-boundary-definition
-version: 0.1.0
+version: 1.0.0
 owner: WS5 (AI/analysis) with domain reviewer sign-off
-status: stub
+status: active
+subject: case
 purpose: >-
-  Propose a consistent market unit and boundary (unit, geography, year, currency, includes/excludes).
-screens: [S04, S06]
+  Propose the market unit, population unit, inclusions and exclusions so every later number counts the
+  same thing once.
+screens: [S05, S06]
 prd: [ME-04, ME-05]
 allowed_tools: [intelligence.search, evidence.get, portfolio.get_product]
-output_schema: SkillOutput # @growth-os/contracts entities/analysis.ts
+output_schema: SkillOutput # see output.schema.json
 allowed_proposal_types: [market_boundary, claim]
 budget:
-  wall_time_ms: 300000 # PRD §13: bounded initial brief within 5 minutes
-  max_tool_calls: 40
-  max_input_tokens: 120000
-  max_output_tokens: 8000
+  wall_time_ms: 300000
+  max_tool_calls: 30
+  max_input_tokens: 100000
+  max_output_tokens: 6000
+  max_cost_micros: 1500000
 model: config:ANALYSIS_MODEL # configuration only; never an identifier in code
 never:
   - approve, decide, sign or record outcomes
@@ -22,3 +25,4 @@ never:
   - cite an evidence id that was not returned to this run
   - use restricted or unentitled source content
   - produce probability or confidence scores
+  - mix population units (sites, companies, customers) in one boundary

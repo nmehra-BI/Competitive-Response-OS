@@ -1,0 +1,28 @@
+[
+  {
+    "type": "final",
+    "output": {
+      "summary": "Search plan",
+      "proposals": [{ "type": "search_plan", "segments": ["Food processing"] }],
+      "unknowns": [],
+      "notChecked": []
+    }
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Search plan for German food processing (repaired output).",
+      "proposals": [
+        {
+          "type": "search_plan",
+          "segments": ["Food processing"],
+          "geographies": ["DE"],
+          "queries": ["food-processing sites with a process-water treatment step"],
+          "notValidatedNotice": "AI draft · not validated"
+        }
+      ],
+      "unknowns": [],
+      "notChecked": ["Trade registry records"]
+    }
+  }
+]
