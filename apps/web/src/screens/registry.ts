@@ -34,4 +34,10 @@ export const SCREENS: Partial<Record<RouteId, ScreenComponent>> = {
   caseValidation: lazy(() => import('./validation/ValidationScreen')),
   caseDecisions: lazy(() => import('./decisions/DecisionsScreen')),
   caseBrief: lazy(() => import('./brief/BriefScreen')),
+  casePilot: lazy(() => import('./pilot/PilotScreen')),
+  caseOutcomes: lazy(() => import('./outcomes/OutcomesScreen')),
+  caseHistory: lazy(() => import('./history/HistoryScreen')),
+  evidence: lazy(() => import('./evidence/EvidenceScreen')),
+  evidenceSource: lazy(() => import('./evidence/EvidenceScreen')),
+  admin: lazy(() => import('./admin/AdminScreen')),
 };
