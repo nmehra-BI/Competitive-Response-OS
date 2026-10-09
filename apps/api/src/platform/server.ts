@@ -27,6 +27,8 @@ export interface ServerOptions {
   /** Injected services (tests). Missing ones are created from the environment. */
   deps?: Partial<PlatformDeps>;
   config?: Partial<PlatformConfig>;
+  /** Log destination (tests capture it to prove nothing restricted is logged). Default stdout. */
+  logStream?: NodeJS.WritableStream;
   /** Endpoints to register. Defaults to the frozen registry; tests may add synthetic ones. */
   endpoints?: readonly EndpointDef[];
 }
@@ -49,8 +51,17 @@ export async function buildServer(opts: ServerOptions): Promise<FastifyInstance>
   const app = Fastify({
     logger: opts.logger
       ? {
-          // Never log bodies, cookies or auth headers: they may carry restricted values (§15).
+          // Never log bodies, cookies or auth headers: they may carry restricted values (§15). The
+          // query string is dropped too: a search term can quote restricted text (D-105).
           redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+          serializers: {
+            req: (req: { method: string; url: string; id: string }) => ({
+              method: req.method,
+              url: req.url.split('?')[0],
+              reqId: req.id,
+            }),
+          },
+          ...(opts.logStream ? { stream: opts.logStream } : {}),
         }
       : false,
     genReqId: (req) => {

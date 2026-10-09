@@ -34,6 +34,8 @@ export async function createTestApp(
     endpoints?: readonly EndpointDef[];
     authMode?: 'dev' | 'oidc';
     now?: () => Date;
+    /** Capture the server log (log-scrubbing release gate). */
+    logStream?: NodeJS.WritableStream;
   } = {},
 ): Promise<TestApp> {
   const { handlers: allHandlers } = await import('../modules');
@@ -45,6 +47,7 @@ export async function createTestApp(
     endpoints: opts.endpoints,
     authMode: opts.authMode ?? 'dev',
     deps: { db, objects, now: opts.now },
+    ...(opts.logStream ? { logger: true, logStream: opts.logStream } : {}),
   });
   return {
     app,
