@@ -25,6 +25,7 @@ describe('worker task list', () => {
     const names = Object.keys(taskList).sort();
     expect(names).toEqual(
       [
+        JOBS.analysisRun, // WS5
         JOBS.analyticsFlush,
         JOBS.evidenceFreshness,
         JOBS.evidenceIngest,
