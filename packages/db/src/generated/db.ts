@@ -1009,6 +1009,14 @@ export interface PlatformGateRequest {
   updated_at: Generated<Timestamp>;
 }
 
+export interface PlatformGateRequestView {
+  gate_request_id: string;
+  snapshot_version: number;
+  tenant_id: string;
+  user_id: string;
+  viewed_at: Timestamp;
+}
+
 export interface PlatformIdempotencyRecord {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -1338,6 +1346,7 @@ export interface PlatformTenant {
   illustrative: Generated<boolean>;
   name: string;
   slug: string;
+  time_zone: Generated<string>;
 }
 
 export interface PlatformToolCall {
@@ -1483,6 +1492,7 @@ export interface DB {
   "platform.evidence_passage": PlatformEvidencePassage;
   "platform.external_task_link": PlatformExternalTaskLink;
   "platform.gate_request": PlatformGateRequest;
+  "platform.gate_request_view": PlatformGateRequestView;
   "platform.idempotency_record": PlatformIdempotencyRecord;
   "platform.license": PlatformLicense;
   "platform.material_change": PlatformMaterialChange;

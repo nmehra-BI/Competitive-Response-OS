@@ -53,11 +53,11 @@ export type CaseRecord = {
   updated_at: Date;
 };
 
-/** Tenant-local decision date (Europe/Berlin) for authority checks (D-045). */
-export const asOf = (now: Date): string => tenantLocalIso(now);
+/** Tenant-local decision date for authority checks (D-045), in the tenant's zone (D-077). */
+export const asOf = (now: Date, timeZone?: string): string => tenantLocalIso(now, timeZone);
 
 export function subjectAt(identity: Identity, now: Date): PolicySubject {
-  return { ...identity.subject, asOf: asOf(now) };
+  return { ...identity.subject, asOf: asOf(now, identity.tenant.timeZone) };
 }
 
 export async function findCase(tx: Tx, ref: string): Promise<CaseRecord | undefined> {

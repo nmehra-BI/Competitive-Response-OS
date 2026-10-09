@@ -230,6 +230,12 @@ export async function listTenantIds(db: Db): Promise<string[]> {
   return r.rows.map((row) => row.id);
 }
 
+/** The tenant's own calendar zone (D-077); the job option is only the fallback. */
+export async function tenantZone(tx: Tx, fallback: string): Promise<string> {
+  const r = await tx.selectFrom('platform.tenant').select('time_zone').executeTakeFirst();
+  return r?.time_zone ?? fallback;
+}
+
 export async function forEachTenant<T>(
   db: Db,
   ctx: TimerContext,
@@ -241,7 +247,7 @@ export async function forEachTenant<T>(
       const result = await withTenant(
         db,
         { tenantId, userId: null, correlationId: ctx.correlationId },
-        (tx) => fn(tx, ctx),
+        async (tx) => fn(tx, { ...ctx, timeZone: await tenantZone(tx, ctx.timeZone) }),
       );
       out.push({ tenantId, result });
     } catch (e) {

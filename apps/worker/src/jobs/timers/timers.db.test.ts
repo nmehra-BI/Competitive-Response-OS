@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createDb, sql, type Tx } from '@growth-os/db';
-import { advancePilotWindowsInTenant, expireApprovalsInTenant, type TimerContext } from './store';
+import { advancePilotWindowsInTenant, expireApprovalsInTenant, tenantZone, type TimerContext } from './store';
 
 const db = createDb('worker', 2);
 afterAll(async () => {
@@ -220,6 +220,25 @@ describe('timers.pilot_window (db)', () => {
       const audit = await sql<{ action: string; object_type: string }>`
         SELECT action, object_type FROM platform.audit_event WHERE object_id = ${w.caseId}`.execute(tx);
       expect(audit.rows).toEqual([{ action: 'case.stage_changed', object_type: 'case' }]);
+    });
+  });
+});
+
+describe('tenant time zone (D-077)', () => {
+  it('timers read each tenant zone from platform.tenant (the option is only the fallback)', async () => {
+    await inTenantTx(async (tx, w) => {
+      expect(await tenantZone(tx, 'UTC')).toBe('Europe/Berlin'); // the column default
+      await sql`UPDATE platform.tenant SET time_zone = 'Pacific/Auckland' WHERE id = ${w.tenant}`.execute(tx);
+      expect(await tenantZone(tx, 'UTC')).toBe('Pacific/Auckland');
+      // The expiry reason is written in the tenant's calendar: 11 Dec 23:59 Berlin is 12 Dec in Auckland.
+      const r = await expireApprovalsInTenant(tx, {
+        ...ctx('2026-12-12T09:00:00+01:00'),
+        timeZone: await tenantZone(tx, 'UTC'),
+      });
+      expect(r.expired).toBe(1);
+      const inv = await sql<{ reason: string }>`
+        SELECT reason FROM platform.approval_invalidation WHERE approval_id = ${w.approval}`.execute(tx);
+      expect(inv.rows[0]!.reason).toContain('12 Dec');
     });
   });
 });

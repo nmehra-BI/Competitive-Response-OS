@@ -34,8 +34,14 @@ import {
 } from '@growth-os/domain';
 import type { Tools } from './pipeline';
 
-/** Tenant-local calendar used for business copy ("changed on 26 Nov"). */
+/** Default tenant-local calendar; each tenant's own zone is `platform.tenant.time_zone` (D-077). */
 export const TENANT_TIME_ZONE = 'Europe/Berlin';
+
+/** The current tenant's IANA time zone (RLS: the tenant row of the transaction's tenant). */
+export async function tenantTimeZone(tx: Tx): Promise<string> {
+  const r = await tx.selectFrom('platform.tenant').select('time_zone').executeTakeFirst();
+  return r?.time_zone ?? TENANT_TIME_ZONE;
+}
 
 export interface PinnedChange {
   changeType: MaterialChangeType;
@@ -143,6 +149,7 @@ export async function applyMateriality(
   const evaluator = opts.evaluator ?? createMaterialityEvaluator();
   const policy = await activePolicy(tx);
   const results: AppliedMateriality[] = [];
+  const timeZone = await tenantTimeZone(tx);
 
   for (const caseId of [...new Set(pins.map((p) => p.caseId))]) {
     const casePins = pins.filter((p) => p.caseId === caseId);
@@ -156,7 +163,7 @@ export async function applyMateriality(
       decisionCritical: change.decisionCritical,
       committed: true,
       label: change.label,
-      at: tenantLocalIso(opts.now),
+      at: tenantLocalIso(opts.now, timeZone),
     };
     const outcome = evaluator.evaluate(descriptor, policy.body, casePins);
     const mc = await tx

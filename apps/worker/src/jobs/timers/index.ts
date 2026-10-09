@@ -20,7 +20,10 @@ export * from './plan';
 export * from './store';
 
 export interface TimerOptions {
-  /** Tenant-local zone for calendar dates. Default Europe/Berlin (pilot region, D-003). */
+  /**
+   * Fallback zone for calendar dates when a tenant row has none. Each tenant's own zone is read from
+   * `platform.tenant.time_zone` per run (D-077). Default Europe/Berlin (pilot region, D-003).
+   */
   timeZone?: string;
   /** Clock, injectable for tests. */
   now?: () => string;

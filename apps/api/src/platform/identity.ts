@@ -102,6 +102,7 @@ export async function loadIdentity(tx: Tx, session: SessionRef): Promise<Identit
       name: tenant.name,
       dataResidency: tenant.data_residency,
       illustrative: tenant.illustrative,
+      timeZone: tenant.time_zone,
     },
     kind,
     interactive,

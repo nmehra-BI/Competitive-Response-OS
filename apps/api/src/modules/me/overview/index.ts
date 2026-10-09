@@ -105,7 +105,7 @@ export const overviewHandlers: HandlerMap = {
         .select(['status', 'name'])
         .where('kind', '=', 'finance')
         .executeTakeFirst();
-      const today = asOf(ctx.now);
+      const today = asOf(ctx.now, ctx.identity.tenant.timeZone);
       const overdue = ids.length
         ? await tx
             .selectFrom('platform.assumption')

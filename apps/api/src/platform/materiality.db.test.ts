@@ -213,3 +213,35 @@ describe('evidence commands on a pinned source no longer fail', () => {
     });
   });
 });
+
+describe('tenant time zone (D-077)', () => {
+  it('stale reasons, auth.me and policy dates use the tenant zone, not a constant', async () => {
+    const a = await seedTenant(t.db, 'aster-demo');
+    // 23:30 on 25 Nov in Berlin is already 26 Nov in Auckland.
+    const late = new Date('2026-11-25T23:30:00+01:00');
+    const maya = await login(t.app, a.user('maya'));
+    const me = API.auth.me.response.parse((await call(t.app, API.auth.me, { cookie: maya })).json());
+    expect(me.tenant.timeZone).toBe('Europe/Berlin');
+    await withTenant(t.db, { tenantId: a.tenantId, userId: null, correlationId: 'tz' }, (tx) =>
+      tx.updateTable('platform.tenant').set({ time_zone: 'Pacific/Auckland' }).execute(),
+    );
+    const me2 = API.auth.me.response.parse((await call(t.app, API.auth.me, { cookie: maya })).json());
+    expect(me2.tenant.timeZone).toBe('Pacific/Auckland');
+    await inTenant(a, (tx) =>
+      applyMateriality(
+        systemTools(tx, { tenantId: a.tenantId, correlationId: 'tz', now: late, rule: 'test' }),
+        sourceChange(a, 'SRC-014'),
+        { now: late, actorUserId: null },
+      ),
+    );
+    const g2 = await gateStatus(a, gates.g2.key);
+    const snap = await inTenant(a, (tx) =>
+      tx
+        .selectFrom('platform.decision_snapshot')
+        .select('stale_reason')
+        .where('id', '=', g2.current_snapshot_id!)
+        .executeTakeFirstOrThrow(),
+    );
+    expect(snap.stale_reason).toBe('source SRC-014 changed on 26 Nov');
+  });
+});

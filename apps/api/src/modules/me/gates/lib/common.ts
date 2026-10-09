@@ -18,12 +18,12 @@ import { tenantLocalIso } from '../../../../platform/materiality';
 import { ApiError } from '../../../../platform/errors';
 import { personRef } from '../../../../platform/serialize';
 
-/** Tenant-local decision date (Europe/Berlin until a tenant time-zone setting exists), D-045. */
-export const asOfDate = (now: Date): string => tenantLocalIso(now);
+/** Tenant-local decision date (D-045) in the tenant's own zone (D-077). */
+export const asOfDate = (now: Date, timeZone?: string): string => tenantLocalIso(now, timeZone);
 
 /** The caller as a PolicySubject with the decision date set (authority needs `asOf`). */
 export function subjectOf(ctx: Ctx<EndpointDef>): PolicySubject {
-  return { ...ctx.identity.subject, asOf: asOfDate(ctx.now) };
+  return { ...ctx.identity.subject, asOf: asOfDate(ctx.now, ctx.identity.tenant.timeZone) };
 }
 
 /** PersonRef for system-made records (the contract requires a person). */
