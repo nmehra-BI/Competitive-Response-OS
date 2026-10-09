@@ -2,7 +2,10 @@
  * Screen registry (shared, append-only †). Each WS8 stream adds ONE line per screen it lands,
  * keyed by the frozen route id in app/routes.ts. Routes without an entry show a placeholder.
  *
- *   caseSizing: lazy(() => import('./sizing/SizingScreen')),
+ *   caseThesis: lazy(() => import('./thesis/ThesisScreen')),
+  caseSizing: lazy(() => import('./sizing/SizingScreen')),
+  caseFeasibility: lazy(() => import('./feasibility/FeasibilityScreen')),
+  caseEconomics: lazy(() => import('./economics/EconomicsScreen')),
  *
  * Screens default-export a component with no props; they read params with useParams() and deep
  * links with useSearchParams(). Case screens render inside CaseLayout and start at <h2>.
@@ -18,4 +21,8 @@ void lazy;
 
 export const SCREENS: Partial<Record<RouteId, ScreenComponent>> = {
   // ↓ WS8 streams: append one line per screen below this comment.
+  caseThesis: lazy(() => import('./thesis/ThesisScreen')),
+  caseSizing: lazy(() => import('./sizing/SizingScreen')),
+  caseFeasibility: lazy(() => import('./feasibility/FeasibilityScreen')),
+  caseEconomics: lazy(() => import('./economics/EconomicsScreen')),
 };
