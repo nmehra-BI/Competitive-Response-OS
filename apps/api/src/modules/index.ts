@@ -26,6 +26,13 @@ import { opportunityHandlers } from './me/opportunities';
 import { overviewHandlers } from './me/overview';
 import { sizingHandlers } from './me/sizing';
 import { thesisHandlers } from './me/thesis';
+import { budgetHandlers } from './me/budget';
+import { experimentHandlers } from './me/experiments';
+import { gateHandlers } from './me/gates';
+import { outcomeHandlers } from './me/outcomes';
+import { pilotHandlers } from './me/pilot';
+import { reviewHandlers } from './platform/reviews';
+import { workHandlers } from './platform/work';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -46,4 +53,11 @@ export const handlers: HandlerMap = {
   ...thesisHandlers,
   ...feasibilityHandlers,
   ...overviewHandlers,
+  ...gateHandlers,
+  ...experimentHandlers,
+  ...pilotHandlers,
+  ...budgetHandlers,
+  ...outcomeHandlers,
+  ...reviewHandlers,
+  ...workHandlers,
 };
