@@ -14,13 +14,14 @@ import {
   SectionHeader,
   SegmentedControl,
   Skeleton,
+  useFocusableScroll,
 } from '@growth-os/ui';
 import { useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
 import { useApiQuery } from '../../lib/query';
 import { useViewer } from '../../lib/session';
-import { useFocusableScroll } from '../decisions/useFocusableScroll';
+
 import '../decisions/ws8c.css';
 import { AssumptionRegister2x2, AssumptionRegisterTable } from './AssumptionRegister';
 import { DisputePanel } from './DisputePanel';

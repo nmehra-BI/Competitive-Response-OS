@@ -3,7 +3,7 @@
  * kbd(), mono(), banner(), seg(), table() — plus the restricted value, autosave indicator, the
  * illustrative-data ribbon and the chart/table toggle (research §10.6).
  */
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type {
   AutosaveState,
   BannerProps,
@@ -460,6 +460,61 @@ export function SegmentedControl<V extends string>({
   );
 }
 
+const SCROLL_MARK = 'data-gos-scroll-focus';
+
+/** Name a scroll region after its table: "<table name> (scrollable)". */
+function scrollRegionName(el: HTMLElement): string {
+  const t = el.querySelector('table');
+  const name = t?.getAttribute('aria-label') ?? t?.querySelector('caption')?.textContent?.trim() ?? 'Table';
+  return `${name} (scrollable)`;
+}
+
+/** Make one `.gos-table-scroll` a focusable, named region (or undo what this helper added). */
+function setScrollFocusable(el: HTMLElement, on: boolean) {
+  const ours = el.hasAttribute(SCROLL_MARK);
+  if (on) {
+    if (el.tabIndex < 0 || ours) el.tabIndex = 0;
+    if (!el.getAttribute('role') || ours) el.setAttribute('role', 'region');
+    if (!el.getAttribute('aria-label') || ours) el.setAttribute('aria-label', scrollRegionName(el));
+    el.setAttribute(SCROLL_MARK, '');
+  } else if (ours) {
+    el.removeAttribute('tabindex');
+    el.removeAttribute('role');
+    el.removeAttribute('aria-label');
+    el.removeAttribute(SCROLL_MARK);
+  }
+}
+
+/**
+ * Horizontal table scrollers must be keyboard reachable (WCAG 2.1.1; axe
+ * `scrollable-region-focusable`). Every `.gos-table-scroll` at or inside `ref` becomes a named,
+ * focusable region while its content overflows (always, where ResizeObserver is unavailable).
+ * `DataTable` uses it; screens with their own `.gos-table-scroll` markup call it on a container.
+ * Re-runs when `deps` change (new rows can make a table overflow).
+ */
+export function useFocusableScroll(ref: RefObject<HTMLElement | null>, deps: readonly unknown[] = []) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return undefined;
+    const els = [
+      ...(root.matches('.gos-table-scroll') ? [root] : []),
+      ...root.querySelectorAll<HTMLElement>('.gos-table-scroll'),
+    ];
+    if (typeof ResizeObserver === 'undefined') {
+      els.forEach((el) => setScrollFocusable(el, true));
+      return undefined;
+    }
+    const update = () => els.forEach((el) => setScrollFocusable(el, el.scrollWidth > el.clientWidth));
+    const ro = new ResizeObserver(update);
+    for (const el of els) {
+      ro.observe(el);
+      if (el.firstElementChild) ro.observe(el.firstElementChild);
+    }
+    update();
+    return () => ro.disconnect();
+  }, [ref, ...deps]);
+}
+
 /** common.py table(): numeric columns right-aligned with tabular figures; scoped headers. */
 export function DataTable<Row>({
   columns,
@@ -470,8 +525,10 @@ export function DataTable<Row>({
   caption,
   rowHeader,
 }: DataTableProps<Row> & { caption?: string; rowHeader?: string }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  useFocusableScroll(scroller, [rows, columns]);
   return (
-    <div className="gos-table-scroll">
+    <div className="gos-table-scroll" ref={scroller}>
       <table className="gos-table" aria-label={caption ? undefined : ariaLabel} style={{ minWidth }}>
         {caption ? <caption>{caption}</caption> : null}
         <thead>

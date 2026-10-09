@@ -14,11 +14,11 @@ import {
   ResultGlyph,
   ReviewerPositions,
   ScenarioMark,
+  useFocusableScroll,
 } from '@growth-os/ui';
 import { useId, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { dayMonth, dayTime, fullDate } from './dates';
-import { useFocusableScroll } from './useFocusableScroll';
 
 export const GATE_KIND: Record<GateCode, string> = {
   G0: 'Mandate',
