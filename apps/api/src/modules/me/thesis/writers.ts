@@ -16,7 +16,7 @@ export interface NewClaim {
   statement: string;
   kind: EpistemicKind;
   kindDetail: string | null;
-  origin: 'human' | 'ai';
+  origin: 'human' | 'ai' | 'ai_edited';
   agentRunId: string | null;
   sourceIds: readonly string[];
   assumptionId: string | null;
@@ -78,14 +78,22 @@ export async function createClaimFromProposal(
     agentRunId: string;
     proposalId: string;
     kindDetail?: string | null;
+    /** The proposal's epistemic kind (default `inference_ai`); AI never states a scenario or an actual. */
+    kind?: Exclude<EpistemicKind, 'scenario' | 'actual'>;
+    /** The person edited the proposal before accepting it: origin `ai_edited`. */
+    edited?: boolean;
   },
 ): Promise<Claim> {
+  const kind = p.kind ?? 'inference_ai';
+  if ((kind as EpistemicKind) === 'scenario' || (kind as EpistemicKind) === 'actual')
+    throw new ApiError('VALIDATION_FAILED', 'An AI claim cannot be a scenario or an actual.');
+  // An evidence claim needs a real citation; without one it can only be an unknown.
   const id = await insertClaim(t.tx, ctx, {
     caseId: p.caseId,
     statement: p.statement,
-    kind: 'inference_ai',
+    kind: kind === 'evidence' && p.sourceIds.length === 0 ? 'unknown' : kind,
     kindDetail: p.kindDetail ?? null,
-    origin: 'ai',
+    origin: p.edited ? 'ai_edited' : 'ai',
     agentRunId: p.agentRunId,
     sourceIds: p.sourceIds,
     assumptionId: null,
@@ -97,7 +105,7 @@ export async function createClaimFromProposal(
     objectId: id,
     caseId: p.caseId,
     summary: 'AI draft claim added from an analysis proposal (not a fact until a person accepts it)',
-    details: { proposalId: p.proposalId, agentRunId: p.agentRunId },
+    details: { proposalId: p.proposalId, agentRunId: p.agentRunId, edited: p.edited ?? false },
   });
   return (await claimsByIds(t.tx, ctx.identity, [id]))[0]!;
 }

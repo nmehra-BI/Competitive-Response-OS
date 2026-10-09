@@ -105,15 +105,35 @@ export async function insertOpportunity(
 export async function createOpportunityFromProposal(
   t: Tools,
   ctx: { tenantId: string; actorUserId: string; now: Date; identity: Identity },
-  proposal: Omit<NewOpportunityInput, 'origin'> & { agentRunId: string; proposalId: string },
+  proposal: Omit<NewOpportunityInput, 'origin'> & {
+    agentRunId: string;
+    proposalId: string;
+    /** The person edited the candidate before accepting it (recorded in the audit details). */
+    edited?: boolean;
+  },
 ): Promise<Opportunity> {
-  const row = await insertOpportunity(t.tx, ctx, { ...proposal, origin: 'ai' });
+  if (proposal.likelyDuplicateOfId) {
+    const dup = await t.tx
+      .selectFrom('me.opportunity')
+      .select('id')
+      .where('id', '=', proposal.likelyDuplicateOfId)
+      .where('mandate_id', '=', proposal.mandateId)
+      .executeTakeFirst();
+    if (!dup) throw new ApiError('VALIDATION_FAILED', 'The likely duplicate is not on this mandate.');
+  }
+  const { edited, ...input } = proposal;
+  const row = await insertOpportunity(t.tx, ctx, { ...input, origin: 'ai' });
   await t.audit({
     action: 'opportunity.created_from_proposal',
     objectType: 'opportunity',
     objectId: row.id,
     summary: `${row.display_key} created from an accepted analysis proposal (Proposed · AI)`,
-    details: { proposalId: proposal.proposalId, agentRunId: proposal.agentRunId },
+    details: {
+      proposalId: proposal.proposalId,
+      agentRunId: proposal.agentRunId,
+      edited: edited ?? false,
+      sources: new Set(proposal.sourceIds ?? []).size,
+    },
   });
   return toOpportunity(t.tx, ctx.identity, row);
 }

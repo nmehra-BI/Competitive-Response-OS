@@ -89,22 +89,19 @@ async function statusEvent(ctx: BaseCtx, t: Tools, id: string, from: string, to:
   });
 }
 
-/** Partial discovery: the latest discovery run was partial, or a discovery source connection is down. */
-async function discoveryHealth(tx: Tx, mandateId: string) {
-  const run = await tx
-    .selectFrom('platform.agent_run')
-    .select(['status', 'finished_at'])
-    .where('subject_type', '=', 'mandate')
-    .where('subject_id', '=', mandateId)
-    .orderBy('created_at', 'desc')
-    .executeTakeFirst();
+/**
+ * Partial discovery: a connection used for discovery is not connected. The list never reads analysis
+ * runs (D-074: no module depends on runs, so the list behaves the same with analysis off); the run's
+ * own status and detail are on the analysis panel (`analysis.latestForCase`).
+ */
+async function discoveryHealth(tx: Tx) {
   const conns = await tx
     .selectFrom('platform.connection')
     .select(['id', 'name', 'status', 'used_for', 'last_success_at', 'last_checked_at'])
     .execute();
   const down = conns.filter((c) => /discovery/i.test(c.used_for ?? '') && c.status !== 'connected');
   return {
-    discoveryPartial: run?.status === 'partial' || down.length > 0,
+    discoveryPartial: down.length > 0,
     unavailableSources: down.map((c) => ({
       connectionId: c.id,
       name: c.name,
@@ -191,7 +188,7 @@ export const opportunityHandlers: HandlerMap = {
       return {
         items: await toOpportunities(tx, ctx.identity, page.items),
         nextCursor: page.nextCursor,
-        ...(await discoveryHealth(tx, m.id)),
+        ...(await discoveryHealth(tx)),
         filtersText: filters.join(' · '),
       };
     },

@@ -32,7 +32,8 @@ import { ApiError } from '../../platform/errors';
 import { pageOf } from '../../platform/pagination';
 import { command, query, type HandlerMap, type Tools } from '../../platform/pipeline';
 import { isoDateTime, isoDateTimeOrNull, personRef } from '../../platform/serialize';
-import { createClaimFromProposal, createOpportunityFromProposal } from './writers';
+import { createOpportunityFromProposal } from '../me/opportunities/writers';
+import { createClaimFromProposal } from '../me/thesis/writers';
 
 export const ANALYSIS_RUN_JOB = 'analysis.run';
 const DISCOVERY_SKILL: SkillKey = 'mandate-to-search-plan';
@@ -398,32 +399,72 @@ function validateEdit(original: ProposalPayload, edited: unknown): ProposalPaylo
   return parsed.data;
 }
 
+/**
+ * Map ids cited by the run (passage ids returned by `evidence.get`, or source ids) to source ids,
+ * keeping only rows that exist in this tenant. The record writers take source ids.
+ */
+async function citedSourceIds(tx: Tx, ids: readonly string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const [passages, sources] = await Promise.all([
+    tx
+      .selectFrom('platform.evidence_passage')
+      .select('source_id')
+      .where('id', 'in', [...ids])
+      .execute(),
+    tx
+      .selectFrom('platform.source')
+      .select('id')
+      .where('id', 'in', [...ids])
+      .execute(),
+  ]);
+  return [...new Set([...passages.map((p) => p.source_id), ...sources.map((s) => s.id)])];
+}
+
+/**
+ * Accepting a proposal writes the business record through WS4a's record writers (D-076), inside this
+ * pipeline: a candidate becomes a Detected opportunity ("Proposed · AI"); a claim becomes an AI draft
+ * claim on the case that a person still accepts as a fact with `claims.accept` (never-rule 11).
+ */
 async function applyAccepted(
-  ctx: { tenantId: string; userId: string },
+  ctx: { tenantId: string; userId: string; now: Date; identity: Identity },
   t: Tools,
   f: ProposalFacts,
   payload: ProposalPayload,
   edited: boolean,
 ): Promise<{ targetType: string | null; targetId: string | null }> {
-  const provenance = { runId: f.run.id, proposalId: f.proposal.id, acceptedBy: ctx.userId, edited };
+  const who = { tenantId: ctx.tenantId, actorUserId: ctx.userId, now: ctx.now, identity: ctx.identity };
   switch (payload.type) {
     case 'opportunity_candidate': {
       if (!f.subject.mandate)
         throw new ApiError('VALIDATION_FAILED', 'A candidate can only be accepted on its mandate.');
-      const o = await createOpportunityFromProposal(t, {
-        tenantId: ctx.tenantId,
+      const o = await createOpportunityFromProposal(t, who, {
         mandateId: f.subject.mandate.id,
-        payload,
-        provenance,
+        name: payload.name,
+        trigger: payload.trigger,
+        fitRationale: payload.fitRationale,
+        fitCriteria: payload.fitCriteria.map((c) => ({ ...c, note: null })),
+        unknowns: payload.unknowns,
+        sourceIds: await citedSourceIds(t.tx, payload.evidenceIds),
+        likelyDuplicateOfId: payload.likelyDuplicateOfOpportunityId,
+        agentRunId: f.run.id,
+        proposalId: f.proposal.id,
+        edited,
       });
       return { targetType: 'opportunity', targetId: o.id };
     }
     case 'claim': {
-      const c = await createClaimFromProposal(t, {
-        tenantId: ctx.tenantId,
+      if (!f.run.case_id) throw new ApiError('VALIDATION_FAILED', 'A claim can only be accepted on a case.');
+      const k = payload.claim.kind;
+      if (k === 'scenario' || k === 'actual')
+        throw new ApiError('VALIDATION_FAILED', 'An AI claim cannot be a scenario or an actual.');
+      const c = await createClaimFromProposal(t, who, {
         caseId: f.run.case_id,
-        payload,
-        provenance,
+        statement: payload.claim.statement,
+        sourceIds: await citedSourceIds(t.tx, payload.claim.evidenceIds),
+        kind: k,
+        edited,
+        agentRunId: f.run.id,
+        proposalId: f.proposal.id,
       });
       return { targetType: 'claim', targetId: c.id };
     }

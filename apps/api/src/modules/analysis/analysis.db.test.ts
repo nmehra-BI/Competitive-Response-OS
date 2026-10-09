@@ -120,7 +120,7 @@ describe('analysis runs on a case', () => {
     ]);
   });
 
-  it('accepting an AI claim writes it with provenance (origin ai, accepted by a person)', async () => {
+  it('accepting an AI claim writes an AI draft claim with provenance; it becomes a fact only through claims.accept', async () => {
     const props = await call(t.app, API.analysis.proposals, {
       params: { caseRef: 'ME-104' },
       cookie: cookie.maya,
@@ -137,12 +137,30 @@ describe('analysis runs on a case', () => {
     const claim = await inA((tx) =>
       tx.selectFrom('platform.claim').selectAll().where('id', '=', d.targetId!).executeTakeFirstOrThrow(),
     );
+    // WS4a's writer (D-076): the claim enters the case as an AI draft, never an accepted fact.
     expect(claim).toMatchObject({
       origin: 'ai',
-      accepted_by: a.user('maya'),
+      accepted_by: null,
+      created_by: a.user('maya'),
       agent_run_id: p.runId,
-      status: 'accepted',
+      status: 'proposed',
     });
+    const audit = await inA((tx) =>
+      tx.selectFrom('platform.audit_event').select('action').where('object_id', '=', claim.id).execute(),
+    );
+    expect(audit.map((e) => e.action)).toEqual(['claim.created_from_proposal']);
+    // A person accepts it as a fact with the human command (never-rule 11).
+    const accepted = await call(t.app, API.thesis.acceptClaim, {
+      params: { id: claim.id },
+      cookie: cookie.maya,
+      idempotencyKey: true,
+      body: { as: 'inference', editedStatement: null },
+    });
+    expect(accepted.statusCode).toBe(200);
+    const after = await inA((tx) =>
+      tx.selectFrom('platform.claim').selectAll().where('id', '=', claim.id).executeTakeFirstOrThrow(),
+    );
+    expect(after).toMatchObject({ status: 'accepted', accepted_by: a.user('maya'), origin: 'ai' });
   });
 
   it('refuses a mandate skill on a case and unknown skills', async () => {
