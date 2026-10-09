@@ -1,24 +1,25 @@
 /**
- * Seed runner. Loads the canonical Aster fixture (fixtures/aster) into the database for a profile.
- *
- * Profiles (see fixtures/aster/README.md):
- *   aster-start  tenant, people, roles, authority, policies, licences, sources, connections,
- *                approved mandate MD-21 and detected opportunities. Start of the PRD §15 journey.
- *   aster-demo   full journey history to 26 Nov 2026 (G2 awaiting decision) for demos and screens.
- *
- * TODO(WS1 platform/db): implement inserts for each fixture collection inside one transaction with
- * app.tenant_id set, generating display-key counters and audit events with actor_kind 'system'.
+ * `pnpm db:seed [aster-start|aster-demo]` — loads the canonical Aster fixture (fixtures/aster).
+ * Runs as the owner role inside one tenant transaction (RLS and guard triggers apply).
+ * See packages/db/src/seed/index.ts for the profiles.
  */
-import { asterFixture } from '@growth-os/fixtures-aster';
+import { createDb } from '../index';
+import { SEED_PROFILES, seedAster, type SeedProfile } from '../seed';
 
-const profile = process.argv[2] ?? process.env.SEED_PROFILE ?? 'aster-start';
+const profile = (process.argv[2] ?? process.env.SEED_PROFILE ?? 'aster-start') as SeedProfile;
 
 async function main(): Promise<void> {
-  const counts = Object.fromEntries(
-    Object.entries(asterFixture).map(([k, v]) => [k, Array.isArray(v) ? v.length : 1]),
-  );
-  console.log(`seed profile "${profile}" — fixture collections:`, counts);
-  throw new Error('db:seed is not implemented yet (owned by WS1). Fixture data is ready in fixtures/aster.');
+  if (!SEED_PROFILES.includes(profile))
+    throw new Error(`Unknown seed profile "${profile}". Use one of: ${SEED_PROFILES.join(', ')}`);
+  const db = createDb('owner', 2);
+  try {
+    const r = await seedAster(db, { profile });
+    console.log(
+      `seeded profile "${r.profile}" into tenant ${r.tenantSlug} (${r.tenantId}) · illustrative · ${r.audits} audit events`,
+    );
+  } finally {
+    await db.destroy();
+  }
 }
 
 main().catch((err: unknown) => {

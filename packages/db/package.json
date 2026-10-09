@@ -16,8 +16,11 @@
     "codegen": "kysely-codegen --dialect postgres --url \"${DATABASE_OWNER_URL:-postgres://me_owner:me_owner_dev@localhost:5432/growth_os}\" --include-pattern \"(platform|me|sim).*\" --out-file src/generated/db.ts"
   },
   "dependencies": {
+    "@growth-os/connectors": "workspace:*",
     "@growth-os/contracts": "workspace:*",
+    "@growth-os/domain": "workspace:*",
     "@growth-os/fixtures-aster": "workspace:*",
+    "graphile-worker": "^0.16.6",
     "kysely": "^0.27.5",
     "pg": "^8.13.1"
   },
