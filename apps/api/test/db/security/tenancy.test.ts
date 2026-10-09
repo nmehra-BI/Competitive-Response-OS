@@ -40,7 +40,12 @@ beforeAll(async () => {
 });
 afterAll(() => w.close());
 
-type Case = { def: EndpointDef; params?: Record<string, unknown>; query?: Record<string, string | number>; body?: unknown };
+type Case = {
+  def: EndpointDef;
+  params?: Record<string, unknown>;
+  query?: Record<string, string | number>;
+  body?: unknown;
+};
 
 function table(): Case[] {
   const a = w.tenants.a!;
@@ -55,38 +60,79 @@ function table(): Case[] {
     {
       def: API.cases.requestReview,
       params: c,
-      body: { area: 'finance', reviewerId: a.user('daniel'), targetType: 'case', targetId: null, question: 'q', whatToCheck: [], dueOn: null },
+      body: {
+        area: 'finance',
+        reviewerId: a.user('daniel'),
+        targetType: 'case',
+        targetId: null,
+        question: 'q',
+        whatToCheck: [],
+        dueOn: null,
+      },
     },
-    { def: API.cases.createDirect, body: { businessUnitId: a.id(businessUnits[0].id), title: 'x', mandate: {} } },
+    {
+      def: API.cases.createDirect,
+      body: { businessUnitId: a.id(businessUnits[0].id), title: 'x', mandate: {} },
+    },
     { def: API.mandates.get, params: { ref: a.id(mandate.id) } },
     { def: API.mandates.create, body: { businessUnitId: a.id(businessUnits[0].id), title: 'x', fields: {} } },
     { def: API.mandates.saveDraft, params: { ref: a.id(mandate.id) }, body: { fields: {} } },
     { def: API.mandates.submit, params: { ref: a.id(mandate.id) } },
     { def: API.opportunities.list, query: { mandateId: a.id(mandate.id) } },
     { def: API.opportunities.get, params: { ref: opp } },
-    { def: API.opportunities.createManual, body: { mandateId: a.id(mandate.id), name: 'x', trigger: '', fitRationale: '' } },
+    {
+      def: API.opportunities.createManual,
+      body: { mandateId: a.id(mandate.id), name: 'x', trigger: '', fitRationale: '' },
+    },
     { def: API.opportunities.shortlist, params: { ref: opp } },
     { def: API.opportunities.dismiss, params: { ref: opp }, body: { reason: 'x' } },
     { def: API.opportunities.merge, params: { ref: opp }, body: { targetOpportunityId: oppId(a, 'OPP-16') } },
     { def: API.opportunities.restore, params: { ref: opp }, body: { reason: 'x' } },
     { def: API.opportunities.convert, params: { ref: opp }, body: { ownerId: a.user('maya') } },
-    { def: API.comparisons.create, body: { mandateId: a.id(mandate.id), opportunityRefs: [opp, oppId(a, 'OPP-16')] } },
+    {
+      def: API.comparisons.create,
+      body: { mandateId: a.id(mandate.id), opportunityRefs: [opp, oppId(a, 'OPP-16')] },
+    },
     { def: API.comparisons.get, params: { id: ids.comparison } },
-    { def: API.comparisons.previewRanking, params: { id: ids.comparison }, body: { productFit: 40, channelAccess: 30, evidenceCoverage: 30 } },
-    { def: API.comparisons.applyWeights, params: { id: ids.comparison }, body: { productFit: 40, channelAccess: 30, evidenceCoverage: 30 } },
-    { def: API.comparisons.setExclusion, params: { id: ids.comparison, opportunityId: opp }, body: { excluded: false, reason: null } },
+    {
+      def: API.comparisons.previewRanking,
+      params: { id: ids.comparison },
+      body: { productFit: 40, channelAccess: 30, evidenceCoverage: 30 },
+    },
+    {
+      def: API.comparisons.applyWeights,
+      params: { id: ids.comparison },
+      body: { productFit: 40, channelAccess: 30, evidenceCoverage: 30 },
+    },
+    {
+      def: API.comparisons.setExclusion,
+      params: { id: ids.comparison, opportunityId: opp },
+      body: { excluded: false, reason: null },
+    },
     { def: API.comparisons.select, params: { id: ids.comparison }, body: { opportunityId: opp } },
     { def: API.thesis.get, params: c },
     { def: API.thesis.saveDraft, params: c, body: { fields: {} } },
     { def: API.thesis.commit, params: c },
-    { def: API.thesis.addClaim, params: c, body: { statement: 'x', kind: 'unknown', sourceIds: [], assumptionId: null } },
-    { def: API.thesis.acceptClaim, params: { id: ids.claim }, body: { as: 'inference', editedStatement: null } },
+    {
+      def: API.thesis.addClaim,
+      params: c,
+      body: { statement: 'x', kind: 'unknown', sourceIds: [], assumptionId: null },
+    },
+    {
+      def: API.thesis.acceptClaim,
+      params: { id: ids.claim },
+      body: { as: 'inference', editedStatement: null },
+    },
     { def: API.thesis.discardClaim, params: { id: ids.claim } },
     { def: API.thesis.challengeClaim, params: { id: ids.claim }, body: { statement: 'x' } },
     { def: API.sizing.get, params: c },
     { def: API.sizing.saveDraft, params: c, body: {} },
     { def: API.sizing.calculateDraft, params: c },
-    { def: API.sizing.resolveDuplicateCohort, params: c, body: { keepCohortId: ids.cohort, excludeCohortId: ids.cohort } },
+    {
+      def: API.sizing.resolveDuplicateCohort,
+      params: c,
+      body: { keepCohortId: ids.cohort, excludeCohortId: ids.cohort },
+    },
     { def: API.sizing.commit, params: c },
     { def: API.sizing.getVersion, params: { ...c, version: 2 } },
     { def: API.sizing.compareVersions, params: c, query: { from: 2, to: 2 } },
@@ -96,16 +142,36 @@ function table(): Case[] {
     {
       def: API.feasibility.sign,
       params: { ...c, dimension: 'specialist_review' },
-      body: { position: 'supports', scopeText: 'x', coversGate: 'G2', maxSites: 4, maxDays: 90, statement: null, evidenceSourceIds: [] },
+      body: {
+        position: 'supports',
+        scopeText: 'x',
+        coversGate: 'G2',
+        maxSites: 4,
+        maxDays: 90,
+        statement: null,
+        evidenceSourceIds: [],
+      },
     },
-    { def: API.feasibility.recordDisagreement, params: { ...c, dimension: 'operations' }, body: { statement: 'x' } },
-    { def: API.feasibility.resolveBlocker, params: { id: ids.blocker }, body: { kind: 'resolved', resolution: 'x', scopeRestrictionGateRequestId: null } },
+    {
+      def: API.feasibility.recordDisagreement,
+      params: { ...c, dimension: 'operations' },
+      body: { statement: 'x' },
+    },
+    {
+      def: API.feasibility.resolveBlocker,
+      params: { id: ids.blocker },
+      body: { kind: 'resolved', resolution: 'x', scopeRestrictionGateRequestId: null },
+    },
     { def: API.economics.get, params: c },
     { def: API.economics.saveDraft, params: c, body: { drivers: [] } },
     { def: API.economics.calculateDraft, params: c },
     { def: API.economics.whatMustBeTrue, params: c },
     { def: API.economics.commit, params: c },
-    { def: API.economics.requestFinanceReview, params: c, body: { economicsVersion: 2, reviewerId: a.user('daniel'), dueOn: null } },
+    {
+      def: API.economics.requestFinanceReview,
+      params: c,
+      body: { economicsVersion: 2, reviewerId: a.user('daniel'), dueOn: null },
+    },
     {
       def: API.economics.signFinanceReview,
       params: { id: ids.modelReview },
@@ -131,21 +197,43 @@ function table(): Case[] {
         dueOn: null,
       },
     },
-    { def: API.assumptions.update, params: { id: ids.assumption }, body: { value: '0.3', changeReason: 'x' } },
+    {
+      def: API.assumptions.update,
+      params: { id: ids.assumption },
+      body: { value: '0.3', changeReason: 'x' },
+    },
     { def: API.assumptions.versions, params: { id: ids.assumption } },
     { def: API.assumptions.retire, params: { id: ids.assumption }, body: { rationale: 'x' } },
-    { def: API.assumptions.dispute, params: { id: ids.assumption }, body: { statement: 'x', proposedValueText: null } },
+    {
+      def: API.assumptions.dispute,
+      params: { id: ids.assumption },
+      body: { statement: 'x', proposedValueText: null },
+    },
     { def: API.assumptions.replyToChallenge, params: { id: ids.challenge }, body: { body: 'x' } },
     { def: API.assumptions.resolveChallenge, params: { id: ids.challenge }, body: { resolution: 'x' } },
   ];
 }
 
 const LISTS = [API.overview.portfolio, API.overview.listCases, API.mandates.list];
-const WS4A_GROUPS = ['overview', 'cases', 'mandates', 'opportunities', 'comparisons', 'thesis', 'sizing', 'lineage', 'feasibility', 'economics', 'assumptions'] as const;
+const WS4A_GROUPS = [
+  'overview',
+  'cases',
+  'mandates',
+  'opportunities',
+  'comparisons',
+  'thesis',
+  'sizing',
+  'lineage',
+  'feasibility',
+  'economics',
+  'assumptions',
+] as const;
 
 describe('tenancy for every WS4a endpoint', () => {
   it('covers all 64 WS4a endpoints', () => {
-    const all = WS4A_GROUPS.flatMap((g) => Object.values(API[g]) as EndpointDef[]).filter((d) => d.id !== 'opportunities.requestDiscovery');
+    const all = WS4A_GROUPS.flatMap((g) => Object.values(API[g]) as EndpointDef[]).filter(
+      (d) => d.id !== 'opportunities.requestDiscovery',
+    );
     const covered = new Set([...table().map((c) => c.def.id), ...LISTS.map((d) => d.id)]);
     expect(all).toHaveLength(64);
     expect(all.map((d) => d.id).filter((id) => !covered.has(id))).toEqual([]);

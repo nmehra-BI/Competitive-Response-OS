@@ -51,13 +51,19 @@ async function mandateDefaults(tx: Tx, c: CaseRecord) {
   if (!c.mandate_id) return null;
   const v = await tx
     .selectFrom('me.mandate as m')
-    .innerJoin('me.mandate_version as v', (j) => j.on((eb) => eb('v.id', '=', eb.fn.coalesce('m.current_version_id', 'm.draft_version_id'))))
+    .innerJoin('me.mandate_version as v', (j) =>
+      j.on((eb) => eb('v.id', '=', eb.fn.coalesce('m.current_version_id', 'm.draft_version_id'))),
+    )
     .select(['v.geography_codes', 'v.segment_ids', 'v.horizon_years', 'v.product_id'])
     .where('m.id', '=', c.mandate_id)
     .executeTakeFirst();
   if (!v) return null;
-  const segs = v.segment_ids.length ? await tx.selectFrom('platform.segment').select('name').where('id', 'in', v.segment_ids).execute() : [];
-  const product = v.product_id ? await tx.selectFrom('platform.product').select('name').where('id', '=', v.product_id).executeTakeFirst() : undefined;
+  const segs = v.segment_ids.length
+    ? await tx.selectFrom('platform.segment').select('name').where('id', 'in', v.segment_ids).execute()
+    : [];
+  const product = v.product_id
+    ? await tx.selectFrom('platform.product').select('name').where('id', '=', v.product_id).executeTakeFirst()
+    : undefined;
   return {
     country: v.geography_codes[0] ?? null,
     segment: segs.map((s) => s.name.toLowerCase()).join(', ') || null,
@@ -67,7 +73,12 @@ async function mandateDefaults(tx: Tx, c: CaseRecord) {
 }
 
 /** The case's draft, created from the current version (or from scratch) when absent. */
-async function ensureDraft(tx: Tx, ctx: BaseCtx & { ifMatch: number | null }, c: CaseRecord, patch: Patch): Promise<SizingVersionRow> {
+async function ensureDraft(
+  tx: Tx,
+  ctx: BaseCtx & { ifMatch: number | null },
+  c: CaseRecord,
+  patch: Patch,
+): Promise<SizingVersionRow> {
   const versions = await sizingVersions(tx, c.id);
   const draft = versions.find((v) => v.state === 'draft');
   const check = (rv: number) => assertIfMatch(ctx as never, rv);
@@ -95,36 +106,77 @@ async function ensureDraft(tx: Tx, ctx: BaseCtx & { ifMatch: number | null }, c:
       })
       .returningAll()
       .executeTakeFirstOrThrow()) as SizingVersionRow;
-    const inputs = await tx.selectFrom('me.sizing_input').selectAll().where('sizing_version_id', '=', current.id).execute();
+    const inputs = await tx
+      .selectFrom('me.sizing_input')
+      .selectAll()
+      .where('sizing_version_id', '=', current.id)
+      .execute();
     for (const { id: _id, sizing_version_id: _v, assumption_version_id: _p, ...i } of inputs)
-      await tx.insertInto('me.sizing_input').values({ ...i, sizing_version_id: d.id }).execute();
-    const cohorts = await tx.selectFrom('me.cohort').selectAll().where('sizing_version_id', '=', current.id).execute();
+      await tx
+        .insertInto('me.sizing_input')
+        .values({ ...i, sizing_version_id: d.id })
+        .execute();
+    const cohorts = await tx
+      .selectFrom('me.cohort')
+      .selectAll()
+      .where('sizing_version_id', '=', current.id)
+      .execute();
     const map = new Map<string, string>();
     for (const { id, sizing_version_id: _v, ...k } of cohorts) {
-      const n = await tx.insertInto('me.cohort').values({ ...k, sizing_version_id: d.id }).returning('id').executeTakeFirstOrThrow();
+      const n = await tx
+        .insertInto('me.cohort')
+        .values({ ...k, sizing_version_id: d.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
       map.set(id, n.id);
     }
-    const overlaps = await tx.selectFrom('me.cohort_overlap').selectAll().where('sizing_version_id', '=', current.id).execute();
+    const overlaps = await tx
+      .selectFrom('me.cohort_overlap')
+      .selectAll()
+      .where('sizing_version_id', '=', current.id)
+      .execute();
     for (const { id: _id, sizing_version_id: _v, ...o } of overlaps)
       await tx
         .insertInto('me.cohort_overlap')
-        .values({ ...o, sizing_version_id: d.id, cohort_a_id: map.get(o.cohort_a_id)!, cohort_b_id: map.get(o.cohort_b_id)! })
+        .values({
+          ...o,
+          sizing_version_id: d.id,
+          cohort_a_id: map.get(o.cohort_a_id)!,
+          cohort_b_id: map.get(o.cohort_b_id)!,
+        })
         .execute();
-    const cross = await tx.selectFrom('me.sizing_cross_check').selectAll().where('sizing_version_id', '=', current.id).executeTakeFirst();
+    const cross = await tx
+      .selectFrom('me.sizing_cross_check')
+      .selectAll()
+      .where('sizing_version_id', '=', current.id)
+      .executeTakeFirst();
     if (cross) {
       const { id: _id, sizing_version_id: _v, ...x } = cross;
-      await tx.insertInto('me.sizing_cross_check').values({ ...x, sizing_version_id: d.id }).execute();
+      await tx
+        .insertInto('me.sizing_cross_check')
+        .values({ ...x, sizing_version_id: d.id })
+        .execute();
     }
     return d;
   }
   check(0);
   const b = patch.boundary ?? {};
   const md = await mandateDefaults(tx, c);
-  const missing = (['marketUnit', 'populationUnit', 'currency', 'priceYear'] as const).filter((k) => b[k] === undefined);
+  const missing = (['marketUnit', 'populationUnit', 'currency', 'priceYear'] as const).filter(
+    (k) => b[k] === undefined,
+  );
   if (missing.length || !md?.country)
-    throw new ApiError('VALIDATION_FAILED', 'Define the market boundary first: unit, population unit, currency and price year.', {
-      errors: missing.map((k) => ({ path: `body.boundary.${k}`, code: 'required', message: 'Required for the first sizing draft' })),
-    });
+    throw new ApiError(
+      'VALIDATION_FAILED',
+      'Define the market boundary first: unit, population unit, currency and price year.',
+      {
+        errors: missing.map((k) => ({
+          path: `body.boundary.${k}`,
+          code: 'required',
+          message: 'Required for the first sizing draft',
+        })),
+      },
+    );
   const boundary = await tx
     .insertInto('me.market_boundary')
     .values({
@@ -150,7 +202,8 @@ async function ensureDraft(tx: Tx, ctx: BaseCtx & { ifMatch: number | null }, c:
       method: patch.method ?? 'aggregate_overlap',
       horizon_years: patch.horizonYears ?? md.horizon ?? 3,
       market_boundary_id: boundary.id,
-      dedup_rule_text: 'Unique by site ID. Sites of one parent company stay separate when they buy separately.',
+      dedup_rule_text:
+        'Unique by site ID. Sites of one parent company stay separate when they buy separately.',
       created_by: ctx.userId,
       created_at: ctx.now,
     })
@@ -158,11 +211,21 @@ async function ensureDraft(tx: Tx, ctx: BaseCtx & { ifMatch: number | null }, c:
     .executeTakeFirstOrThrow()) as SizingVersionRow;
 }
 
-async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionRow, p: Patch): Promise<SizingVersionRow> {
+async function applyPatch(
+  tx: Tx,
+  ctx: BaseCtx,
+  c: CaseRecord,
+  d: SizingVersionRow,
+  p: Patch,
+): Promise<SizingVersionRow> {
   const set: Record<string, unknown> = {};
   if (p.method) set.method = p.method;
   if (p.horizonYears) set.horizon_years = p.horizonYears;
-  const old = await tx.selectFrom('me.market_boundary').selectAll().where('id', '=', d.market_boundary_id).executeTakeFirstOrThrow();
+  const old = await tx
+    .selectFrom('me.market_boundary')
+    .selectAll()
+    .where('id', '=', d.market_boundary_id)
+    .executeTakeFirstOrThrow();
   if (p.boundary && Object.keys(p.boundary).length > 0) {
     const b = p.boundary;
     const changed =
@@ -181,7 +244,8 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
           population_unit: b.populationUnit ?? old.population_unit,
           currency: b.currency ?? old.currency,
           price_year: b.priceYear ?? old.price_year,
-          annualization_method: b.annualizationMethod !== undefined ? b.annualizationMethod : old.annualization_method,
+          annualization_method:
+            b.annualizationMethod !== undefined ? b.annualizationMethod : old.annualization_method,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
@@ -189,9 +253,14 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
     }
   }
   const boundary = set.market_boundary_id
-    ? await tx.selectFrom('me.market_boundary').selectAll().where('id', '=', set.market_boundary_id as string).executeTakeFirstOrThrow()
+    ? await tx
+        .selectFrom('me.market_boundary')
+        .selectAll()
+        .where('id', '=', set.market_boundary_id as string)
+        .executeTakeFirstOrThrow()
     : old;
-  if (Object.keys(set).length) await tx.updateTable('me.sizing_version').set(set).where('id', '=', d.id).execute();
+  if (Object.keys(set).length)
+    await tx.updateTable('me.sizing_version').set(set).where('id', '=', d.id).execute();
 
   for (const i of p.inputs ?? []) {
     if (!SIZING_INPUT_LABELS[i.inputKey])
@@ -205,10 +274,16 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
     let row: Record<string, unknown>;
     const money = MONEY.has(i.unit);
     if (i.assumptionId) {
-      const a = await tx.selectFrom('platform.assumption').select(['id', 'case_id']).where('id', '=', i.assumptionId).executeTakeFirst();
-      if (!a || a.case_id !== c.id) throw new ApiError('VALIDATION_FAILED', 'The assumption is not in this case register.');
+      const a = await tx
+        .selectFrom('platform.assumption')
+        .select(['id', 'case_id'])
+        .where('id', '=', i.assumptionId)
+        .executeTakeFirst();
+      if (!a || a.case_id !== c.id)
+        throw new ApiError('VALIDATION_FAILED', 'The assumption is not in this case register.');
       const live = (await currentAssumptionVersions(tx, [a.id])).get(a.id)!;
-      if (live.value === null) throw new ApiError('VALIDATION_FAILED', 'The assumption has no numeric value.');
+      if (live.value === null)
+        throw new ApiError('VALIDATION_FAILED', 'The assumption has no numeric value.');
       row = {
         kind: 'assumption',
         value: live.value,
@@ -220,7 +295,11 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
         evidence_quality: live.evidence_quality,
       };
     } else {
-      const s = await tx.selectFrom('platform.source').select(['id', 'origin_kind']).where('id', '=', i.sourceId!).executeTakeFirst();
+      const s = await tx
+        .selectFrom('platform.source')
+        .select(['id', 'origin_kind'])
+        .where('id', '=', i.sourceId!)
+        .executeTakeFirst();
       if (!s) throw new ApiError('VALIDATION_FAILED', 'Unknown source.');
       row = {
         kind: 'evidence',
@@ -233,7 +312,11 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
         evidence_quality: s.origin_kind === 'licensed' ? 'strong' : 'some',
       };
     }
-    await tx.deleteFrom('me.sizing_input').where('sizing_version_id', '=', d.id).where('input_key', '=', i.inputKey).execute();
+    await tx
+      .deleteFrom('me.sizing_input')
+      .where('sizing_version_id', '=', d.id)
+      .where('input_key', '=', i.inputKey)
+      .execute();
     await tx
       .insertInto('me.sizing_input')
       .values({
@@ -247,10 +330,15 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
   }
 
   if (p.cohorts) {
-    const existing = await tx.selectFrom('me.cohort').select('id').where('sizing_version_id', '=', d.id).execute();
+    const existing = await tx
+      .selectFrom('me.cohort')
+      .select('id')
+      .where('sizing_version_id', '=', d.id)
+      .execute();
     const keep = new Set(p.cohorts.flatMap((k) => (k.id ? [k.id] : [])));
     for (const id of keep)
-      if (!existing.some((e) => e.id === id)) throw new ApiError('VALIDATION_FAILED', 'Unknown cohort in this draft.');
+      if (!existing.some((e) => e.id === id))
+        throw new ApiError('VALIDATION_FAILED', 'Unknown cohort in this draft.');
     const gone = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
     if (gone.length) {
       await tx
@@ -272,14 +360,23 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
       };
       if (k.siteCount < 0) throw new ApiError('VALIDATION_FAILED', 'Site counts cannot be negative.');
       if (k.id) await tx.updateTable('me.cohort').set(vals).where('id', '=', k.id).execute();
-      else await tx.insertInto('me.cohort').values({ tenant_id: ctx.tenantId, sizing_version_id: d.id, ...vals }).execute();
+      else
+        await tx
+          .insertInto('me.cohort')
+          .values({ tenant_id: ctx.tenantId, sizing_version_id: d.id, ...vals })
+          .execute();
     }
   }
   if (p.overlaps) {
-    const ids = new Set((await tx.selectFrom('me.cohort').select('id').where('sizing_version_id', '=', d.id).execute()).map((x) => x.id));
+    const ids = new Set(
+      (await tx.selectFrom('me.cohort').select('id').where('sizing_version_id', '=', d.id).execute()).map(
+        (x) => x.id,
+      ),
+    );
     await tx.deleteFrom('me.cohort_overlap').where('sizing_version_id', '=', d.id).execute();
     for (const o of p.overlaps) {
-      if (!ids.has(o.cohortAId) || !ids.has(o.cohortBId)) throw new ApiError('VALIDATION_FAILED', 'Overlaps must name two cohorts of this draft.');
+      if (!ids.has(o.cohortAId) || !ids.has(o.cohortBId))
+        throw new ApiError('VALIDATION_FAILED', 'Overlaps must name two cohorts of this draft.');
       await tx
         .insertInto('me.cohort_overlap')
         .values({
@@ -312,11 +409,19 @@ async function applyPatch(tx: Tx, ctx: BaseCtx, c: CaseRecord, d: SizingVersionR
         })
         .execute();
   }
-  return (await tx.selectFrom('me.sizing_version').selectAll().where('id', '=', d.id).executeTakeFirstOrThrow()) as SizingVersionRow;
+  return (await tx
+    .selectFrom('me.sizing_version')
+    .selectAll()
+    .where('id', '=', d.id)
+    .executeTakeFirstOrThrow()) as SizingVersionRow;
 }
 
 async function reread(tx: Tx, id: string): Promise<SizingVersionRow> {
-  return (await tx.selectFrom('me.sizing_version').selectAll().where('id', '=', id).executeTakeFirstOrThrow()) as SizingVersionRow;
+  return (await tx
+    .selectFrom('me.sizing_version')
+    .selectAll()
+    .where('id', '=', id)
+    .executeTakeFirstOrThrow()) as SizingVersionRow;
 }
 
 async function draftOf(tx: Tx, caseId: string): Promise<SizingVersionRow> {
@@ -325,8 +430,23 @@ async function draftOf(tx: Tx, caseId: string): Promise<SizingVersionRow> {
   return d;
 }
 
-async function audit(t: Tools, c: CaseRecord, v: SizingVersionRow, action: string, summary: string, details: Record<string, string | number | boolean | null> = {}) {
-  await t.audit({ action, objectType: 'sizing_version', objectId: v.id, objectVersion: v.version, caseId: c.id, summary, details });
+async function audit(
+  t: Tools,
+  c: CaseRecord,
+  v: SizingVersionRow,
+  action: string,
+  summary: string,
+  details: Record<string, string | number | boolean | null> = {},
+) {
+  await t.audit({
+    action,
+    objectType: 'sizing_version',
+    objectId: v.id,
+    objectVersion: v.version,
+    caseId: c.id,
+    summary,
+    details,
+  });
 }
 
 const fmtValue = (v: string | null) => v;
@@ -352,10 +472,17 @@ export const sizingHandlers: HandlerMap = {
       const r = await recalcSizingDraft(t.tx, ctx.tenantId, d, ctx.now);
       const after = await reread(t.tx, d.id);
       ctx.setETag(after.row_version);
-      await audit(t, c, after, 'sizing.draft_saved', `Sizing draft v${after.version} edited and recalculated`, {
-        blocked: r.output ? r.output.blocked : true,
-        blockingChecks: r.checks.filter((x) => x.blocking).length,
-      });
+      await audit(
+        t,
+        c,
+        after,
+        'sizing.draft_saved',
+        `Sizing draft v${after.version} edited and recalculated`,
+        {
+          blocked: r.output ? r.output.blocked : true,
+          blockingChecks: r.checks.filter((x) => x.blocking).length,
+        },
+      );
       return sizingView(t.tx, ctx.identity, c.id);
     },
   }),
@@ -382,18 +509,34 @@ export const sizingHandlers: HandlerMap = {
       const d = await draftOf(t.tx, c.id);
       assertIfMatch(ctx, d.row_version);
       const { keepCohortId, excludeCohortId } = ctx.body;
-      if (keepCohortId === excludeCohortId) throw new ApiError('VALIDATION_FAILED', 'Choose two different cohorts.');
-      const cohorts = await t.tx.selectFrom('me.cohort').select(['id', 'name']).where('sizing_version_id', '=', d.id).execute();
+      if (keepCohortId === excludeCohortId)
+        throw new ApiError('VALIDATION_FAILED', 'Choose two different cohorts.');
+      const cohorts = await t.tx
+        .selectFrom('me.cohort')
+        .select(['id', 'name'])
+        .where('sizing_version_id', '=', d.id)
+        .execute();
       if (![keepCohortId, excludeCohortId].every((id) => cohorts.some((k) => k.id === id))) throw notFound();
       await t.tx.updateTable('me.cohort').set({ status: 'active' }).where('id', '=', keepCohortId).execute();
-      await t.tx.updateTable('me.cohort').set({ status: 'excluded' }).where('id', '=', excludeCohortId).execute();
+      await t.tx
+        .updateTable('me.cohort')
+        .set({ status: 'excluded' })
+        .where('id', '=', excludeCohortId)
+        .execute();
       await recalcSizingDraft(t.tx, ctx.tenantId, d, ctx.now);
       const after = await reread(t.tx, d.id);
       ctx.setETag(after.row_version);
-      await audit(t, c, after, 'sizing.duplicate_cohort_resolved', 'Duplicate cohort resolved: one kept, the other excluded (not deleted)', {
-        keepCohortId,
-        excludeCohortId,
-      });
+      await audit(
+        t,
+        c,
+        after,
+        'sizing.duplicate_cohort_resolved',
+        'Duplicate cohort resolved: one kept, the other excluded (not deleted)',
+        {
+          keepCohortId,
+          excludeCohortId,
+        },
+      );
       return sizingView(t.tx, ctx.identity, c.id);
     },
   }),
@@ -407,11 +550,22 @@ export const sizingHandlers: HandlerMap = {
       const r = await recalcSizingDraft(tx, ctx.tenantId, d, ctx.now);
       if (!r.output || r.output.blocked) throw blocked(r.checks);
       // Pin every live assumption link to the version the result was calculated with.
-      const inputs = await tx.selectFrom('me.sizing_input').select(['id', 'assumption_id']).where('sizing_version_id', '=', d.id).execute();
-      const live = await currentAssumptionVersions(tx, inputs.flatMap((i) => (i.assumption_id ? [i.assumption_id] : [])));
+      const inputs = await tx
+        .selectFrom('me.sizing_input')
+        .select(['id', 'assumption_id'])
+        .where('sizing_version_id', '=', d.id)
+        .execute();
+      const live = await currentAssumptionVersions(
+        tx,
+        inputs.flatMap((i) => (i.assumption_id ? [i.assumption_id] : [])),
+      );
       for (const i of inputs)
         if (i.assumption_id)
-          await tx.updateTable('me.sizing_input').set({ assumption_version_id: live.get(i.assumption_id)!.id }).where('id', '=', i.id).execute();
+          await tx
+            .updateTable('me.sizing_input')
+            .set({ assumption_version_id: live.get(i.assumption_id)!.id })
+            .where('id', '=', i.id)
+            .execute();
       const prev = (await sizingVersions(tx, c.id)).filter((v) => v.state === 'committed').pop();
       const committed = (await tx
         .updateTable('me.sizing_version')
@@ -419,15 +573,34 @@ export const sizingHandlers: HandlerMap = {
         .where('id', '=', d.id)
         .returningAll()
         .executeTakeFirstOrThrow()) as SizingVersionRow;
-      await audit(t, c, committed, 'sizing.version_committed', `Sizing snapshot v${committed.version} created (immutable)`, {
-        inputHash: r.output.inputHash.slice(0, 16),
-      });
+      await audit(
+        t,
+        c,
+        committed,
+        'sizing.version_committed',
+        `Sizing snapshot v${committed.version} created (immutable)`,
+        {
+          inputHash: r.output.inputHash.slice(0, 16),
+        },
+      );
       await t.analytics(
         'sizing_snapshot_created',
-        { objectType: 'sizing_version', objectId: committed.id, objectVersion: committed.version, caseId: c.id, stage: c.stage as never },
+        {
+          objectType: 'sizing_version',
+          objectId: committed.id,
+          objectVersion: committed.version,
+          caseId: c.id,
+          stage: c.stage as never,
+        },
         { version: committed.version, blockedChecks: 0 },
       );
-      await t.emit({ type: 'model.version_committed', ...eventBase(ctx, c.id), modelType: 'sizing', modelVersionId: committed.id, version: committed.version });
+      await t.emit({
+        type: 'model.version_committed',
+        ...eventBase(ctx, c.id),
+        modelType: 'sizing',
+        modelVersionId: committed.id,
+        version: committed.version,
+      });
       if (prev)
         await applyMateriality(
           t,
@@ -450,7 +623,9 @@ export const sizingHandlers: HandlerMap = {
     load: (ctx, tx) => readableCase(tx, ctx.identity, ctx.params.caseRef),
     authorize: (ctx, c) => readDecision(ctx.identity, c),
     handle: async (ctx, { tx }, c) => {
-      const v = (await sizingVersions(tx, c.id)).find((x) => x.version === ctx.params.version && x.state === 'committed');
+      const v = (await sizingVersions(tx, c.id)).find(
+        (x) => x.version === ctx.params.version && x.state === 'committed',
+      );
       if (!v) throw notFound();
       return toSizingVersion(tx, ctx.identity, v);
     },
@@ -462,20 +637,31 @@ export const sizingHandlers: HandlerMap = {
     handle: async (ctx, { tx }, c) => {
       const versions = await sizingVersions(tx, c.id);
       const pick = (v: number | 'draft') =>
-        v === 'draft' ? versions.find((x) => x.state === 'draft') : versions.find((x) => x.version === v && x.state === 'committed');
+        v === 'draft'
+          ? versions.find((x) => x.state === 'draft')
+          : versions.find((x) => x.version === v && x.state === 'committed');
       const a = pick(ctx.query.from);
       const b = pick(ctx.query.to);
       if (!a || !b) throw notFound();
-      const [va, vb] = [await toSizingVersion(tx, ctx.identity, a), await toSizingVersion(tx, ctx.identity, b)];
+      const [va, vb] = [
+        await toSizingVersion(tx, ctx.identity, a),
+        await toSizingVersion(tx, ctx.identity, b),
+      ];
       const changes: { inputKey: string; label: string; from: string | null; to: string | null }[] = [];
       const keys = [...new Set([...va.ledger, ...vb.ledger].map((l) => l.inputKey))];
       for (const k of keys) {
         const x = va.ledger.find((l) => l.inputKey === k);
         const y = vb.ledger.find((l) => l.inputKey === k);
         if (x?.value !== y?.value)
-          changes.push({ inputKey: k, label: (x ?? y)!.name, from: fmtValue(x?.value ?? null), to: fmtValue(y?.value ?? null) });
+          changes.push({
+            inputKey: k,
+            label: (x ?? y)!.name,
+            from: fmtValue(x?.value ?? null),
+            to: fmtValue(y?.value ?? null),
+          });
       }
-      const cohortKey = (k: { name: string; qualifier: string | null }) => `${k.name}${k.qualifier ? ` ${k.qualifier}` : ''}`;
+      const cohortKey = (k: { name: string; qualifier: string | null }) =>
+        `${k.name}${k.qualifier ? ` ${k.qualifier}` : ''}`;
       const names = [...new Set([...va.cohorts, ...vb.cohorts].map(cohortKey))];
       for (const n of names) {
         const x = va.cohorts.find((k) => cohortKey(k) === n);
@@ -485,11 +671,16 @@ export const sizingHandlers: HandlerMap = {
         if (fx !== fy) changes.push({ inputKey: `cohort.${n}`, label: `Cohort ${n}`, from: fx, to: fy });
       }
       const sumO = (v: typeof va) => v.overlaps.map((o) => String(o.overlapCount)).join(', ') || null;
-      if (sumO(va) !== sumO(vb)) changes.push({ inputKey: 'overlaps', label: 'Overlap removed', from: sumO(va), to: sumO(vb) });
+      if (sumO(va) !== sumO(vb))
+        changes.push({ inputKey: 'overlaps', label: 'Overlap removed', from: sumO(va), to: sumO(vb) });
       for (const [k, label, f] of [
         ['method', 'Method', (v: typeof va) => v.method],
         ['horizonYears', 'Horizon (years)', (v: typeof va) => String(v.horizonYears)],
-        ['boundary', 'Market boundary', (v: typeof va) => `${v.boundary.marketUnit} · ${v.boundary.currency} ${v.boundary.priceYear}`],
+        [
+          'boundary',
+          'Market boundary',
+          (v: typeof va) => `${v.boundary.marketUnit} · ${v.boundary.currency} ${v.boundary.priceYear}`,
+        ],
       ] as const)
         if (f(va) !== f(vb)) changes.push({ inputKey: k, label, from: f(va), to: f(vb) });
       return { changes };
@@ -512,12 +703,19 @@ export const sizingHandlers: HandlerMap = {
     authorize: (ctx, { c }) => readDecision(ctx.identity, c),
     handle: async (ctx, { tx }, { cohort }) => {
       const src = cohort.source_id
-        ? await tx.selectFrom('platform.source').selectAll().where('id', '=', cohort.source_id).executeTakeFirst()
+        ? await tx
+            .selectFrom('platform.source')
+            .selectAll()
+            .where('id', '=', cohort.source_id)
+            .executeTakeFirst()
         : undefined;
-      const access = src ? effectiveAccess(await entitlementFor(tx, ctx.identity, src.license_id), src) : 'excerpt';
+      const access = src
+        ? effectiveAccess(await entitlementFor(tx, ctx.identity, src.license_id), src)
+        : 'excerpt';
       const owner = src ? who(await peopleMap(tx, [src.created_by]), src.created_by).displayName : null;
       // No count, excerpt or name leaves the server without the site-list entitlement (never-rule 8).
-      if (access === 'none') throw new ApiError('RESTRICTED_SOURCE', 'This site list is restricted by its licence.');
+      if (access === 'none')
+        throw new ApiError('RESTRICTED_SOURCE', 'This site list is restricted by its licence.');
       if (access === 'aggregate_only')
         return { restricted: true, aggregateOnly: true, dataOwnerName: owner, rows: [], nextCursor: null };
       const sites = src
@@ -546,4 +744,3 @@ export const sizingHandlers: HandlerMap = {
     },
   }),
 };
-

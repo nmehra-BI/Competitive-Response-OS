@@ -25,7 +25,16 @@ export async function sourceChips(
   if (unique.length === 0) return new Map();
   const rows = await tx
     .selectFrom('platform.source')
-    .select(['id', 'display_key', 'title', 'published_on', 'origin_kind', 'availability', 'deleted_at', 'license_id'])
+    .select([
+      'id',
+      'display_key',
+      'title',
+      'published_on',
+      'origin_kind',
+      'availability',
+      'deleted_at',
+      'license_id',
+    ])
     .where('id', 'in', unique)
     .execute();
   const ent = await entitlementsFor(
@@ -51,6 +60,9 @@ export async function sourceChips(
   return out;
 }
 
-export function chipsFor(map: Map<string, SourceChip>, ids: readonly (string | null | undefined)[]): SourceChip[] {
+export function chipsFor(
+  map: Map<string, SourceChip>,
+  ids: readonly (string | null | undefined)[],
+): SourceChip[] {
   return ids.flatMap((id) => (id && map.has(id) ? [map.get(id)!] : []));
 }

@@ -106,7 +106,8 @@ export function mandateValidation(f: MandateDraftFields): { field: string; messa
   if (!f.objective?.trim()) e.push({ field: 'objective', message: 'State the objective.' });
   if (!f.productId) e.push({ field: 'productId', message: 'Choose the product.' });
   if (!f.segmentIds?.length) e.push({ field: 'segmentIds', message: 'Choose at least one segment.' });
-  if (!f.geographyCodes?.length) e.push({ field: 'geographyCodes', message: 'Choose at least one geography.' });
+  if (!f.geographyCodes?.length)
+    e.push({ field: 'geographyCodes', message: 'Choose at least one geography.' });
   if (!f.horizonYears) e.push({ field: 'horizonYears', message: 'Set the decision horizon.' });
   if (!f.currency) e.push({ field: 'currency', message: 'State the currency.' });
   if (!f.ownerId) e.push({ field: 'ownerId', message: 'Name an accountable owner.' });
@@ -114,7 +115,10 @@ export function mandateValidation(f: MandateDraftFields): { field: string; messa
   if (!f.successDefinition?.trim())
     e.push({ field: 'successDefinition', message: 'Say what a successful outcome is.' });
   if (f.horizonYears && f.pilotDurationDays && f.pilotDurationDays > f.horizonYears * 365)
-    e.push({ field: 'pilotDurationDays', message: 'The pilot duration must fit inside the decision horizon.' });
+    e.push({
+      field: 'pilotDurationDays',
+      message: 'The pilot duration must fit inside the decision horizon.',
+    });
   return e;
 }
 
@@ -137,7 +141,10 @@ async function scopePreview(tx: Tx, f: MandateDraftFields): Promise<string> {
 }
 
 export async function toMandate(tx: Tx, m: MandateRow): Promise<Mandate> {
-  const rows = await versionRows(tx, [m.current_version_id, m.draft_version_id].filter((x): x is string => !!x));
+  const rows = await versionRows(
+    tx,
+    [m.current_version_id, m.draft_version_id].filter((x): x is string => !!x),
+  );
   const cur = rows.find((r) => r.id === m.current_version_id);
   const draft = rows.find((r) => r.id === m.draft_version_id);
   const shown = draft ?? cur;
@@ -177,7 +184,14 @@ function columnsOf(f: MandateDraftFields) {
 /** Create a mandate with a draft version (also used by `cases.createDirect`). */
 export async function insertMandate(
   tx: Tx,
-  input: { tenantId: string; userId: string; businessUnitId: string; title: string; fields: MandateDraftFields; now: Date },
+  input: {
+    tenantId: string;
+    userId: string;
+    businessUnitId: string;
+    title: string;
+    fields: MandateDraftFields;
+    now: Date;
+  },
 ): Promise<MandateRow> {
   const key = await allocateDisplayKey(tx, input.tenantId, 'MD', async (k) =>
     Boolean(await tx.selectFrom('me.mandate').select('id').where('display_key', '=', k).executeTakeFirst()),
@@ -244,7 +258,9 @@ function g0Content(
       maxSites: null,
       milestones: [],
       ownerId: v.owner_user_id,
-      authorizes: [`Search and assessment within this scope · horizon ${v.horizon_years} years · ${v.currency}`],
+      authorizes: [
+        `Search and assessment within this scope · horizon ${v.horizon_years} years · ${v.currency}`,
+      ],
       doesNotAuthorize: ['No spend: validation (G1) and pilot (G2) are separate gates', ...v.exclusions],
     },
     recommendation: 'Approve the bounded mandate scope.',
@@ -268,7 +284,12 @@ export const mandateHandlers: HandlerMap = {
   [API.mandates.list.id]: query(API.mandates.list, {
     authorize: () => ({ allow: true, rule: 'mandate.list', authorityGrantId: null }),
     handle: async (ctx, { tx }) => {
-      const rows = (await tx.selectFrom('me.mandate').selectAll().orderBy('created_at').orderBy('id').execute()) as MandateRow[];
+      const rows = (await tx
+        .selectFrom('me.mandate')
+        .selectAll()
+        .orderBy('created_at')
+        .orderBy('id')
+        .execute()) as MandateRow[];
       const visible = rows.filter((m) => mandateVisible(ctx.identity, m.business_unit_id).allow);
       const page = pageOf(visible, {
         limit: ctx.query.limit,
@@ -278,7 +299,10 @@ export const mandateHandlers: HandlerMap = {
         now: ctx.now,
         keyOf: (m) => ({ key: m.id, id: m.id }),
       });
-      return { items: await Promise.all(page.items.map((m) => toMandate(tx, m))), nextCursor: page.nextCursor };
+      return {
+        items: await Promise.all(page.items.map((m) => toMandate(tx, m))),
+        nextCursor: page.nextCursor,
+      };
     },
   }),
 
@@ -292,7 +316,8 @@ export const mandateHandlers: HandlerMap = {
       if (!bu) throw notFound();
       return bu.id;
     },
-    authorize: (ctx, bu) => roleAllows(ctx.identity.subject, 'mandate.edit', { businessUnitId: bu, caseId: null }),
+    authorize: (ctx, bu) =>
+      roleAllows(ctx.identity.subject, 'mandate.edit', { businessUnitId: bu, caseId: null }),
     handle: async (ctx, t, bu) => {
       const m = await insertMandate(t.tx, {
         tenantId: ctx.tenantId,
@@ -310,9 +335,13 @@ export const mandateHandlers: HandlerMap = {
         summary: `Mandate ${m.display_key} created as a draft`,
         after: ctx.body.fields,
       });
-      await t.analytics('mandate_created', { objectType: 'mandate', objectId: m.id }, {
-        hasSponsor: Boolean(ctx.body.fields.sponsorId),
-      });
+      await t.analytics(
+        'mandate_created',
+        { objectType: 'mandate', objectId: m.id },
+        {
+          hasSponsor: Boolean(ctx.body.fields.sponsorId),
+        },
+      );
       await t.emit({
         type: 'mandate.created',
         eventId: crypto.randomUUID(),
@@ -338,7 +367,10 @@ export const mandateHandlers: HandlerMap = {
     authorize: (ctx, m) => {
       const v = mandateVisible(ctx.identity, m.business_unit_id);
       if (!v.allow) return v;
-      return roleAllows(ctx.identity.subject, 'mandate.edit', { businessUnitId: m.business_unit_id, caseId: null });
+      return roleAllows(ctx.identity.subject, 'mandate.edit', {
+        businessUnitId: m.business_unit_id,
+        caseId: null,
+      });
     },
     handle: async (ctx, t, m) => {
       const { tx } = t;
@@ -358,15 +390,33 @@ export const mandateHandlers: HandlerMap = {
           mandate: { ownerId: current!.owner_user_id } as never,
         });
         if (!r.ok) throw machineRefusal(r);
-        const { id: _i, version, state: _s, row_version: _r, committed_at: _c, created_at: _ca, updated_at: _u, ...copy } =
-          current!;
+        const {
+          id: _i,
+          version,
+          state: _s,
+          row_version: _r,
+          committed_at: _c,
+          created_at: _ca,
+          updated_at: _u,
+          ...copy
+        } = current!;
         const d = await tx
           .insertInto('me.mandate_version')
-          .values({ ...copy, version: version + 1, state: 'draft', created_by: ctx.userId, created_at: ctx.now })
+          .values({
+            ...copy,
+            version: version + 1,
+            state: 'draft',
+            created_by: ctx.userId,
+            created_at: ctx.now,
+          })
           .returning('id')
           .executeTakeFirstOrThrow();
         draftId = d.id;
-        await tx.updateTable('me.mandate').set({ draft_version_id: draftId, status: 'draft' }).where('id', '=', m.id).execute();
+        await tx
+          .updateTable('me.mandate')
+          .set({ draft_version_id: draftId, status: 'draft' })
+          .where('id', '=', m.id)
+          .execute();
       } else {
         const [d] = await versionRows(tx, [draftId]);
         assertIfMatch(ctx, d!.row_version);
@@ -374,7 +424,12 @@ export const mandateHandlers: HandlerMap = {
       const cols = columnsOf(ctx.body.fields);
       const updated =
         Object.keys(cols).length > 0
-          ? await tx.updateTable('me.mandate_version').set(cols).where('id', '=', draftId).returningAll().executeTakeFirstOrThrow()
+          ? await tx
+              .updateTable('me.mandate_version')
+              .set(cols)
+              .where('id', '=', draftId)
+              .returningAll()
+              .executeTakeFirstOrThrow()
           : (await versionRows(tx, [draftId]))[0]!;
       ctx.setETag(updated.row_version);
       await t.audit({
@@ -394,7 +449,10 @@ export const mandateHandlers: HandlerMap = {
     authorize: (ctx, m) => {
       const v = mandateVisible(ctx.identity, m.business_unit_id);
       if (!v.allow) return v;
-      return roleAllows(ctx.identity.subject, 'mandate.submit', { businessUnitId: m.business_unit_id, caseId: null });
+      return roleAllows(ctx.identity.subject, 'mandate.submit', {
+        businessUnitId: m.business_unit_id,
+        caseId: null,
+      });
     },
     handle: async (ctx, t, m) => {
       const { tx } = t;
@@ -431,7 +489,9 @@ export const mandateHandlers: HandlerMap = {
         },
       });
       if (!ev.allMet)
-        throw new ApiError('PRECONDITIONS_UNMET', ev.summary ?? 'G0 preconditions unmet', { blockers: ev.blockers });
+        throw new ApiError('PRECONDITIONS_UNMET', ev.summary ?? 'G0 preconditions unmet', {
+          blockers: ev.blockers,
+        });
 
       // Commit the version (immutable from here on).
       const committed = await tx
@@ -443,9 +503,11 @@ export const mandateHandlers: HandlerMap = {
 
       // G0 gate request: reused after a return (resubmit), created on first submission.
       let gate = m.g0_gate_request_id
-        ? ((await tx.selectFrom('platform.gate_request').selectAll().where('id', '=', m.g0_gate_request_id).executeTakeFirst()) as
-            | GateRow
-            | undefined)
+        ? ((await tx
+            .selectFrom('platform.gate_request')
+            .selectAll()
+            .where('id', '=', m.g0_gate_request_id)
+            .executeTakeFirst()) as GateRow | undefined)
         : undefined;
       const scope = g0Content(m, committed, null).scope;
       if (!gate) {
@@ -467,7 +529,11 @@ export const mandateHandlers: HandlerMap = {
           .executeTakeFirstOrThrow()) as GateRow;
       }
       const segs = committed.segment_ids.length
-        ? await tx.selectFrom('platform.segment').select('name').where('id', 'in', committed.segment_ids).execute()
+        ? await tx
+            .selectFrom('platform.segment')
+            .select('name')
+            .where('id', 'in', committed.segment_ids)
+            .execute()
         : [];
       const existing = await tx
         .selectFrom('platform.decision_snapshot')
@@ -477,7 +543,9 @@ export const mandateHandlers: HandlerMap = {
       const built = await createSnapshot(
         {
           ...g0Content(m, committed, segs.map((s) => s.name).join(', ') || null),
-          components: [{ type: 'mandate_version', id: committed.id, version: committed.version, state: 'committed' }],
+          components: [
+            { type: 'mandate_version', id: committed.id, version: committed.version, state: 'committed' },
+          ],
         },
         nextSnapshotVersion(existing.map((s) => s.version)),
       );
@@ -517,9 +585,14 @@ export const mandateHandlers: HandlerMap = {
           })
           .execute();
       for (const old of existing.filter((s) => s.status !== 'superseded')) {
-        const sr = snapshotMachine.apply(old.status as never, 'supersede', { kind: 'system', reason: 'gate_decision' }, {
-          newerSnapshotCreated: true,
-        });
+        const sr = snapshotMachine.apply(
+          old.status as never,
+          'supersede',
+          { kind: 'system', reason: 'gate_decision' },
+          {
+            newerSnapshotCreated: true,
+          },
+        );
         if (sr.ok)
           await tx
             .updateTable('platform.decision_snapshot')
@@ -568,10 +641,14 @@ export const mandateHandlers: HandlerMap = {
         summary: `G0 requested for ${m.display_key}: snapshot v${snap.version} · ${snap.fingerprint}`,
         details: { snapshotVersion: snap.version, fingerprint: snap.fingerprint },
       });
-      await t.analytics('gate_submitted', { objectType: 'gate_request', objectId: gate.id, objectVersion: snap.version }, {
-        gate: 'G0' as GateCode,
-        snapshotVersion: snap.version,
-      });
+      await t.analytics(
+        'gate_submitted',
+        { objectType: 'gate_request', objectId: gate.id, objectVersion: snap.version },
+        {
+          gate: 'G0' as GateCode,
+          snapshotVersion: snap.version,
+        },
+      );
       await t.emit({
         type: 'mandate.version_committed',
         eventId: crypto.randomUUID(),
@@ -587,4 +664,3 @@ export const mandateHandlers: HandlerMap = {
     },
   }),
 };
-

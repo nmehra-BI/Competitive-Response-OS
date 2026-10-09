@@ -3,7 +3,13 @@
  * an input). Used by the case header rail; exported so WS4b's `gates.preconditions` can reuse them.
  */
 import type { GateCode } from '@growth-os/contracts';
-import { evaluateGate, type G1Facts, type G2Facts, type G3Facts, type GateEvaluation } from '@growth-os/domain';
+import {
+  evaluateGate,
+  type G1Facts,
+  type G2Facts,
+  type G3Facts,
+  type GateEvaluation,
+} from '@growth-os/domain';
 import type { Tx } from '@growth-os/db';
 import type { CaseRecord } from './access';
 import type { GateRow } from './gate-read';
@@ -13,7 +19,11 @@ const SUPPORTS = new Set(['supports', 'supports_with_conditions', 'accepts_owner
 export async function caseSourceIds(tx: Tx, c: CaseRecord): Promise<Set<string>> {
   const ids = new Set<string>();
   if (c.origin_type === 'opportunity' && c.origin_id) {
-    const rows = await tx.selectFrom('me.opportunity_source').select('source_id').where('opportunity_id', '=', c.origin_id).execute();
+    const rows = await tx
+      .selectFrom('me.opportunity_source')
+      .select('source_id')
+      .where('opportunity_id', '=', c.origin_id)
+      .execute();
     rows.forEach((r) => ids.add(r.source_id));
   }
   const sizing = await tx
@@ -55,7 +65,9 @@ export async function g1Facts(tx: Tx, c: CaseRecord): Promise<G1Facts> {
     .where('v.state', '=', 'committed')
     .orderBy('v.version', 'desc')
     .executeTakeFirst();
-  const checks = ((sizing?.output as { checks?: { blocking: boolean }[] } | null)?.checks ?? []).filter((x) => x.blocking);
+  const checks = ((sizing?.output as { checks?: { blocking: boolean }[] } | null)?.checks ?? []).filter(
+    (x) => x.blocking,
+  );
   const unknowns = await tx
     .selectFrom('platform.assumption')
     .select('id')
@@ -63,7 +75,11 @@ export async function g1Facts(tx: Tx, c: CaseRecord): Promise<G1Facts> {
     .where('decision_critical', '=', true)
     .where('status', '<>', 'retired')
     .execute();
-  const feas = await tx.selectFrom('me.feasibility_assessment').select('id').where('case_id', '=', c.id).execute();
+  const feas = await tx
+    .selectFrom('me.feasibility_assessment')
+    .select('id')
+    .where('case_id', '=', c.id)
+    .execute();
   return {
     gateCode: 'G1',
     evidenceSourceCount: await caseSourceCount(tx, c),
@@ -94,7 +110,11 @@ async function specialistReview(tx: Tx, caseId: string) {
 }
 
 export async function g2Facts(tx: Tx, c: CaseRecord): Promise<G2Facts> {
-  const exps = await tx.selectFrom('me.experiment').select(['id', 'display_key']).where('case_id', '=', c.id).execute();
+  const exps = await tx
+    .selectFrom('me.experiment')
+    .select(['id', 'display_key'])
+    .where('case_id', '=', c.id)
+    .execute();
   const results = exps.length
     ? await tx
         .selectFrom('me.experiment_result_version')
@@ -115,7 +135,11 @@ export async function g2Facts(tx: Tx, c: CaseRecord): Promise<G2Facts> {
     .executeTakeFirst();
   const spec = await specialistReview(tx, c.id);
   const gate = await latestGate(tx, c.id, 'G2');
-  const scope = (gate?.scope ?? {}) as { maxSites?: number | null; ownerId?: string | null; durationDays?: number | null };
+  const scope = (gate?.scope ?? {}) as {
+    maxSites?: number | null;
+    ownerId?: string | null;
+    durationDays?: number | null;
+  };
   let stopRules: string[] = [];
   if (gate?.current_snapshot_id) {
     const s = await tx
@@ -131,7 +155,9 @@ export async function g2Facts(tx: Tx, c: CaseRecord): Promise<G2Facts> {
       experimentKey: e.display_key,
       resultRecorded: results.some((r) => r.experiment_id === e.id),
     })),
-    financeReview: finance ? { signed: finance.signed_at !== null && SUPPORTS.has(finance.position ?? '') } : null,
+    financeReview: finance
+      ? { signed: finance.signed_at !== null && SUPPORTS.has(finance.position ?? '') }
+      : null,
     specialistSignOff: spec
       ? {
           signed: SUPPORTS.has(spec.position),
@@ -153,7 +179,11 @@ export async function g2Facts(tx: Tx, c: CaseRecord): Promise<G2Facts> {
 }
 
 export async function g3Facts(tx: Tx, c: CaseRecord): Promise<G3Facts> {
-  const targets = await tx.selectFrom('platform.outcome_target').selectAll().where('case_id', '=', c.id).execute();
+  const targets = await tx
+    .selectFrom('platform.outcome_target')
+    .selectAll()
+    .where('case_id', '=', c.id)
+    .execute();
   const obs = await tx
     .selectFrom('platform.outcome_observation')
     .selectAll()
@@ -191,14 +221,21 @@ export async function g3Facts(tx: Tx, c: CaseRecord): Promise<G3Facts> {
           maxDays: spec.max_days,
         }
       : null,
-    economicsUpdatedAfterPilot: Boolean(econ?.committed_at && g2?.decided_at && econ.committed_at > g2.decided_at),
+    economicsUpdatedAfterPilot: Boolean(
+      econ?.committed_at && g2?.decided_at && econ.committed_at > g2.decided_at,
+    ),
     capacityReviewed: false,
     scope: { amount: g3?.requested_amount ?? null, currency: g3?.currency ?? null },
   };
 }
 
 /** Evaluate G1–G3 for a case (G0 and X are evaluated from their own records). */
-export async function evaluateCaseGate(tx: Tx, c: CaseRecord, gate: 'G1' | 'G2' | 'G3'): Promise<GateEvaluation> {
-  const facts = gate === 'G1' ? await g1Facts(tx, c) : gate === 'G2' ? await g2Facts(tx, c) : await g3Facts(tx, c);
+export async function evaluateCaseGate(
+  tx: Tx,
+  c: CaseRecord,
+  gate: 'G1' | 'G2' | 'G3',
+): Promise<GateEvaluation> {
+  const facts =
+    gate === 'G1' ? await g1Facts(tx, c) : gate === 'G2' ? await g2Facts(tx, c) : await g3Facts(tx, c);
   return evaluateGate(facts);
 }

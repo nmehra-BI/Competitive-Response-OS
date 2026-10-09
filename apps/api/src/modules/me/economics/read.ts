@@ -106,7 +106,8 @@ export async function economicsView(tx: Tx, identity: Identity, caseId: string):
   else if (!shown.result) reasons.push('Not calculated — required drivers are missing');
   else {
     for (const c of shown.result.checks.filter((x) => x.blocking)) reasons.push(c.message);
-    if ('unavailable' in shown.result.oneTimeInvestment) reasons.push(`One-time investment: ${shown.result.oneTimeInvestment.reason}`);
+    if ('unavailable' in shown.result.oneTimeInvestment)
+      reasons.push(`One-time investment: ${shown.result.oneTimeInvestment.reason}`);
   }
   return {
     current,
@@ -114,7 +115,11 @@ export async function economicsView(tx: Tx, identity: Identity, caseId: string):
     financeReview: review ? await toModelReview(tx, review) : null,
     recommendationIncomplete: reasons.length > 0,
     incompleteReasons: reasons,
-    versions: committed.map((v) => ({ id: v.id, version: v.version, committedAt: isoDateTimeOrNull(v.committed_at) })),
+    versions: committed.map((v) => ({
+      id: v.id,
+      version: v.version,
+      committedAt: isoDateTimeOrNull(v.committed_at),
+    })),
   };
 }
 
@@ -136,7 +141,9 @@ export function scenarioTable(o: EconomicsOutput): string[][] {
     row('Gross contribution', (s) => m(s.grossContribution)),
     row('Annual incremental opex', (s) => m(s.annualIncrementalOpex)),
     row('Contribution after incremental opex', (s) =>
-      s.contributionAfterOpex.amount === '0.00' ? `${m(s.contributionAfterOpex)} (break-even)` : m(s.contributionAfterOpex),
+      s.contributionAfterOpex.amount === '0.00'
+        ? `${m(s.contributionAfterOpex)} (break-even)`
+        : m(s.contributionAfterOpex),
     ),
   ];
 }
@@ -145,12 +152,21 @@ export function scenarioTable(o: EconomicsOutput): string[][] {
 export async function committedEconomicsSummary(
   tx: Tx,
   caseId: string,
-): Promise<{ economicsVersionId: string; version: number; inputHash: string; tableText: string[][]; note: string } | null> {
+): Promise<{
+  economicsVersionId: string;
+  version: number;
+  inputHash: string;
+  tableText: string[][];
+  note: string;
+} | null> {
   const v = (await economicsVersions(tx, caseId)).filter((x) => x.state === 'committed').pop();
   if (!v) return null;
   const o = await calcOutput<EconomicsOutput>(tx, v.calculation_result_id);
   if (!o) return null;
-  const one = 'amount' in o.oneTimeInvestment ? `${moneyLabel(o.oneTimeInvestment.amount, o.oneTimeInvestment.currency)} one-time, kept separate` : `not available — ${o.oneTimeInvestment.reason}`;
+  const one =
+    'amount' in o.oneTimeInvestment
+      ? `${moneyLabel(o.oneTimeInvestment.amount, o.oneTimeInvestment.currency)} one-time, kept separate`
+      : `not available — ${o.oneTimeInvestment.reason}`;
   return {
     economicsVersionId: v.id,
     version: v.version,

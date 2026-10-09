@@ -44,12 +44,17 @@ async function loadCase(tx: Tx, ref: string): Promise<CaseRecord> {
 
 async function draftOf(tx: Tx, caseId: string): Promise<EconomicsVersionRow> {
   const d = (await economicsVersions(tx, caseId)).find((v) => v.state === 'draft');
-  if (!d) throw new ApiError('INVALID_TRANSITION', 'There is no economics draft. Edit a driver to start one.');
+  if (!d)
+    throw new ApiError('INVALID_TRANSITION', 'There is no economics draft. Edit a driver to start one.');
   return d;
 }
 
 /** The version a read refers to: a number, 'draft', or (default) the latest committed. */
-async function pickVersion(tx: Tx, caseId: string, v: number | 'draft' | undefined): Promise<EconomicsVersionRow> {
+async function pickVersion(
+  tx: Tx,
+  caseId: string,
+  v: number | 'draft' | undefined,
+): Promise<EconomicsVersionRow> {
   const all = await economicsVersions(tx, caseId);
   const row =
     v === 'draft'
@@ -63,7 +68,11 @@ async function pickVersion(tx: Tx, caseId: string, v: number | 'draft' | undefin
 
 async function inputOf(tx: Tx, v: EconomicsVersionRow): Promise<EconomicsInput> {
   if (v.state === 'committed' && v.calculation_result_id) {
-    const r = await tx.selectFrom('platform.calculation_result').select('input').where('id', '=', v.calculation_result_id).executeTakeFirstOrThrow();
+    const r = await tx
+      .selectFrom('platform.calculation_result')
+      .select('input')
+      .where('id', '=', v.calculation_result_id)
+      .executeTakeFirstOrThrow();
     return r.input as unknown as EconomicsInput;
   }
   const built = await buildEconomicsInput(tx, v);
@@ -92,7 +101,10 @@ export const economicsHandlers: HandlerMap = {
       const { tx } = t;
       const d = await ensureEconomicsDraft(tx, ctx, c, (rv) => assertIfMatch(ctx, rv));
       const rows = await driverRows(tx, d.id);
-      const live = await currentAssumptionVersions(tx, rows.flatMap((r) => (r.assumption_id ? [r.assumption_id] : [])));
+      const live = await currentAssumptionVersions(
+        tx,
+        rows.flatMap((r) => (r.assumption_id ? [r.assumption_id] : [])),
+      );
       for (const dr of ctx.body.drivers) {
         const key = EconomicsDriverKey.safeParse(dr.inputKey);
         if (!key.success)
@@ -105,7 +117,10 @@ export const economicsHandlers: HandlerMap = {
         const row = rows.find((r) => r.input_key === key.data);
         if (row) {
           const linked = row.assumption_id ? live.get(row.assumption_id) : undefined;
-          const same = linked?.value !== undefined && linked.value !== null && valueString(linked.value, row.unit) === valueString(dr.value, row.unit);
+          const same =
+            linked?.value !== undefined &&
+            linked.value !== null &&
+            valueString(linked.value, row.unit) === valueString(dr.value, row.unit);
           await tx
             .updateTable('me.economics_driver')
             .set({ value: dr.value, assumption_id: same ? row.assumption_id : null })
@@ -127,9 +142,17 @@ export const economicsHandlers: HandlerMap = {
         }
       }
       // Touch the draft so its ETag changes with every edit.
-      await tx.updateTable('me.economics_version').set({ exclusions_text: d.exclusions_text }).where('id', '=', d.id).execute();
+      await tx
+        .updateTable('me.economics_version')
+        .set({ exclusions_text: d.exclusions_text })
+        .where('id', '=', d.id)
+        .execute();
       const r = await recalcEconomicsDraft(tx, ctx.tenantId, d, ctx.now);
-      const after = (await tx.selectFrom('me.economics_version').selectAll().where('id', '=', d.id).executeTakeFirstOrThrow()) as EconomicsVersionRow;
+      const after = (await tx
+        .selectFrom('me.economics_version')
+        .selectAll()
+        .where('id', '=', d.id)
+        .executeTakeFirstOrThrow()) as EconomicsVersionRow;
       ctx.setETag(after.row_version);
       await t.audit({
         action: 'economics.draft_saved',
@@ -182,10 +205,17 @@ export const economicsHandlers: HandlerMap = {
       const r = await recalcEconomicsDraft(tx, ctx.tenantId, d, ctx.now);
       if (!r.output || r.output.blocked) throw blocked(r.checks);
       const rows = await driverRows(tx, d.id);
-      const live = await currentAssumptionVersions(tx, rows.flatMap((x) => (x.assumption_id ? [x.assumption_id] : [])));
+      const live = await currentAssumptionVersions(
+        tx,
+        rows.flatMap((x) => (x.assumption_id ? [x.assumption_id] : [])),
+      );
       for (const x of rows)
         if (x.assumption_id)
-          await tx.updateTable('me.economics_driver').set({ assumption_version_id: live.get(x.assumption_id)!.id }).where('id', '=', x.id).execute();
+          await tx
+            .updateTable('me.economics_driver')
+            .set({ assumption_version_id: live.get(x.assumption_id)!.id })
+            .where('id', '=', x.id)
+            .execute();
       const prev = (await economicsVersions(tx, c.id)).filter((v) => v.state === 'committed').pop();
       const committed = (await tx
         .updateTable('me.economics_version')
@@ -201,7 +231,13 @@ export const economicsHandlers: HandlerMap = {
         caseId: c.id,
         summary: `Economics snapshot v${committed.version} created (immutable)`,
       });
-      await t.emit({ type: 'model.version_committed', ...eventBase(ctx, c.id), modelType: 'economics', modelVersionId: committed.id, version: committed.version });
+      await t.emit({
+        type: 'model.version_committed',
+        ...eventBase(ctx, c.id),
+        modelType: 'economics',
+        modelVersionId: committed.id,
+        version: committed.version,
+      });
       if (prev)
         await applyMateriality(
           t,
@@ -225,7 +261,9 @@ export const economicsHandlers: HandlerMap = {
     authorize: (ctx, c) => authorizeOnCase(ctx.identity, ctx.now, c, 'review.request'),
     handle: async (ctx, t, c) => {
       const { tx } = t;
-      const v = (await economicsVersions(tx, c.id)).find((x) => x.version === ctx.body.economicsVersion && x.state === 'committed');
+      const v = (await economicsVersions(tx, c.id)).find(
+        (x) => x.version === ctx.body.economicsVersion && x.state === 'committed',
+      );
       if (!v) throw new ApiError('INVALID_TRANSITION', 'Only a committed economics version can be reviewed.');
       await assertHuman(tx, ctx.body.reviewerId, 'body.reviewerId');
       const row = await tx
@@ -272,18 +310,33 @@ export const economicsHandlers: HandlerMap = {
 
   [API.economics.signFinanceReview.id]: command(API.economics.signFinanceReview, {
     load: async (ctx, tx) => {
-      const r = await tx.selectFrom('me.model_review').selectAll().where('id', '=', ctx.params.id).executeTakeFirst();
+      const r = await tx
+        .selectFrom('me.model_review')
+        .selectAll()
+        .where('id', '=', ctx.params.id)
+        .executeTakeFirst();
       if (!r) throw notFound();
       return { r, c: await caseById(tx, r.case_id) };
     },
     authorize: (ctx, { r, c }) => {
-      const d = authorizeOnCase(ctx.identity, ctx.now, c, 'review.sign', { namedReviewerId: r.reviewer_user_id });
-      return d.allow || d.code === 'NOT_FOUND' || ctx.userId !== r.reviewer_user_id ? d : allowSelf(ctx.identity, c, r.reviewer_user_id, d.reason);
+      const d = authorizeOnCase(ctx.identity, ctx.now, c, 'review.sign', {
+        namedReviewerId: r.reviewer_user_id,
+      });
+      return d.allow || d.code === 'NOT_FOUND' || ctx.userId !== r.reviewer_user_id
+        ? d
+        : allowSelf(ctx.identity, c, r.reviewer_user_id, d.reason);
     },
     handle: async (ctx, t, { r, c }) => {
-      if (r.signed_at) throw new ApiError('INVALID_TRANSITION', 'This review is already signed. Request a new review for a new version.');
+      if (r.signed_at)
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          'This review is already signed. Request a new review for a new version.',
+        );
       if (ctx.body.position === 'not_yet_reviewed' || ctx.body.position === 'accepts_ownership')
-        throw new ApiError('VALIDATION_FAILED', 'Sign with a position: supports, supports with conditions, dissents or abstains.');
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          'Sign with a position: supports, supports with conditions, dissents or abstains.',
+        );
       const row = await t.tx
         .updateTable('me.model_review')
         .set({
@@ -298,7 +351,12 @@ export const economicsHandlers: HandlerMap = {
         .executeTakeFirstOrThrow();
       await t.tx
         .updateTable('platform.review_request')
-        .set({ status: 'responded', response: ctx.body.position === 'dissents' ? 'dispute' : 'confirm', response_reason: 'Finance review signed', responded_at: ctx.now })
+        .set({
+          status: 'responded',
+          response: ctx.body.position === 'dissents' ? 'dispute' : 'confirm',
+          response_reason: 'Finance review signed',
+          responded_at: ctx.now,
+        })
         .where('target_type', '=', 'model_review')
         .where('target_id', '=', r.id)
         .where('status', '=', 'open')
@@ -309,7 +367,11 @@ export const economicsHandlers: HandlerMap = {
         objectId: r.id,
         caseId: c.id,
         summary: `Finance review signed: ${ctx.body.checkedItems.length} checked, ${ctx.body.notCheckedItems.length} not checked`,
-        details: { position: ctx.body.position, checked: ctx.body.checkedItems.length, notChecked: ctx.body.notCheckedItems.length },
+        details: {
+          position: ctx.body.position,
+          checked: ctx.body.checkedItems.length,
+          notChecked: ctx.body.notCheckedItems.length,
+        },
       });
       await t.analytics(
         'feasibility_review_recorded',
@@ -332,14 +394,21 @@ export const economicsHandlers: HandlerMap = {
       const o = await calcOutput<EconomicsOutput>(tx, v.calculation_result_id);
       if (!o) throw new ApiError('CALCULATION_BLOCKED', 'Not calculated yet.');
       const lines: string[][] = [
-        [`${c.display_key} · Economics v${v.version}${v.state === 'draft' ? ' (draft)' : ''} · ${v.currency} ${v.price_year} prices · horizon ${v.horizon_years} years`],
+        [
+          `${c.display_key} · Economics v${v.version}${v.state === 'draft' ? ' (draft)' : ''} · ${v.currency} ${v.price_year} prices · horizon ${v.horizon_years} years`,
+        ],
         [o.exclusionsText],
         [],
         ['Per-year scenarios (recurring money, /year)'],
         ...scenarioTable(o),
         [],
         ['One-time money (never added to per-year figures)'],
-        ['One-time scale-entry investment', 'amount' in o.oneTimeInvestment ? `${o.oneTimeInvestment.amount} ${o.oneTimeInvestment.currency}` : `Not available — ${o.oneTimeInvestment.reason}`],
+        [
+          'One-time scale-entry investment',
+          'amount' in o.oneTimeInvestment
+            ? `${o.oneTimeInvestment.amount} ${o.oneTimeInvestment.currency}`
+            : `Not available — ${o.oneTimeInvestment.reason}`,
+        ],
         ['Cash flow', `Not available — ${o.cashFlow.reason}`],
         ['Payback', `Not available — ${o.payback.reason}`],
         [],
@@ -347,7 +416,10 @@ export const economicsHandlers: HandlerMap = {
         ...o.lineage.map((n) => [n.label, n.formulaText ?? '', n.formulaWithValues ?? '']),
       ];
       ctx.setHeader('content-type', 'text/csv; charset=utf-8');
-      ctx.setHeader('content-disposition', `attachment; filename="${c.display_key}-economics-v${v.version}.csv"`);
+      ctx.setHeader(
+        'content-disposition',
+        `attachment; filename="${c.display_key}-economics-v${v.version}.csv"`,
+      );
       return lines.map((l) => l.map(csvCell).join(',')).join('\n') + '\n';
     },
   }),

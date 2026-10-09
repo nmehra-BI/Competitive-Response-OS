@@ -34,18 +34,28 @@ import {
   type VersionRow,
 } from './read';
 
-const MONEY_UNITS = new Set<ValueUnit>(['currency_per_year_per_site', 'currency_per_year', 'currency_one_time']);
+const MONEY_UNITS = new Set<ValueUnit>([
+  'currency_per_year_per_site',
+  'currency_per_year',
+  'currency_one_time',
+]);
 
 async function loadAssumption(tx: Tx, id: string): Promise<{ a: AssumptionRow; c: CaseRecord }> {
-  const a = (await tx.selectFrom('platform.assumption').selectAll().where('id', '=', id).executeTakeFirst()) as
-    | AssumptionRow
-    | undefined;
+  const a = (await tx
+    .selectFrom('platform.assumption')
+    .selectAll()
+    .where('id', '=', id)
+    .executeTakeFirst()) as AssumptionRow | undefined;
   if (!a) throw notFound();
   return { a, c: await caseById(tx, a.case_id) };
 }
 
 async function one(tx: Tx, a: AssumptionRow, c: CaseRecord) {
-  const row = (await tx.selectFrom('platform.assumption').selectAll().where('id', '=', a.id).executeTakeFirstOrThrow()) as AssumptionRow;
+  const row = (await tx
+    .selectFrom('platform.assumption')
+    .selectAll()
+    .where('id', '=', a.id)
+    .executeTakeFirstOrThrow()) as AssumptionRow;
   return (await toAssumptions(tx, [row], c.display_key))[0]!;
 }
 
@@ -57,7 +67,11 @@ function checkValue(value: string | null | undefined, unit: string): void {
     });
 }
 
-async function priceBasis(tx: Tx, c: CaseRecord, now: Date): Promise<{ currency: string; priceYear: number }> {
+async function priceBasis(
+  tx: Tx,
+  c: CaseRecord,
+  now: Date,
+): Promise<{ currency: string; priceYear: number }> {
   const b = await tx
     .selectFrom('me.sizing_version as v')
     .innerJoin('me.market_boundary as b', 'b.id', 'v.market_boundary_id')
@@ -78,12 +92,19 @@ async function priceBasis(tx: Tx, c: CaseRecord, now: Date): Promise<{ currency:
 }
 
 /** Who may resolve a challenge: disputes → the disputing reviewer or the sponsor (policy); challenges → also the case owner. */
-function canResolve(identity: Identity, now: Date, c: CaseRecord, raisedBy: string, kind: string): Authorization {
+function canResolve(
+  identity: Identity,
+  now: Date,
+  c: CaseRecord,
+  raisedBy: string,
+  kind: string,
+): Authorization {
   const d = authorizeOnCase(identity, now, c, 'challenge.resolve', { namedReviewerId: raisedBy });
   if (d.allow) return d;
   if (d.code === 'NOT_FOUND') return d;
   if (identity.user.id === raisedBy) return allowSelf(identity, c, raisedBy, d.reason);
-  if (kind === 'challenge' && identity.user.id === c.owner_user_id) return allowSelf(identity, c, c.owner_user_id, d.reason);
+  if (kind === 'challenge' && identity.user.id === c.owner_user_id)
+    return allowSelf(identity, c, c.owner_user_id, d.reason);
   return d;
 }
 
@@ -123,9 +144,18 @@ export const assumptionHandlers: HandlerMap = {
         .where('input_key', '=', b.inputKey)
         .executeTakeFirst();
       if (dup)
-        throw new ApiError('INVALID_TRANSITION', `${dup.display_key} already holds ${b.inputKey}; change its value instead.`);
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          `${dup.display_key} already holds ${b.inputKey}; change its value instead.`,
+        );
       const key = await allocateDisplayKey(tx, ctx.tenantId, 'ASM', async (k) =>
-        Boolean(await tx.selectFrom('platform.assumption').select('id').where('display_key', '=', k).executeTakeFirst()),
+        Boolean(
+          await tx
+            .selectFrom('platform.assumption')
+            .select('id')
+            .where('display_key', '=', k)
+            .executeTakeFirst(),
+        ),
       );
       const scenario = /^adoption_rate\.(downside|base|upside)$/.exec(b.inputKey)?.[1] ?? null;
       const money = MONEY_UNITS.has(b.unit) ? await priceBasis(tx, c, ctx.now) : null;
@@ -168,7 +198,11 @@ export const assumptionHandlers: HandlerMap = {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
-      await tx.updateTable('platform.assumption').set({ current_version_id: v.id }).where('id', '=', a.id).execute();
+      await tx
+        .updateTable('platform.assumption')
+        .set({ current_version_id: v.id })
+        .where('id', '=', a.id)
+        .execute();
       await t.audit({
         action: 'assumption.created',
         objectType: 'assumption',
@@ -208,7 +242,8 @@ export const assumptionHandlers: HandlerMap = {
       const { tx } = t;
       assertIfMatch(ctx, a.row_version);
       const b = ctx.body;
-      if (a.status === 'retired') throw new ApiError('INVALID_TRANSITION', 'A retired assumption cannot change.');
+      if (a.status === 'retired')
+        throw new ApiError('INVALID_TRANSITION', 'A retired assumption cannot change.');
       if (b.ownerId) await assertHuman(tx, b.ownerId, 'body.ownerId');
       const cur = (await tx
         .selectFrom('platform.assumption_version')
@@ -249,7 +284,11 @@ export const assumptionHandlers: HandlerMap = {
           })
           .returning('id')
           .executeTakeFirstOrThrow();
-        await tx.updateTable('platform.assumption').set({ current_version_id: v.id }).where('id', '=', a.id).execute();
+        await tx
+          .updateTable('platform.assumption')
+          .set({ current_version_id: v.id })
+          .where('id', '=', a.id)
+          .execute();
         await t.audit({
           action: 'assumption.version_created',
           objectType: 'assumption',
@@ -263,7 +302,13 @@ export const assumptionHandlers: HandlerMap = {
         });
         await t.analytics(
           'assumption_changed',
-          { objectType: 'assumption', objectId: a.id, objectVersion: newVersion, caseId: c.id, stage: c.stage as never },
+          {
+            objectType: 'assumption',
+            objectId: a.id,
+            objectVersion: newVersion,
+            caseId: c.id,
+            stage: c.stage as never,
+          },
           { decisionCritical: a.decision_critical, origin: 'human' },
         );
         await t.emit({
@@ -323,7 +368,10 @@ export const assumptionHandlers: HandlerMap = {
         .where('assumption_id', '=', a.id)
         .orderBy('version')
         .execute()) as VersionRow[];
-      const people = await peopleMap(tx, rows.map((r) => r.created_by));
+      const people = await peopleMap(
+        tx,
+        rows.map((r) => r.created_by),
+      );
       return { items: rows.map((r) => toVersion(r, people)) };
     },
   }),
@@ -385,7 +433,8 @@ export const assumptionHandlers: HandlerMap = {
   [API.assumptions.replyToChallenge.id]: command(API.assumptions.replyToChallenge, {
     load: (ctx, tx) => loadChallenge(tx, ctx.params.id),
     authorize: (ctx, { ch, c }) => {
-      if (!canRead(ctx.identity, c)) return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
+      if (!canRead(ctx.identity, c))
+        return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
       if (ctx.userId === ch.raised_by || ctx.userId === c.owner_user_id || ctx.userId === c.sponsor_user_id)
         return allowSelf(ctx.identity, c, ctx.userId, '');
       return authorizeAny(ctx.identity, ctx.now, c, ['assumption.dispute', 'challenge.resolve', 'case.edit']);
@@ -394,7 +443,13 @@ export const assumptionHandlers: HandlerMap = {
       if (ch.status !== 'open') throw new ApiError('INVALID_TRANSITION', 'This thread is resolved.');
       await t.tx
         .insertInto('platform.challenge_reply')
-        .values({ tenant_id: ctx.tenantId, challenge_id: ch.id, author_id: ctx.userId, body: ctx.body.body, created_at: ctx.now })
+        .values({
+          tenant_id: ctx.tenantId,
+          challenge_id: ch.id,
+          author_id: ctx.userId,
+          body: ctx.body.body,
+          created_at: ctx.now,
+        })
         .execute();
       await t.audit({
         action: 'challenge.replied',
@@ -414,7 +469,12 @@ export const assumptionHandlers: HandlerMap = {
       if (ch.status !== 'open') throw new ApiError('INVALID_TRANSITION', 'Already resolved.');
       await t.tx
         .updateTable('platform.challenge')
-        .set({ status: 'resolved', resolution: ctx.body.resolution, resolved_by: ctx.userId, resolved_at: ctx.now })
+        .set({
+          status: 'resolved',
+          resolution: ctx.body.resolution,
+          resolved_by: ctx.userId,
+          resolved_at: ctx.now,
+        })
         .where('id', '=', ch.id)
         .execute();
       if (ch.target_type === 'claim') {
@@ -445,4 +505,3 @@ export const assumptionHandlers: HandlerMap = {
     },
   }),
 };
-

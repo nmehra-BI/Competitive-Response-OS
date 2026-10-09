@@ -24,7 +24,11 @@ export interface NewClaim {
   acceptedBy: string | null;
 }
 
-export async function insertClaim(tx: Tx, ctx: { tenantId: string; actorUserId: string; now: Date }, c: NewClaim): Promise<string> {
+export async function insertClaim(
+  tx: Tx,
+  ctx: { tenantId: string; actorUserId: string; now: Date },
+  c: NewClaim,
+): Promise<string> {
   for (const id of c.sourceIds) {
     const s = await tx.selectFrom('platform.source').select('id').where('id', '=', id).executeTakeFirst();
     if (!s) throw new ApiError('VALIDATION_FAILED', 'Unknown source.');
@@ -51,7 +55,14 @@ export async function insertClaim(tx: Tx, ctx: { tenantId: string; actorUserId: 
   for (const sourceId of new Set(c.sourceIds))
     await tx
       .insertInto('platform.claim_evidence_link')
-      .values({ tenant_id: ctx.tenantId, claim_id: row.id, source_id: sourceId, relation: 'supports', created_by: ctx.actorUserId, created_at: ctx.now })
+      .values({
+        tenant_id: ctx.tenantId,
+        claim_id: row.id,
+        source_id: sourceId,
+        relation: 'supports',
+        created_by: ctx.actorUserId,
+        created_at: ctx.now,
+      })
       .execute();
   return row.id;
 }
@@ -60,7 +71,14 @@ export async function insertClaim(tx: Tx, ctx: { tenantId: string; actorUserId: 
 export async function createClaimFromProposal(
   t: Tools,
   ctx: { tenantId: string; actorUserId: string; now: Date; identity: Identity },
-  p: { caseId: string; statement: string; sourceIds: readonly string[]; agentRunId: string; proposalId: string; kindDetail?: string | null },
+  p: {
+    caseId: string;
+    statement: string;
+    sourceIds: readonly string[];
+    agentRunId: string;
+    proposalId: string;
+    kindDetail?: string | null;
+  },
 ): Promise<Claim> {
   const id = await insertClaim(t.tx, ctx, {
     caseId: p.caseId,

@@ -42,7 +42,9 @@ export async function insertOpportunity(
     .where('id', '=', (mandate.current_version_id ?? mandate.draft_version_id)!)
     .executeTakeFirst();
   const key = await allocateDisplayKey(tx, ctx.tenantId, 'OPP', async (k) =>
-    Boolean(await tx.selectFrom('me.opportunity').select('id').where('display_key', '=', k).executeTakeFirst()),
+    Boolean(
+      await tx.selectFrom('me.opportunity').select('id').where('display_key', '=', k).executeTakeFirst(),
+    ),
   );
   const row = (await tx
     .insertInto('me.opportunity')
@@ -68,16 +70,33 @@ export async function insertOpportunity(
     .returningAll()
     .executeTakeFirstOrThrow()) as OpportunityRow;
   for (const text of input.unknowns ?? [])
-    await tx.insertInto('me.opportunity_unknown').values({ tenant_id: ctx.tenantId, opportunity_id: row.id, text }).execute();
+    await tx
+      .insertInto('me.opportunity_unknown')
+      .values({ tenant_id: ctx.tenantId, opportunity_id: row.id, text })
+      .execute();
   for (const [i, f] of (input.fitCriteria ?? []).entries())
     await tx
       .insertInto('me.opportunity_fit_criterion')
-      .values({ tenant_id: ctx.tenantId, opportunity_id: row.id, criterion: f.criterion, result: f.result, note: f.note, ordinal: i + 1 })
+      .values({
+        tenant_id: ctx.tenantId,
+        opportunity_id: row.id,
+        criterion: f.criterion,
+        result: f.result,
+        note: f.note,
+        ordinal: i + 1,
+      })
       .execute();
   for (const sourceId of new Set(input.sourceIds ?? [])) {
-    const exists = await tx.selectFrom('platform.source').select('id').where('id', '=', sourceId).executeTakeFirst();
+    const exists = await tx
+      .selectFrom('platform.source')
+      .select('id')
+      .where('id', '=', sourceId)
+      .executeTakeFirst();
     if (!exists) throw new ApiError('VALIDATION_FAILED', 'Unknown source');
-    await tx.insertInto('me.opportunity_source').values({ tenant_id: ctx.tenantId, opportunity_id: row.id, source_id: sourceId }).execute();
+    await tx
+      .insertInto('me.opportunity_source')
+      .values({ tenant_id: ctx.tenantId, opportunity_id: row.id, source_id: sourceId })
+      .execute();
   }
   return row;
 }

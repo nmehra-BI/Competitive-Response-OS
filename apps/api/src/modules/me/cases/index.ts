@@ -41,8 +41,8 @@ import {
 } from './access';
 import { buildHeader, buildListRow } from './read';
 
-
-const KEY_ACTIONS = /gate|case\.(stage_changed|stop|hold|resume|close|created)|decision|seed\.(gate|case_converted)|caseMachine|case\.(start_assessment)/;
+const KEY_ACTIONS =
+  /gate|case\.(stage_changed|stop|hold|resume|close|created)|decision|seed\.(gate|case_converted)|caseMachine|case\.(start_assessment)/;
 
 async function allCases(tx: Tx): Promise<CaseRecord[]> {
   return (await tx
@@ -134,10 +134,18 @@ async function approvalsStillEffective(tx: Tx, c: CaseRecord): Promise<boolean> 
 }
 
 async function boundaryDefined(tx: Tx, c: CaseRecord): Promise<boolean> {
-  const s = await tx.selectFrom('me.sizing_version').select('id').where('case_id', '=', c.id).executeTakeFirst();
+  const s = await tx
+    .selectFrom('me.sizing_version')
+    .select('id')
+    .where('case_id', '=', c.id)
+    .executeTakeFirst();
   if (s) return true;
   if (c.origin_type === 'opportunity' && c.origin_id) {
-    const o = await tx.selectFrom('me.opportunity').select('market_boundary_id').where('id', '=', c.origin_id).executeTakeFirst();
+    const o = await tx
+      .selectFrom('me.opportunity')
+      .select('market_boundary_id')
+      .where('id', '=', c.origin_id)
+      .executeTakeFirst();
     return Boolean(o?.market_boundary_id);
   }
   return false;
@@ -173,11 +181,16 @@ export const caseHandlers: HandlerMap = {
 
   [API.cases.createDirect.id]: command(API.cases.createDirect, {
     load: async (ctx, tx) => {
-      const bu = await tx.selectFrom('platform.business_unit').select('id').where('id', '=', ctx.body.businessUnitId).executeTakeFirst();
+      const bu = await tx
+        .selectFrom('platform.business_unit')
+        .select('id')
+        .where('id', '=', ctx.body.businessUnitId)
+        .executeTakeFirst();
       if (!bu) throw notFound();
       return bu.id;
     },
-    authorize: (ctx, bu) => roleAllows(ctx.identity.subject, 'mandate.edit', { businessUnitId: bu, caseId: null }),
+    authorize: (ctx, bu) =>
+      roleAllows(ctx.identity.subject, 'mandate.edit', { businessUnitId: bu, caseId: null }),
     handle: async (ctx, t, bu) => {
       const { tx } = t;
       const fields = ctx.body.mandate;
@@ -230,9 +243,13 @@ export const caseHandlers: HandlerMap = {
         summary: `${c.display_key} created directly with draft mandate ${m.display_key}`,
         details: { originType: 'direct', stage: 'draft_mandate' },
       });
-      await t.analytics('mandate_created', { objectType: 'mandate', objectId: m.id, caseId: c.id, stage: 'draft_mandate' }, {
-        hasSponsor: true,
-      });
+      await t.analytics(
+        'mandate_created',
+        { objectType: 'mandate', objectId: m.id, caseId: c.id, stage: 'draft_mandate' },
+        {
+          hasSponsor: true,
+        },
+      );
       await t.emit({ type: 'case.created', ...eventBase(ctx, c.id), originType: 'direct' });
       return serializeCase(tx, c);
     },
@@ -250,7 +267,8 @@ export const caseHandlers: HandlerMap = {
       if (!c) throw notFound();
       return c;
     },
-    authorize: (ctx, c) => authorizeAny(ctx.identity, ctx.now, c, ['case.edit', 'case.hold_resume', 'case.stop']),
+    authorize: (ctx, c) =>
+      authorizeAny(ctx.identity, ctx.now, c, ['case.edit', 'case.hold_resume', 'case.stop']),
     handle: async (ctx, t, c) => {
       const { tx } = t;
       const cmd = ctx.body.command as CaseStageCommand;
@@ -308,7 +326,13 @@ export const caseHandlers: HandlerMap = {
         if (e === 'case_stopped')
           await t.analytics(
             'case_stopped',
-            { objectType: 'case', objectId: c.id, objectVersion: moved.row_version, caseId: c.id, stage: r.to },
+            {
+              objectType: 'case',
+              objectId: c.id,
+              objectVersion: moved.row_version,
+              caseId: c.id,
+              stage: r.to,
+            },
             { fromStage: r.from, outcome: null },
           );
       await t.emit({
@@ -361,7 +385,11 @@ export const caseHandlers: HandlerMap = {
         if (!byUser.has(id)) entry(id).participantRoles.add(label);
       const people = await peopleMap(tx, [...byUser.keys()]);
       const items: CaseMember[] = [...byUser.entries()]
-        .map(([id, e]) => ({ ...who(people, id), roles: [...e.roles], participantRoles: [...e.participantRoles] }))
+        .map(([id, e]) => ({
+          ...who(people, id),
+          roles: [...e.roles],
+          participantRoles: [...e.participantRoles],
+        }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
       return { items };
     },
@@ -382,19 +410,19 @@ export const caseHandlers: HandlerMap = {
       const items = filtered.slice(0, ctx.query.limit);
       const last = items[items.length - 1];
       return {
-        items: items.map(
-          (e): ActivityItem => ({
-            id: e.id,
-            at: e.occurredAt,
-            actor: e.actor,
-            title: e.summary,
-            detail: e.objectVersion ? `${e.objectType.replace(/_/g, ' ')} v${e.objectVersion}` : null,
-            keyDecision: KEY_ACTIONS.test(e.action),
-            href: null,
-          }),
-        ),
+        items: items.map((e): ActivityItem => ({
+          id: e.id,
+          at: e.occurredAt,
+          actor: e.actor,
+          title: e.summary,
+          detail: e.objectVersion ? `${e.objectType.replace(/_/g, ' ')} v${e.objectVersion}` : null,
+          keyDecision: KEY_ACTIONS.test(e.action),
+          href: null,
+        })),
         nextCursor:
-          last && filtered.length > items.length ? encodeCursor(ctx.tenantId, op, last.seq, last.id, ctx.now) : null,
+          last && filtered.length > items.length
+            ? encodeCursor(ctx.tenantId, op, last.seq, last.id, ctx.now)
+            : null,
       };
     },
   }),
@@ -416,7 +444,10 @@ export const caseHandlers: HandlerMap = {
       const last = items[items.length - 1];
       return {
         items,
-        nextCursor: last && events.length > items.length ? encodeCursor(ctx.tenantId, op, last.seq, last.id, ctx.now) : null,
+        nextCursor:
+          last && events.length > items.length
+            ? encodeCursor(ctx.tenantId, op, last.seq, last.id, ctx.now)
+            : null,
       };
     },
   }),
@@ -452,7 +483,15 @@ export const caseHandlers: HandlerMap = {
       // S07: asking a named reviewer about a feasibility dimension creates or reassigns that row.
       const dim = /^feasibility\.(\w+)$/.exec(b.targetType)?.[1];
       if (dim) {
-        const DIMS = ['product_fit', 'differentiation', 'commercial_access', 'operations', 'specialist_review', 'channel', 'competition'];
+        const DIMS = [
+          'product_fit',
+          'differentiation',
+          'commercial_access',
+          'operations',
+          'specialist_review',
+          'channel',
+          'competition',
+        ];
         if (!DIMS.includes(dim)) throw new ApiError('VALIDATION_FAILED', 'Unknown feasibility dimension.');
         await tx
           .insertInto('me.feasibility_assessment')
@@ -489,4 +528,3 @@ export const caseHandlers: HandlerMap = {
     },
   }),
 };
-

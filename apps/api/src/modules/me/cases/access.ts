@@ -16,7 +16,10 @@ import type { Ctx } from '../../../platform/pipeline';
 import type { EndpointDef } from '@growth-os/contracts';
 
 /** The request facts helpers need (independent of the endpoint). */
-export type BaseCtx = Pick<Ctx<EndpointDef>, 'tenantId' | 'userId' | 'now' | 'correlationId' | 'identity' | 'idempotencyKey'>;
+export type BaseCtx = Pick<
+  Ctx<EndpointDef>,
+  'tenantId' | 'userId' | 'now' | 'correlationId' | 'identity' | 'idempotencyKey'
+>;
 
 /** Domain event envelope fields. */
 export function eventBase(ctx: BaseCtx, caseId: string | null) {
@@ -113,7 +116,8 @@ export function authorizeOnCase(
   action: Action,
   facts: ResourceRef['facts'] = {},
 ): Authorization {
-  if (!canRead(identity, c)) return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
+  if (!canRead(identity, c))
+    return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
   const d = policy.check(subjectAt(identity, now), action, caseResource(c, facts));
   if (!d.allow) return { allow: false, rule: d.rule, code: d.code, reason: d.reason };
   return {
@@ -157,8 +161,14 @@ export function readDecision(identity: Identity, c: CaseRecord): Authorization {
 }
 
 /** A named person: allow only that user (on a visible case). */
-export function allowSelf(identity: Identity, c: CaseRecord, userId: string | null, reason: string): Authorization {
-  if (!canRead(identity, c)) return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
+export function allowSelf(
+  identity: Identity,
+  c: CaseRecord,
+  userId: string | null,
+  reason: string,
+): Authorization {
+  if (!canRead(identity, c))
+    return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
   if (userId !== null && identity.user.id === userId)
     return { allow: true, rule: 'self', authorityGrantId: null, role: firstRoleOnCase(identity, c) };
   return { allow: false, rule: 'self', code: 'FORBIDDEN', reason };
@@ -168,7 +178,10 @@ export function firstRoleOnCase(identity: Identity, c: CaseRecord): RoleCode | n
   return matchingRole(identity.subject, 'case.read', { businessUnitId: c.business_unit_id, caseId: c.id });
 }
 
-export async function peopleMap(tx: Tx, ids: readonly (string | null | undefined)[]): Promise<Map<string, PersonRef>> {
+export async function peopleMap(
+  tx: Tx,
+  ids: readonly (string | null | undefined)[],
+): Promise<Map<string, PersonRef>> {
   const unique = [...new Set(ids.filter((x): x is string => typeof x === 'string'))];
   if (unique.length === 0) return new Map();
   const rows = await tx
@@ -222,7 +235,11 @@ export async function serializeCase(tx: Tx, c: CaseRecord): Promise<WorkflowCase
 }
 
 /** Map a refused machine transition to problem+json (D-046): first failure decides the code. */
-export function machineRefusal(r: { code: string; failed: { key: string; message?: string }[]; reasons: string[] }): ApiError {
+export function machineRefusal(r: {
+  code: string;
+  failed: { key: string; message?: string }[];
+  reasons: string[];
+}): ApiError {
   return new ApiError(r.code as ConstructorParameters<typeof ApiError>[0], r.reasons[0] ?? 'Not possible', {
     blockers: r.failed.map((f) => ({ key: f.key, message: f.message ?? f.key })),
   });

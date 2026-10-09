@@ -31,7 +31,11 @@ async function load(tx: Tx, ref: string): Promise<Loaded> {
   return { opp, mandate };
 }
 
-function triage(identity: Identity, m: Mandate, action: 'opportunity.triage' | 'opportunity.convert'): Authorization {
+function triage(
+  identity: Identity,
+  m: Mandate,
+  action: 'opportunity.triage' | 'opportunity.convert',
+): Authorization {
   const v = mandateVisible(identity, m.business_unit_id);
   if (!v.allow) return v;
   return roleAllows(identity.subject, action, { businessUnitId: m.business_unit_id, caseId: null });
@@ -126,7 +130,13 @@ export async function createCaseRow(
   },
 ): Promise<CaseRecord> {
   const key = await allocateDisplayKey(tx, input.tenantId, 'ME', async (k) =>
-    Boolean(await tx.selectFrom('platform.workflow_case').select('id').where('display_key', '=', k).executeTakeFirst()),
+    Boolean(
+      await tx
+        .selectFrom('platform.workflow_case')
+        .select('id')
+        .where('display_key', '=', k)
+        .executeTakeFirst(),
+    ),
   );
   return (await tx
     .insertInto('platform.workflow_case')
@@ -228,9 +238,13 @@ export const opportunityHandlers: HandlerMap = {
     authorize: (ctx, l) => triage(ctx.identity, l.mandate, 'opportunity.triage'),
     handle: async (ctx, t, l) => {
       const row = await transition(ctx, t, l, 'shortlist', {}, {});
-      await t.analytics('opportunity_shortlisted', { objectType: 'opportunity', objectId: row.id }, {
-        origin: row.origin as 'ai',
-      });
+      await t.analytics(
+        'opportunity_shortlisted',
+        { objectType: 'opportunity', objectId: row.id },
+        {
+          origin: row.origin as 'ai',
+        },
+      );
       return toOpportunity(t.tx, ctx.identity, row);
     },
   }),
@@ -242,7 +256,14 @@ export const opportunityHandlers: HandlerMap = {
       toOpportunity(
         t.tx,
         ctx.identity,
-        await transition(ctx, t, l, 'dismiss', { rationale: ctx.body.reason }, { dismiss_reason: ctx.body.reason }),
+        await transition(
+          ctx,
+          t,
+          l,
+          'dismiss',
+          { rationale: ctx.body.reason },
+          { dismiss_reason: ctx.body.reason },
+        ),
       ),
   }),
 
@@ -266,9 +287,13 @@ export const opportunityHandlers: HandlerMap = {
     },
     authorize: (ctx, l) => triage(ctx.identity, l.mandate, 'opportunity.triage'),
     handle: async (ctx, t, { opp, target }) => {
-      if (target.id === opp.id) throw new ApiError('VALIDATION_FAILED', 'Choose a different candidate to merge into.');
+      if (target.id === opp.id)
+        throw new ApiError('VALIDATION_FAILED', 'Choose a different candidate to merge into.');
       const r = opportunityMachine.apply(opp.status as OpportunityStatus, 'merge', ctx.identity.actor, {
-        mergeTarget: { sameMandate: target.mandate_id === opp.mandate_id, status: target.status as OpportunityStatus },
+        mergeTarget: {
+          sameMandate: target.mandate_id === opp.mandate_id,
+          status: target.status as OpportunityStatus,
+        },
       });
       if (!r.ok) throw machineRefusal(r);
       const merged = (await t.tx
@@ -308,7 +333,11 @@ export const opportunityHandlers: HandlerMap = {
         .where('id', '=', mandate.current_version_id!)
         .executeTakeFirstOrThrow();
       const product = ver.product_id
-        ? await tx.selectFrom('platform.product').select('name').where('id', '=', ver.product_id).executeTakeFirst()
+        ? await tx
+            .selectFrom('platform.product')
+            .select('name')
+            .where('id', '=', ver.product_id)
+            .executeTakeFirst()
         : undefined;
       const c = await createCaseRow(tx, {
         tenantId: ctx.tenantId,

@@ -4,7 +4,13 @@
  * it to the version. Assumption-backed inputs read the assumption's CURRENT version while a draft
  * (live link) and are pinned to that version at commit. No money is computed here (D-054).
  */
-import { SizingOutput, type CalcCheck, type EngineInput, type SizingInput, type ValueUnit } from '@growth-os/contracts';
+import {
+  SizingOutput,
+  type CalcCheck,
+  type EngineInput,
+  type SizingInput,
+  type ValueUnit,
+} from '@growth-os/contracts';
 import { createSizingEngine } from '@growth-os/domain';
 import type { Tx } from '@growth-os/db';
 import { valueString } from '../assumptions/read';
@@ -82,11 +88,32 @@ export async function storeCalculation(
 
 /** Live assumption values for draft inputs. */
 export async function currentAssumptionVersions(tx: Tx, assumptionIds: readonly string[]) {
-  if (assumptionIds.length === 0) return new Map<string, { id: string; version: number; value: string | null; unit: string; currency: string | null; price_year: number | null; evidence_quality: string }>();
+  if (assumptionIds.length === 0)
+    return new Map<
+      string,
+      {
+        id: string;
+        version: number;
+        value: string | null;
+        unit: string;
+        currency: string | null;
+        price_year: number | null;
+        evidence_quality: string;
+      }
+    >();
   const rows = await tx
     .selectFrom('platform.assumption as a')
     .innerJoin('platform.assumption_version as v', 'v.id', 'a.current_version_id')
-    .select(['a.id as assumption_id', 'v.id', 'v.version', 'v.value', 'v.unit', 'v.currency', 'v.price_year', 'v.evidence_quality'])
+    .select([
+      'a.id as assumption_id',
+      'v.id',
+      'v.version',
+      'v.value',
+      'v.unit',
+      'v.currency',
+      'v.price_year',
+      'v.evidence_quality',
+    ])
     .where('a.id', 'in', [...assumptionIds])
     .execute();
   return new Map(rows.map((r) => [r.assumption_id, r]));
@@ -95,15 +122,30 @@ export async function currentAssumptionVersions(tx: Tx, assumptionIds: readonly 
 /** Refresh assumption-backed draft rows to the assumption's current value (drafts follow the register). */
 export async function refreshDraftInputs(tx: Tx, v: SizingVersionRow): Promise<void> {
   if (v.state !== 'draft') return;
-  const inputs = await tx.selectFrom('me.sizing_input').selectAll().where('sizing_version_id', '=', v.id).execute();
-  const live = await currentAssumptionVersions(tx, inputs.flatMap((i) => (i.assumption_id ? [i.assumption_id] : [])));
+  const inputs = await tx
+    .selectFrom('me.sizing_input')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .execute();
+  const live = await currentAssumptionVersions(
+    tx,
+    inputs.flatMap((i) => (i.assumption_id ? [i.assumption_id] : [])),
+  );
   for (const i of inputs) {
     const a = i.assumption_id ? live.get(i.assumption_id) : undefined;
     if (!a || a.value === null) continue;
-    if (valueString(a.value, a.unit) !== valueString(i.value, i.unit) || i.evidence_quality !== a.evidence_quality)
+    if (
+      valueString(a.value, a.unit) !== valueString(i.value, i.unit) ||
+      i.evidence_quality !== a.evidence_quality
+    )
       await tx
         .updateTable('me.sizing_input')
-        .set({ value: a.value, evidence_quality: a.evidence_quality, currency: a.currency ?? i.currency, price_year: a.price_year ?? i.price_year })
+        .set({
+          value: a.value,
+          evidence_quality: a.evidence_quality,
+          currency: a.currency ?? i.currency,
+          price_year: a.price_year ?? i.price_year,
+        })
         .where('id', '=', i.id)
         .execute();
   }
@@ -113,15 +155,43 @@ export type BuiltInput = { ok: true; input: SizingInput } | { ok: false; checks:
 
 /** Rebuild the engine input from the version rows. Missing required inputs → MISSING_INPUT checks. */
 export async function buildSizingInput(tx: Tx, v: SizingVersionRow): Promise<BuiltInput> {
-  const b = await tx.selectFrom('me.market_boundary').selectAll().where('id', '=', v.market_boundary_id).executeTakeFirstOrThrow();
-  const inputs = await tx.selectFrom('me.sizing_input').selectAll().where('sizing_version_id', '=', v.id).execute();
-  const cohorts = await tx.selectFrom('me.cohort').selectAll().where('sizing_version_id', '=', v.id).orderBy('ordinal').execute();
-  const overlaps = await tx.selectFrom('me.cohort_overlap').selectAll().where('sizing_version_id', '=', v.id).execute();
-  const cross = await tx.selectFrom('me.sizing_cross_check').selectAll().where('sizing_version_id', '=', v.id).executeTakeFirst();
-  const pinned = await currentAssumptionVersions(tx, inputs.flatMap((i) => (i.assumption_id ? [i.assumption_id] : [])));
+  const b = await tx
+    .selectFrom('me.market_boundary')
+    .selectAll()
+    .where('id', '=', v.market_boundary_id)
+    .executeTakeFirstOrThrow();
+  const inputs = await tx
+    .selectFrom('me.sizing_input')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .execute();
+  const cohorts = await tx
+    .selectFrom('me.cohort')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .orderBy('ordinal')
+    .execute();
+  const overlaps = await tx
+    .selectFrom('me.cohort_overlap')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .execute();
+  const cross = await tx
+    .selectFrom('me.sizing_cross_check')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .executeTakeFirst();
+  const pinned = await currentAssumptionVersions(
+    tx,
+    inputs.flatMap((i) => (i.assumption_id ? [i.assumption_id] : [])),
+  );
   const versionIds = inputs.flatMap((i) => (i.assumption_version_id ? [i.assumption_version_id] : []));
   const pinnedRows = versionIds.length
-    ? await tx.selectFrom('platform.assumption_version').select(['id', 'version']).where('id', 'in', versionIds).execute()
+    ? await tx
+        .selectFrom('platform.assumption_version')
+        .select(['id', 'version'])
+        .where('id', 'in', versionIds)
+        .execute()
     : [];
 
   const toInput = (key: string): EngineInput | null => {
@@ -129,7 +199,9 @@ export async function buildSizingInput(tx: Tx, v: SizingVersionRow): Promise<Bui
     if (!i) return null;
     let ref: EngineInput['ref'];
     if (i.kind === 'assumption' && i.assumption_id) {
-      const p = i.assumption_version_id ? pinnedRows.find((r) => r.id === i.assumption_version_id) : undefined;
+      const p = i.assumption_version_id
+        ? pinnedRows.find((r) => r.id === i.assumption_version_id)
+        : undefined;
       const live = pinned.get(i.assumption_id);
       ref = p
         ? { type: 'assumption_version', id: p.id, version: p.version }
@@ -147,7 +219,13 @@ export async function buildSizingInput(tx: Tx, v: SizingVersionRow): Promise<Bui
       ref,
     };
   };
-  const required = ['tam_site_count', 'annual_spend_per_site', 'reachable_pool', 'adoption_rate.base', 'capacity'];
+  const required = [
+    'tam_site_count',
+    'annual_spend_per_site',
+    'reachable_pool',
+    'adoption_rate.base',
+    'capacity',
+  ];
   const missing = required.filter((k) => !inputs.some((i) => i.input_key === k));
   if (missing.length > 0)
     return {
@@ -184,7 +262,9 @@ export async function buildSizingInput(tx: Tx, v: SizingVersionRow): Promise<Bui
       populationUnit: c.population_unit as 'site',
       priceYear: c.price_year,
       status: c.status as 'active',
-      ref: c.source_id ? { type: 'source', id: c.source_id, version: null } : { type: 'cohort', id: c.id, version: null },
+      ref: c.source_id
+        ? { type: 'source', id: c.source_id, version: null }
+        : { type: 'cohort', id: c.id, version: null },
     })),
     overlaps: overlaps.map((o) => ({
       cohortAId: o.cohort_a_id,
@@ -220,7 +300,12 @@ export interface Recalc {
 }
 
 /** Recalculate a DRAFT and link the result (or unlink when inputs are incomplete). */
-export async function recalcSizingDraft(tx: Tx, tenantId: string, v: SizingVersionRow, now: Date): Promise<Recalc> {
+export async function recalcSizingDraft(
+  tx: Tx,
+  tenantId: string,
+  v: SizingVersionRow,
+  now: Date,
+): Promise<Recalc> {
   await refreshDraftInputs(tx, v);
   const built = await buildSizingInput(tx, v);
   if (!built.ok) {

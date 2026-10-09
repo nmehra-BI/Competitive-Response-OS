@@ -32,7 +32,13 @@ export function redactBlockedSizing(o: SizingOutput): SizingOutput {
     ...o,
     ladder: {
       tam: { population: 0, value: zero(o.ladder.tam.value) },
-      sam: { population: 0, value: zero(o.ladder.sam.value), cohortSum: 0, overlapRemoved: 0, available: false },
+      sam: {
+        population: 0,
+        value: zero(o.ladder.sam.value),
+        cohortSum: 0,
+        overlapRemoved: 0,
+        available: false,
+      },
       reachablePool: { population: 0 },
       som: [],
     },
@@ -44,7 +50,11 @@ export function redactBlockedSizing(o: SizingOutput): SizingOutput {
 
 export async function calcOutput<T>(tx: Tx, id: string | null): Promise<T | null> {
   if (!id) return null;
-  const r = await tx.selectFrom('platform.calculation_result').select('output').where('id', '=', id).executeTakeFirst();
+  const r = await tx
+    .selectFrom('platform.calculation_result')
+    .select('output')
+    .where('id', '=', id)
+    .executeTakeFirst();
   return (r?.output as T | undefined) ?? null;
 }
 
@@ -98,7 +108,12 @@ export async function ledgerRows(
     assumption_version_id: string | null;
     evidence_quality: string | null;
   }[],
-  ctx: { modelVersion: number; versionCreatedAt: Date; lineage: { nodeKey: string; inputs: string[] }[]; compareTo?: Map<string, string> },
+  ctx: {
+    modelVersion: number;
+    versionCreatedAt: Date;
+    lineage: { nodeKey: string; inputs: string[] }[];
+    compareTo?: Map<string, string>;
+  },
 ): Promise<LedgerRow[]> {
   const asmIds = rows.flatMap((r) => (r.assumption_id ? [r.assumption_id] : []));
   const asm = asmIds.length
@@ -126,8 +141,15 @@ export async function ledgerRows(
         .where('status', '=', 'open')
         .execute()
     : [];
-  const people = await peopleMap(tx, asm.map((a) => a.owner_user_id));
-  const chips = await sourceChips(tx, identity, rows.map((r) => r.source_id));
+  const people = await peopleMap(
+    tx,
+    asm.map((a) => a.owner_user_id),
+  );
+  const chips = await sourceChips(
+    tx,
+    identity,
+    rows.map((r) => r.source_id),
+  );
   return rows.map((r) => {
     const a = asm.find((x) => x.id === r.assumption_id);
     const p = pinned.find((x) => x.id === r.assumption_version_id);
@@ -146,7 +168,10 @@ export async function ledgerRows(
         owner: a ? who(people, a.owner_user_id) : null,
         text: p?.basis ?? a?.basis ?? (src ? null : 'Draft value · not yet in the assumption register'),
       },
-      evidenceQuality: (r.evidence_quality ?? p?.evidence_quality ?? a?.evidence_quality ?? null) as LedgerRow['evidenceQuality'],
+      evidenceQuality: (r.evidence_quality ??
+        p?.evidence_quality ??
+        a?.evidence_quality ??
+        null) as LedgerRow['evidenceQuality'],
       assumptionId: r.assumption_id,
       version: p?.version ?? a?.version ?? ctx.modelVersion,
       lastChangedAt: isoDateTime(p?.created_at ?? a?.created_at ?? ctx.versionCreatedAt),
@@ -163,11 +188,32 @@ export async function toSizingVersion(
   v: SizingVersionRow,
   compareTo?: Map<string, string>,
 ): Promise<SizingVersion> {
-  const b = await tx.selectFrom('me.market_boundary').selectAll().where('id', '=', v.market_boundary_id).executeTakeFirstOrThrow();
-  const inputs = await tx.selectFrom('me.sizing_input').selectAll().where('sizing_version_id', '=', v.id).execute();
-  const cohorts = await tx.selectFrom('me.cohort').selectAll().where('sizing_version_id', '=', v.id).orderBy('ordinal').execute();
-  const overlaps = await tx.selectFrom('me.cohort_overlap').selectAll().where('sizing_version_id', '=', v.id).execute();
-  const cross = await tx.selectFrom('me.sizing_cross_check').selectAll().where('sizing_version_id', '=', v.id).executeTakeFirst();
+  const b = await tx
+    .selectFrom('me.market_boundary')
+    .selectAll()
+    .where('id', '=', v.market_boundary_id)
+    .executeTakeFirstOrThrow();
+  const inputs = await tx
+    .selectFrom('me.sizing_input')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .execute();
+  const cohorts = await tx
+    .selectFrom('me.cohort')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .orderBy('ordinal')
+    .execute();
+  const overlaps = await tx
+    .selectFrom('me.cohort_overlap')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .execute();
+  const cross = await tx
+    .selectFrom('me.sizing_cross_check')
+    .selectAll()
+    .where('sizing_version_id', '=', v.id)
+    .executeTakeFirst();
   const raw = await calcOutput<SizingOutput>(tx, v.calculation_result_id);
   const chips = await sourceChips(tx, identity, [...cohorts.map((c) => c.source_id), cross?.source_id]);
   const order = Object.keys({
@@ -196,26 +242,22 @@ export async function toSizingVersion(
     boundary: boundaryOf(b),
     dedupRuleText: v.dedup_rule_text,
     ledger,
-    cohorts: cohorts.map(
-      (c): Cohort => ({
-        id: c.id,
-        name: c.name,
-        qualifier: c.qualifier,
-        rule: c.rule,
-        siteCount: c.site_count,
-        source: c.source_id ? (chipsFor(chips, [c.source_id])[0] ?? null) : null,
-        status: c.status as Cohort['status'],
-      }),
-    ),
-    overlaps: overlaps.map(
-      (o): CohortOverlap => ({
-        id: o.id,
-        cohortAId: o.cohort_a_id,
-        cohortBId: o.cohort_b_id,
-        overlapCount: o.overlap_count,
-        method: o.method_text,
-      }),
-    ),
+    cohorts: cohorts.map((c): Cohort => ({
+      id: c.id,
+      name: c.name,
+      qualifier: c.qualifier,
+      rule: c.rule,
+      siteCount: c.site_count,
+      source: c.source_id ? (chipsFor(chips, [c.source_id])[0] ?? null) : null,
+      status: c.status as Cohort['status'],
+    })),
+    overlaps: overlaps.map((o): CohortOverlap => ({
+      id: o.id,
+      cohortAId: o.cohort_a_id,
+      cohortBId: o.cohort_b_id,
+      overlapCount: o.overlap_count,
+      method: o.method_text,
+    })),
     crossCheck: cross
       ? {
           low: valueString(cross.low, 'currency_per_year'),
@@ -262,9 +304,16 @@ export async function sizingView(tx: Tx, identity: Identity, caseId: string): Pr
         .where('c.sizing_version_id', '=', shownId)
         .execute()
     : [];
-  const ent = await entitlementsFor(tx, identity, sources.map((s) => s.license_id));
+  const ent = await entitlementsFor(
+    tx,
+    identity,
+    sources.map((s) => s.license_id),
+  );
   const restricted = sources.filter((s) => effectiveAccess(ent.get(s.license_id) ?? 'none', s) !== 'excerpt');
-  const owners = await peopleMap(tx, restricted.map((s) => s.created_by));
+  const owners = await peopleMap(
+    tx,
+    restricted.map((s) => s.created_by),
+  );
   const draftOut = draftRow ? await calcOutput<SizingOutput>(tx, draftRow.calculation_result_id) : null;
   return {
     current,
@@ -272,7 +321,11 @@ export async function sizingView(tx: Tx, identity: Identity, caseId: string): Pr
     duplicateCohorts: duplicateWarnings(draftOut),
     siteListRestricted: restricted.length > 0,
     siteListDataOwner: restricted[0] ? who(owners, restricted[0].created_by) : null,
-    versions: committed.map((v) => ({ id: v.id, version: v.version, committedAt: isoDateTimeOrNull(v.committed_at) })),
+    versions: committed.map((v) => ({
+      id: v.id,
+      version: v.version,
+      committedAt: isoDateTimeOrNull(v.committed_at),
+    })),
   };
 }
 
@@ -295,7 +348,11 @@ export async function committedSizingSummary(
       `TAM ${moneyLabel(o.ladder.tam.value.amount, o.ladder.tam.value.currency)}/year`,
       `SAM ${moneyLabel(o.ladder.sam.value.amount, o.ladder.sam.value.currency)}/year`,
       `Reachable ${o.ladder.reachablePool.population} unique ${unit}`,
-      ...(base ? [`SOM Base Year ${v.horizon_years} ${moneyLabel(base.annualRevenue.amount, base.annualRevenue.currency)} annual revenue`] : []),
+      ...(base
+        ? [
+            `SOM Base Year ${v.horizon_years} ${moneyLabel(base.annualRevenue.amount, base.annualRevenue.currency)} annual revenue`,
+          ]
+        : []),
     ].join(' · '),
   };
 }

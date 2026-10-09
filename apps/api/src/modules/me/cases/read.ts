@@ -32,7 +32,13 @@ const COUNTRY: Record<string, string> = {
 };
 const FRESH_ORDER: EvidenceFreshness[] = ['current', 'ageing', 'stale', 'superseded'];
 const APPROVED = new Set(['approved', 'approved_with_conditions']);
-const GATE_NAME: Record<GateCode, string> = { G0: 'Scope', G1: 'Validation', G2: 'Pilot', G3: 'Scale', X: 'Extension' };
+const GATE_NAME: Record<GateCode, string> = {
+  G0: 'Scope',
+  G1: 'Validation',
+  G2: 'Pilot',
+  G3: 'Scale',
+  X: 'Extension',
+};
 
 export async function marketLabel(tx: Tx, c: CaseRecord): Promise<string> {
   const b = await tx
@@ -93,9 +99,11 @@ export async function buildRail(tx: Tx, c: CaseRecord): Promise<RailInfo> {
   for (const r of rows) gates[r.gate_code as GateCode] ??= r;
   const mv = await mandateVersionOf(tx, c);
   if (mv?.g0) {
-    const g0 = (await tx.selectFrom('platform.gate_request').selectAll().where('id', '=', mv.g0).executeTakeFirst()) as
-      | GateRow
-      | undefined;
+    const g0 = (await tx
+      .selectFrom('platform.gate_request')
+      .selectAll()
+      .where('id', '=', mv.g0)
+      .executeTakeFirst()) as GateRow | undefined;
     if (g0) gates.G0 = g0;
   }
   const evaluations: RailInfo['evaluations'] = {};
@@ -105,7 +113,11 @@ export async function buildRail(tx: Tx, c: CaseRecord): Promise<RailInfo> {
   const rail = codes.map((code): GateRailNode => {
     const g = gates[code];
     const ev = evaluations[code];
-    let status = displayStatusOf(code, (g?.status as GateRequestStatus) ?? null, ev ?? { allMet: true, metCount: 1 });
+    let status = displayStatusOf(
+      code,
+      (g?.status as GateRequestStatus) ?? null,
+      ev ?? { allMet: true, metCount: 1 },
+    );
     if (code === 'G0' && !g) status = c.stage === 'draft_mandate' ? 'not_started' : 'approved';
     if (code === 'G3' && afterReview && ev && !ev.allMet && (!g || g.status === 'draft')) status = 'blocked';
     return {
@@ -123,17 +135,31 @@ export async function buildRail(tx: Tx, c: CaseRecord): Promise<RailInfo> {
 async function freshness(tx: Tx, c: CaseRecord, now: Date) {
   const ids = [...(await caseSourceIds(tx, c))];
   const rows = ids.length
-    ? await tx.selectFrom('platform.source').select(['freshness', 'retrieved_at']).where('id', 'in', ids).execute()
+    ? await tx
+        .selectFrom('platform.source')
+        .select(['freshness', 'retrieved_at'])
+        .where('id', 'in', ids)
+        .execute()
     : [];
   const worst = rows.reduce<EvidenceFreshness>(
-    (w, r) => (FRESH_ORDER.indexOf(r.freshness as EvidenceFreshness) > FRESH_ORDER.indexOf(w) ? (r.freshness as EvidenceFreshness) : w),
+    (w, r) =>
+      FRESH_ORDER.indexOf(r.freshness as EvidenceFreshness) > FRESH_ORDER.indexOf(w)
+        ? (r.freshness as EvidenceFreshness)
+        : w,
     'current',
   );
-  const last = rows.reduce<Date | null>((m, r) => (r.retrieved_at && (!m || r.retrieved_at > m) ? r.retrieved_at : m), null);
+  const last = rows.reduce<Date | null>(
+    (m, r) => (r.retrieved_at && (!m || r.retrieved_at > m) ? r.retrieved_at : m),
+    null,
+  );
   const ageing = rows.filter((r) => r.freshness === 'ageing').length;
   const stale = rows.filter((r) => r.freshness === 'stale' || r.freshness === 'superseded').length;
   const days = last ? Math.max(0, Math.floor((now.getTime() - last.getTime()) / 86_400_000)) : null;
-  const parts = [days === null ? 'No evidence yet' : `Evidence checked ${days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`}`];
+  const parts = [
+    days === null
+      ? 'No evidence yet'
+      : `Evidence checked ${days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`}`,
+  ];
   if (ageing) parts.push(`${ageing} source${ageing === 1 ? '' : 's'} ageing`);
   if (stale) parts.push(`${stale} source${stale === 1 ? '' : 's'} stale`);
   return {
@@ -156,7 +182,15 @@ async function nextDecision(tx: Tx, c: CaseRecord, r: RailInfo): Promise<NextDec
   const people = await peopleMap(tx, [c.sponsor_user_id, c.owner_user_id]);
   const pending = r.rail.find((n) => n.gateCode !== 'X' && !APPROVED.has(n.status));
   if (!pending || ['stopped', 'closed'].includes(c.stage))
-    return { title: 'No gate decision pending', subtitle: '', decider: null, gateCode: null, blocked: false, why: [], primaryAction: null };
+    return {
+      title: 'No gate decision pending',
+      subtitle: '',
+      decider: null,
+      gateCode: null,
+      blocked: false,
+      why: [],
+      primaryAction: null,
+    };
   const g = r.gates[pending.gateCode];
   const ev = r.evaluations[pending.gateCode];
   const label = g
@@ -184,7 +218,11 @@ async function nextDecision(tx: Tx, c: CaseRecord, r: RailInfo): Promise<NextDec
 
 async function tabCounts(tx: Tx, c: CaseRecord): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  const feas = await tx.selectFrom('me.feasibility_assessment').select('status').where('case_id', '=', c.id).execute();
+  const feas = await tx
+    .selectFrom('me.feasibility_assessment')
+    .select('status')
+    .where('case_id', '=', c.id)
+    .execute();
   const pending = feas.filter((f) => f.status === 'pending' || f.status === 'in_review').length;
   if (pending) out.Feasibility = `${pending} pending`;
   const disputes = await tx
@@ -202,7 +240,11 @@ export async function buildHeader(tx: Tx, identity: Identity, c: CaseRecord, now
   const people = await peopleMap(tx, [c.owner_user_id, c.sponsor_user_id]);
   const rail = await buildRail(tx, c);
   const mv = await mandateVersionOf(tx, c);
-  const bu = await tx.selectFrom('platform.business_unit').select('name').where('id', '=', c.business_unit_id).executeTakeFirst();
+  const bu = await tx
+    .selectFrom('platform.business_unit')
+    .select('name')
+    .where('id', '=', c.business_unit_id)
+    .executeTakeFirst();
   const boundary = await tx
     .selectFrom('me.sizing_version as v')
     .innerJoin('me.market_boundary as b', 'b.id', 'v.market_boundary_id')

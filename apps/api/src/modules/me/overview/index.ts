@@ -20,7 +20,13 @@ import { accessibleCases } from '../cases';
 import { displayStatusOf, gateButtonLabel } from '../cases/gate-read';
 import { buildListRow } from '../cases/read';
 
-const GATE_NAME: Record<GateCode, string> = { G0: 'Scope', G1: 'Validation', G2: 'Pilot', G3: 'Scale', X: 'Extension' };
+const GATE_NAME: Record<GateCode, string> = {
+  G0: 'Scope',
+  G1: 'Validation',
+  G2: 'Pilot',
+  G3: 'Scale',
+  X: 'Extension',
+};
 const KEY = /gate|stage_changed|case\.created|stop|decision|seed\.(gate|case_converted)/;
 
 export const overviewHandlers: HandlerMap = {
@@ -28,19 +34,30 @@ export const overviewHandlers: HandlerMap = {
     authorize: () => ({ allow: true, rule: 'overview.portfolio', authorityGrantId: null }),
     handle: async (ctx, { tx }): Promise<PortfolioOverview> => {
       const acc = await accessibleCases(tx, ctx.identity);
-      const cases = acc.cases.filter((c) => !ctx.query.businessUnitId || c.business_unit_id === ctx.query.businessUnitId);
+      const cases = acc.cases.filter(
+        (c) => !ctx.query.businessUnitId || c.business_unit_id === ctx.query.businessUnitId,
+      );
       const ids = cases.map((c) => c.id);
       const stages = new Map<CaseStage, number>();
       for (const c of cases) stages.set(c.stage as CaseStage, (stages.get(c.stage as CaseStage) ?? 0) + 1);
       const gates = ids.length
-        ? await tx.selectFrom('platform.gate_request').selectAll().where('case_id', 'in', ids).orderBy('created_at').execute()
+        ? await tx
+            .selectFrom('platform.gate_request')
+            .selectAll()
+            .where('case_id', 'in', ids)
+            .orderBy('created_at')
+            .execute()
         : [];
       const subject = subjectAt(ctx.identity, ctx.now);
       const decisions: PortfolioOverview['decisionsAwaitingViewer'] = [];
       for (const g of gates.filter((x) => x.status === 'awaiting_decision')) {
         const c = cases.find((x) => x.id === g.case_id)!;
         const snap = g.current_snapshot_id
-          ? await tx.selectFrom('platform.decision_snapshot').select(['version', 'created_by']).where('id', '=', g.current_snapshot_id).executeTakeFirst()
+          ? await tx
+              .selectFrom('platform.decision_snapshot')
+              .select(['version', 'created_by'])
+              .where('id', '=', g.current_snapshot_id)
+              .executeTakeFirst()
           : undefined;
         const panel = policy.approvalPanel(subject, {
           type: 'gate_request',
@@ -60,7 +77,12 @@ export const overviewHandlers: HandlerMap = {
         decisions.push({
           gateRequestId: g.id,
           caseKey: c.display_key,
-          buttonLabel: gateButtonLabel(g.gate_code as GateCode, g.requested_amount, g.currency, g.duration_days),
+          buttonLabel: gateButtonLabel(
+            g.gate_code as GateCode,
+            g.requested_amount,
+            g.currency,
+            g.duration_days,
+          ),
           snapshotVersion: snap?.version ?? 1,
           dueText: g.submitted_at ? `Submitted ${shortDate(g.submitted_at)}` : 'Awaiting decision',
           href: caseHref(c.display_key, 'decision'),
@@ -70,7 +92,10 @@ export const overviewHandlers: HandlerMap = {
         .filter((g) => g.requested_amount !== null && g.currency !== null && g.gate_code !== 'G0')
         .map((g) => {
           const c = cases.find((x) => x.id === g.case_id)!;
-          const status = displayStatusOf(g.gate_code as GateCode, g.status as GateRequestStatus, { allMet: true, metCount: 1 });
+          const status = displayStatusOf(g.gate_code as GateCode, g.status as GateRequestStatus, {
+            allMet: true,
+            metCount: 1,
+          });
           const approved = g.status === 'approved' || g.status === 'approved_with_conditions';
           return {
             caseKey: c.display_key,
@@ -84,7 +109,11 @@ export const overviewHandlers: HandlerMap = {
             },
           };
         });
-      const finance = await tx.selectFrom('platform.connection').select(['status', 'name']).where('kind', '=', 'finance').executeTakeFirst();
+      const finance = await tx
+        .selectFrom('platform.connection')
+        .select(['status', 'name'])
+        .where('kind', '=', 'finance')
+        .executeTakeFirst();
       const today = asOf(ctx.now);
       const overdue = ids.length
         ? await tx
@@ -96,9 +125,7 @@ export const overviewHandlers: HandlerMap = {
             .orderBy('due_on')
             .execute()
         : [];
-      const events = (
-        await Promise.all(cases.map((c) => readAudit(tx, { caseId: c.id, limit: 20 })))
-      )
+      const events = (await Promise.all(cases.map((c) => readAudit(tx, { caseId: c.id, limit: 20 }))))
         .flat()
         .filter((e) => KEY.test(e.action))
         .sort((a, b) => b.seq - a.seq)
@@ -123,17 +150,35 @@ export const overviewHandlers: HandlerMap = {
         },
         overdueValidation: overdue.map((a) => {
           const c = cases.find((x) => x.id === a.case_id)!;
-          return { title: `${a.display_key} · ${a.name}`, caseKey: c.display_key, dueText: `Due ${shortDate(String(a.due_on))}`, href: caseHref(c.display_key, 'assumptions') };
+          return {
+            title: `${a.display_key} · ${a.name}`,
+            caseKey: c.display_key,
+            dueText: `Due ${shortDate(String(a.due_on))}`,
+            href: caseHref(c.display_key, 'assumptions'),
+          };
         }),
         pilotsNeedingReview: cases
           .filter((c) => c.stage === 'review_due')
-          .map((c) => ({ caseKey: c.display_key, dueText: 'Outcome review due', href: caseHref(c.display_key, 'outcomes') })),
-        pilotsNeedingReviewNote: cases.some((c) => c.stage === 'review_due') ? null : 'No pilot is due for review.',
+          .map((c) => ({
+            caseKey: c.display_key,
+            dueText: 'Outcome review due',
+            href: caseHref(c.display_key, 'outcomes'),
+          })),
+        pilotsNeedingReviewNote: cases.some((c) => c.stage === 'review_due')
+          ? null
+          : 'No pilot is due for review.',
         cases: await Promise.all(cases.map((c) => buildListRow(tx, c, ctx.now))),
-        casesNote: 'Market sizes are not totalled across cases. Each case has its own market boundary, unit and year.',
-        keyEvents: events.map(
-          (e): ActivityItem => ({ id: e.id, at: e.occurredAt, actor: e.actor, title: e.summary, detail: null, keyDecision: true, href: null }),
-        ),
+        casesNote:
+          'Market sizes are not totalled across cases. Each case has its own market boundary, unit and year.',
+        keyEvents: events.map((e): ActivityItem => ({
+          id: e.id,
+          at: e.occurredAt,
+          actor: e.actor,
+          title: e.summary,
+          detail: null,
+          keyDecision: true,
+          href: null,
+        })),
         dataSources: conns.map((c) => ({
           key: c.kind,
           name: c.name,

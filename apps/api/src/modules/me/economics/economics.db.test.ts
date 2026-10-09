@@ -33,17 +33,37 @@ describe('economics', () => {
 
   it('step 9: scenario table €1.0m / €2.0m / €2.4m, €0k break-even downside, €400k one-time apart, cash flow and payback Unavailable', async () => {
     const m = await w.cookie('a', 'maya');
-    const draft = await api(w, API.economics.saveDraft, m, { params: { caseRef: caseKey }, ifMatch: 0, body: { drivers: [] } });
+    const draft = await api(w, API.economics.saveDraft, m, {
+      params: { caseRef: caseKey },
+      ifMatch: 0,
+      body: { drivers: [] },
+    });
     expect(draft.statusCode).toBe(200);
     const view = EconomicsView.parse(draft.json());
     const r = view.draft!.result!;
     const by = (s: string) => r.scenarios.find((x) => x.scenario === s)!;
     expect(r.scenarios.map((s) => s.scenario)).toEqual(['downside', 'base', 'upside']);
-    expect(by('downside')).toMatchObject({ customers: 50, annualRevenue: { amount: '1000000.00' }, contributionAfterOpex: { amount: '0.00' } });
-    expect(by('base')).toMatchObject({ customers: 100, annualRevenue: { amount: '2000000.00' }, contributionAfterOpex: { amount: '600000.00' } });
-    expect(by('upside')).toMatchObject({ customers: 120, capped: true, annualRevenue: { amount: '2400000.00' } });
+    expect(by('downside')).toMatchObject({
+      customers: 50,
+      annualRevenue: { amount: '1000000.00' },
+      contributionAfterOpex: { amount: '0.00' },
+    });
+    expect(by('base')).toMatchObject({
+      customers: 100,
+      annualRevenue: { amount: '2000000.00' },
+      contributionAfterOpex: { amount: '600000.00' },
+    });
+    expect(by('upside')).toMatchObject({
+      customers: 120,
+      capped: true,
+      annualRevenue: { amount: '2400000.00' },
+    });
     for (const s of r.scenarios) expect(s.annualRevenue.timeBasis).toBe('per_year');
-    expect(r.oneTimeInvestment).toMatchObject({ amount: '400000.00', timeBasis: 'one_time', measure: 'one_time_investment' });
+    expect(r.oneTimeInvestment).toMatchObject({
+      amount: '400000.00',
+      timeBasis: 'one_time',
+      measure: 'one_time_investment',
+    });
     expect('unavailable' in r.cashFlow && r.cashFlow.unavailable).toBe(true);
     expect('unavailable' in r.payback && r.payback.unavailable).toBe(true);
     // No per-year figure carries the one-time amount (never summed).
@@ -60,8 +80,12 @@ describe('economics', () => {
     expect(c.statusCode).toBe(201);
     committed = EconomicsVersion.parse(c.json());
     expect(committed).toMatchObject({ state: 'committed', version: 1 });
-    expect(committed.drivers.find((d) => d.inputKey === 'one_time_investment')!.unit).toBe('currency_one_time');
-    expect((await auditFor(w, w.tenants.a!, committed.id)).map((e) => e.action)).toContain('economics.version_committed');
+    expect(committed.drivers.find((d) => d.inputKey === 'one_time_investment')!.unit).toBe(
+      'currency_one_time',
+    );
+    expect((await auditFor(w, w.tenants.a!, committed.id)).map((e) => e.action)).toContain(
+      'economics.version_committed',
+    );
   });
 
   it('a draft override unlinks the driver from the register; the committed version never recalculates', async () => {
@@ -98,20 +122,31 @@ describe('economics', () => {
       notCheckedItems: ['Ramp, retention, cash timing (not in model)'],
       statement: 'Supports with conditions.',
     };
-    const priya = await api(w, API.economics.signFinanceReview, await w.cookie('a', 'priya'), { params: { id: review.id }, body });
+    const priya = await api(w, API.economics.signFinanceReview, await w.cookie('a', 'priya'), {
+      params: { id: review.id },
+      body,
+    });
     expect(priya.statusCode).toBe(403);
     const maya = await api(w, API.economics.signFinanceReview, m, { params: { id: review.id }, body });
     expect(maya.statusCode).toBe(403);
-    const other = await api(w, API.economics.signFinanceReview, await w.cookie('b', 'daniel'), { params: { id: review.id }, body });
+    const other = await api(w, API.economics.signFinanceReview, await w.cookie('b', 'daniel'), {
+      params: { id: review.id },
+      body,
+    });
     expect(other.statusCode).toBe(404);
-    const signed = await api(w, API.economics.signFinanceReview, await w.cookie('a', 'daniel'), { params: { id: review.id }, body });
+    const signed = await api(w, API.economics.signFinanceReview, await w.cookie('a', 'daniel'), {
+      params: { id: review.id },
+      body,
+    });
     expect(signed.statusCode).toBe(200);
     expect(ModelReview.parse(signed.json())).toMatchObject({
       position: 'supports_with_conditions',
       checkedItems: body.checkedItems,
       notCheckedItems: body.notCheckedItems,
     });
-    const view = EconomicsView.parse((await api(w, API.economics.get, m, { params: { caseRef: caseKey } })).json());
+    const view = EconomicsView.parse(
+      (await api(w, API.economics.get, m, { params: { caseRef: caseKey } })).json(),
+    );
     expect(view.financeReview!.signedAt).not.toBeNull();
     const events = await analyticsFor(w, w.tenants.a!, 'feasibility_review_recorded');
     expect(events.map((e) => e.props)).toContainEqual({ area: 'finance', scoped: true });
@@ -121,18 +156,38 @@ describe('economics', () => {
   });
 
   it('exports CSV with per-year and one-time money in separate sections; reads are tenant-scoped', async () => {
-    const res = await api(w, API.economics.export, await w.cookie('demo', 'daniel'), { params: { caseRef: 'ME-104' }, query: { format: 'csv' } });
+    const res = await api(w, API.economics.export, await w.cookie('demo', 'daniel'), {
+      params: { caseRef: 'ME-104' },
+      query: { format: 'csv' },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.body).toContain('One-time money (never added to per-year figures)');
     expect(res.body).toContain('Cash flow,Not available');
-    expect((await api(w, API.economics.export, await w.cookie('demo', 'daniel'), { params: { caseRef: 'ME-104' }, query: { format: 'xlsx' } })).statusCode).toBe(400);
-    expect((await api(w, API.economics.get, await w.cookie('b', 'maya'), { params: { caseRef: caseKey } })).statusCode).toBe(404);
-    expect((await api(w, API.economics.commit, await w.cookie('a', 'lena'), { params: { caseRef: caseKey } })).statusCode).toBe(403);
+    expect(
+      (
+        await api(w, API.economics.export, await w.cookie('demo', 'daniel'), {
+          params: { caseRef: 'ME-104' },
+          query: { format: 'xlsx' },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (await api(w, API.economics.get, await w.cookie('b', 'maya'), { params: { caseRef: caseKey } }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (await api(w, API.economics.commit, await w.cookie('a', 'lena'), { params: { caseRef: caseKey } }))
+        .statusCode,
+    ).toBe(403);
   });
 
   it('reads demo economics v2 with the signed finance review and no incomplete recommendation', async () => {
-    const v = EconomicsView.parse((await api(w, API.economics.get, await w.cookie('demo', 'elena'), { params: { caseRef: 'ME-104' } })).json());
+    const v = EconomicsView.parse(
+      (
+        await api(w, API.economics.get, await w.cookie('demo', 'elena'), { params: { caseRef: 'ME-104' } })
+      ).json(),
+    );
     expect(v.current!.version).toBe(2);
     expect(v.financeReview!.notCheckedItems).toEqual(['Ramp, retention, cash timing (not in model)']);
     expect(v.recommendationIncomplete).toBe(false);

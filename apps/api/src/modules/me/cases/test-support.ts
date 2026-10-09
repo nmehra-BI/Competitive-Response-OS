@@ -4,7 +4,11 @@
  */
 import { API, type EndpointDef } from '@growth-os/contracts';
 import { withTenant, type Tx } from '@growth-os/db';
-import { assumptions as fixtureAssumptions, opportunities, sources as fixtureSources } from '@growth-os/fixtures-aster';
+import {
+  assumptions as fixtureAssumptions,
+  opportunities,
+  sources as fixtureSources,
+} from '@growth-os/fixtures-aster';
 import {
   call,
   createTestApp,
@@ -23,7 +27,10 @@ export interface World {
   close(): Promise<void>;
 }
 
-export async function world(profiles: Record<string, 'aster-start' | 'aster-demo'>, now?: () => Date): Promise<World> {
+export async function world(
+  profiles: Record<string, 'aster-start' | 'aster-demo'>,
+  now?: () => Date,
+): Promise<World> {
   const t = await createTestApp(now ? { now } : {});
   const tenants: Record<string, SeededTenant> = {};
   for (const [k, p] of Object.entries(profiles)) tenants[k] = await seedTenant(t.db, p);
@@ -56,11 +63,21 @@ export async function auditFor(w: World, s: SeededTenant, objectId: string) {
 
 export async function analyticsFor(w: World, s: SeededTenant, name: string) {
   return inTenant(w, s, (tx) =>
-    tx.selectFrom('platform.analytics_event').selectAll().where('name', '=', name).orderBy('occurred_at').execute(),
+    tx
+      .selectFrom('platform.analytics_event')
+      .selectAll()
+      .where('name', '=', name)
+      .orderBy('occurred_at')
+      .execute(),
   );
 }
 
-export async function api<D extends EndpointDef>(w: World, def: D, cookie: string, o: Omit<CallOptions<D>, 'cookie'> = {}) {
+export async function api<D extends EndpointDef>(
+  w: World,
+  def: D,
+  cookie: string,
+  o: Omit<CallOptions<D>, 'cookie'> = {},
+) {
   const needsKey = def.idempotent && o.idempotencyKey === undefined;
   return call(w.t.app, def, { ...o, cookie, ...(needsKey ? { idempotencyKey: true as const } : {}) });
 }
@@ -82,7 +99,11 @@ export async function convertOpp07(w: World, tenant: string): Promise<string> {
 }
 
 /** Register the fixture assumptions on a converted case (S09) through `assumptions.create`. */
-export async function registerAssumptions(w: World, tenant: string, caseKey: string): Promise<Record<string, string>> {
+export async function registerAssumptions(
+  w: World,
+  tenant: string,
+  caseKey: string,
+): Promise<Record<string, string>> {
   const maya = await w.cookie(tenant, 'maya');
   const s = w.tenants[tenant]!;
   const ids: Record<string, string> = {};
@@ -131,7 +152,13 @@ export async function enterSizing(w: World, tenant: string, caseKey: string, asm
         annualizationMethod: null,
       },
       inputs: [
-        { inputKey: 'tam_site_count', value: '5000', unit: 'sites', sourceId: sourceId(s, 'SRC-014'), assumptionId: null },
+        {
+          inputKey: 'tam_site_count',
+          value: '5000',
+          unit: 'sites',
+          sourceId: sourceId(s, 'SRC-014'),
+          assumptionId: null,
+        },
         ...(
           [
             ['annual_spend_per_site', 'currency_per_year_per_site'],
@@ -144,8 +171,20 @@ export async function enterSizing(w: World, tenant: string, caseKey: string, asm
         ).map(([k, unit]) => ({ inputKey: k, value: '0', unit, sourceId: null, assumptionId: asm[k]! })),
       ],
       cohorts: [
-        { id: null, name: 'Size-qualified', rule: '≥ size threshold', siteCount: 1400, sourceId: sourceId(s, 'SRC-014') },
-        { id: null, name: 'Process-qualified', rule: 'Uses the target water process', siteCount: 1100, sourceId: sourceId(s, 'SRC-021') },
+        {
+          id: null,
+          name: 'Size-qualified',
+          rule: '≥ size threshold',
+          siteCount: 1400,
+          sourceId: sourceId(s, 'SRC-014'),
+        },
+        {
+          id: null,
+          name: 'Process-qualified',
+          rule: 'Uses the target water process',
+          siteCount: 1100,
+          sourceId: sourceId(s, 'SRC-021'),
+        },
       ],
     },
   });

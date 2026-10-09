@@ -55,21 +55,31 @@ export function toThesisVersion(r: ThesisRow): ThesisVersion {
 }
 
 export async function thesisVersions(tx: Tx, caseId: string): Promise<ThesisRow[]> {
-  return (await tx.selectFrom('me.thesis_version').selectAll().where('case_id', '=', caseId).orderBy('version').execute()) as ThesisRow[];
+  return (await tx
+    .selectFrom('me.thesis_version')
+    .selectAll()
+    .where('case_id', '=', caseId)
+    .orderBy('version')
+    .execute()) as ThesisRow[];
 }
 
 type ClaimRow = Awaited<ReturnType<typeof claimRows>>[number];
 async function claimRows(tx: Tx, where: { caseId?: string; ids?: string[] }) {
   let q = tx.selectFrom('platform.claim').selectAll();
   if (where.caseId) q = q.where('case_id', '=', where.caseId);
-  if (where.ids) q = q.where('id', 'in', where.ids.length ? where.ids : ['00000000-0000-4000-8000-000000000000']);
+  if (where.ids)
+    q = q.where('id', 'in', where.ids.length ? where.ids : ['00000000-0000-4000-8000-000000000000']);
   return q.orderBy('created_at').execute();
 }
 
 export async function toClaims(tx: Tx, identity: Identity, rows: readonly ClaimRow[]): Promise<Claim[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const links = await tx.selectFrom('platform.claim_evidence_link').select(['claim_id', 'source_id']).where('claim_id', 'in', ids).execute();
+  const links = await tx
+    .selectFrom('platform.claim_evidence_link')
+    .select(['claim_id', 'source_id'])
+    .where('claim_id', 'in', ids)
+    .execute();
   const open = await tx
     .selectFrom('platform.challenge')
     .select('target_id')
@@ -77,7 +87,11 @@ export async function toClaims(tx: Tx, identity: Identity, rows: readonly ClaimR
     .where('target_id', 'in', ids)
     .where('status', '=', 'open')
     .execute();
-  const chips = await sourceChips(tx, identity, links.map((l) => l.source_id));
+  const chips = await sourceChips(
+    tx,
+    identity,
+    links.map((l) => l.source_id),
+  );
   return rows.map((r) => ({
     id: r.id,
     caseId: r.case_id,
@@ -104,10 +118,24 @@ export async function thesisView(tx: Tx, identity: Identity, c: CaseRecord): Pro
   const versions = await thesisVersions(tx, c.id);
   const committed = versions.filter((v) => v.state === 'committed');
   const draft = versions.find((v) => v.state === 'draft');
-  const assumptions = (await caseAssumptions(tx, c.id, c.display_key)).filter((a) => a.decisionCritical && a.status !== 'retired');
-  const blockers = await tx.selectFrom('me.blocker').selectAll().where('case_id', '=', c.id).where('status', '=', 'open').execute();
-  const feas = await tx.selectFrom('me.feasibility_assessment').selectAll().where('case_id', '=', c.id).execute();
-  const people = await peopleMap(tx, [...blockers.map((b) => b.owner_user_id ?? c.owner_user_id), ...feas.map((f) => f.reviewer_user_id)]);
+  const assumptions = (await caseAssumptions(tx, c.id, c.display_key)).filter(
+    (a) => a.decisionCritical && a.status !== 'retired',
+  );
+  const blockers = await tx
+    .selectFrom('me.blocker')
+    .selectAll()
+    .where('case_id', '=', c.id)
+    .where('status', '=', 'open')
+    .execute();
+  const feas = await tx
+    .selectFrom('me.feasibility_assessment')
+    .selectAll()
+    .where('case_id', '=', c.id)
+    .execute();
+  const people = await peopleMap(tx, [
+    ...blockers.map((b) => b.owner_user_id ?? c.owner_user_id),
+    ...feas.map((f) => f.reviewer_user_id),
+  ]);
   return {
     current: committed.length ? toThesisVersion(committed[committed.length - 1]!) : null,
     draft: draft ? toThesisVersion(draft) : null,

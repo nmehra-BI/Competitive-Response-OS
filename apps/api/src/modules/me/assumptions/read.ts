@@ -52,22 +52,28 @@ export type VersionRow = {
 const MONEY_UNITS = new Set(['currency_per_year_per_site', 'currency_per_year', 'currency_one_time']);
 
 /** Decimal text as stored for an engine input: money keeps 2 fraction digits, others are trimmed. */
-export const valueString = (v: string, unit: string) => (MONEY_UNITS.has(unit) ? moneyString(v) : trimDecimal(v));
+export const valueString = (v: string, unit: string) =>
+  MONEY_UNITS.has(unit) ? moneyString(v) : trimDecimal(v);
 
 const WEAK = new Set<EvidenceQuality>(['none', 'weak', 'conflicting']);
 const SENS_ORDER: Sensitivity[] = ['high', 'medium', 'low'];
 const QUALITY_ORDER: EvidenceQuality[] = ['none', 'conflicting', 'weak', 'some', 'strong'];
 
 /** Sensitivity first, then evidence quality. No combined score. */
-export function registerGroup(sensitivity: Sensitivity, quality: EvidenceQuality, retired: boolean): RegisterGroup {
+export function registerGroup(
+  sensitivity: Sensitivity,
+  quality: EvidenceQuality,
+  retired: boolean,
+): RegisterGroup {
   if (retired || sensitivity === 'low') return 'monitor';
-  if (sensitivity === 'high') return WEAK.has(quality) ? 'test_first' : quality === 'some' ? 'test_next' : 'watch';
+  if (sensitivity === 'high')
+    return WEAK.has(quality) ? 'test_first' : quality === 'some' ? 'test_next' : 'watch';
   return WEAK.has(quality) ? 'test_next' : 'watch';
 }
 
-export function sortRegister<T extends { sensitivity: Sensitivity; current: { evidenceQuality: EvidenceQuality }; status: string }>(
-  items: T[],
-): T[] {
+export function sortRegister<
+  T extends { sensitivity: Sensitivity; current: { evidenceQuality: EvidenceQuality }; status: string },
+>(items: T[]): T[] {
   return [...items].sort(
     (a, b) =>
       Number(a.status === 'retired') - Number(b.status === 'retired') ||
@@ -81,7 +87,8 @@ export async function challengesWhere(
   where: { ids?: string[]; caseId?: string; targetType?: string; targetIds?: string[]; openOnly?: boolean },
 ): Promise<Challenge[]> {
   let q = tx.selectFrom('platform.challenge').selectAll();
-  if (where.ids) q = q.where('id', 'in', where.ids.length ? where.ids : ['00000000-0000-4000-8000-000000000000']);
+  if (where.ids)
+    q = q.where('id', 'in', where.ids.length ? where.ids : ['00000000-0000-4000-8000-000000000000']);
   if (where.caseId) q = q.where('case_id', '=', where.caseId);
   if (where.targetType) q = q.where('target_type', '=', where.targetType);
   if (where.targetIds) {
@@ -102,7 +109,10 @@ export async function challengesWhere(
         .orderBy('created_at')
         .execute()
     : [];
-  const people = await peopleMap(tx, [...rows.flatMap((r) => [r.raised_by, r.resolved_by]), ...replies.map((r) => r.author_id)]);
+  const people = await peopleMap(tx, [
+    ...rows.flatMap((r) => [r.raised_by, r.resolved_by]),
+    ...replies.map((r) => r.author_id),
+  ]);
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind as Challenge['kind'],
@@ -119,7 +129,12 @@ export async function challengesWhere(
     createdAt: isoDateTime(r.created_at),
     replies: replies
       .filter((x) => x.challenge_id === r.id)
-      .map((x) => ({ id: x.id, author: who(people, x.author_id), body: x.body, createdAt: isoDateTime(x.created_at) })),
+      .map((x) => ({
+        id: x.id,
+        author: who(people, x.author_id),
+        body: x.body,
+        createdAt: isoDateTime(x.created_at),
+      })),
   }));
 }
 
@@ -144,16 +159,28 @@ export function toVersion(v: VersionRow, people: Awaited<ReturnType<typeof peopl
   };
 }
 
-export async function toAssumptions(tx: Tx, rows: readonly AssumptionRow[], caseKey: string): Promise<Assumption[]> {
+export async function toAssumptions(
+  tx: Tx,
+  rows: readonly AssumptionRow[],
+  caseKey: string,
+): Promise<Assumption[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const versions = (await tx
     .selectFrom('platform.assumption_version')
     .selectAll()
-    .where('id', 'in', rows.map((r) => r.current_version_id).filter((x): x is string => !!x))
+    .where(
+      'id',
+      'in',
+      rows.map((r) => r.current_version_id).filter((x): x is string => !!x),
+    )
     .execute()) as VersionRow[];
   const disputes = await challengesWhere(tx, { targetType: 'assumption', targetIds: ids, openOnly: true });
-  const exps = await tx.selectFrom('me.experiment_assumption').selectAll().where('assumption_id', 'in', ids).execute();
+  const exps = await tx
+    .selectFrom('me.experiment_assumption')
+    .selectAll()
+    .where('assumption_id', 'in', ids)
+    .execute();
   const sizing = await tx
     .selectFrom('me.sizing_input as i')
     .innerJoin('me.sizing_version as v', 'v.id', 'i.sizing_version_id')
@@ -166,7 +193,10 @@ export async function toAssumptions(tx: Tx, rows: readonly AssumptionRow[], case
     .select(['d.assumption_id', 'v.version', 'v.state'])
     .where('d.assumption_id', 'in', ids)
     .execute();
-  const people = await peopleMap(tx, [...rows.map((r) => r.owner_user_id), ...versions.map((v) => v.created_by)]);
+  const people = await peopleMap(tx, [
+    ...rows.map((r) => r.owner_user_id),
+    ...versions.map((v) => v.created_by),
+  ]);
   const latest = <T extends { version: number; state: string }>(xs: T[]) =>
     xs.filter((x) => x.state === 'committed').sort((a, b) => b.version - a.version)[0];
   const items = rows.map((r): Assumption => {
@@ -196,7 +226,11 @@ export async function toAssumptions(tx: Tx, rows: readonly AssumptionRow[], case
       statusDetail: r.status_detail,
       retiredReason: r.retired_reason,
       current,
-      registerGroup: registerGroup(r.sensitivity as Sensitivity, current.evidenceQuality, r.status === 'retired'),
+      registerGroup: registerGroup(
+        r.sensitivity as Sensitivity,
+        current.evidenceQuality,
+        r.status === 'retired',
+      ),
       openDispute: disputes.filter((d) => d.targetId === r.id).pop() ?? null,
       usedBy,
       rowVersion: r.row_version,
@@ -206,7 +240,11 @@ export async function toAssumptions(tx: Tx, rows: readonly AssumptionRow[], case
 }
 
 export async function caseAssumptions(tx: Tx, caseId: string, caseKey: string): Promise<Assumption[]> {
-  const rows = (await tx.selectFrom('platform.assumption').selectAll().where('case_id', '=', caseId).execute()) as AssumptionRow[];
+  const rows = (await tx
+    .selectFrom('platform.assumption')
+    .selectAll()
+    .where('case_id', '=', caseId)
+    .execute()) as AssumptionRow[];
   return toAssumptions(tx, rows, caseKey);
 }
 

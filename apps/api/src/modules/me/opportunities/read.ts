@@ -39,16 +39,27 @@ export async function findOpportunity(tx: Tx, ref: string): Promise<OpportunityR
     .executeTakeFirst() as Promise<OpportunityRow | undefined>;
 }
 
-export async function toOpportunities(tx: Tx, identity: Identity, rows: readonly OpportunityRow[]): Promise<Opportunity[]> {
+export async function toOpportunities(
+  tx: Tx,
+  identity: Identity,
+  rows: readonly OpportunityRow[],
+): Promise<Opportunity[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const [fits, unknowns, links, boundaries] = await Promise.all([
-    tx.selectFrom('me.opportunity_fit_criterion').selectAll().where('opportunity_id', 'in', ids).orderBy('ordinal').execute(),
+    tx
+      .selectFrom('me.opportunity_fit_criterion')
+      .selectAll()
+      .where('opportunity_id', 'in', ids)
+      .orderBy('ordinal')
+      .execute(),
     tx.selectFrom('me.opportunity_unknown').selectAll().where('opportunity_id', 'in', ids).execute(),
     tx.selectFrom('me.opportunity_source').selectAll().where('opportunity_id', 'in', ids).execute(),
     (() => {
       const b = rows.map((r) => r.market_boundary_id).filter((x): x is string => !!x);
-      return b.length ? tx.selectFrom('me.market_boundary').selectAll().where('id', 'in', b).execute() : Promise.resolve([]);
+      return b.length
+        ? tx.selectFrom('me.market_boundary').selectAll().where('id', 'in', b).execute()
+        : Promise.resolve([]);
     })(),
   ]);
   const chips = await sourceChips(

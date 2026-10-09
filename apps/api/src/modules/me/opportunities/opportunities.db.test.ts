@@ -19,13 +19,17 @@ const ListResponse = API.opportunities.list.response;
 
 describe('opportunities', () => {
   it('step 2: lists MD-21 candidates with AI origin, the likely duplicate and partial discovery', async () => {
-    const res = await api(w, API.opportunities.list, await w.cookie('a', 'maya'), { query: { mandateId: mandateId() } });
+    const res = await api(w, API.opportunities.list, await w.cookie('a', 'maya'), {
+      query: { mandateId: mandateId() },
+    });
     expect(res.statusCode).toBe(200);
     const body = ListResponse.parse(res.json());
     const opp07 = body.items.find((o) => o.key === 'OPP-07')!;
     expect(opp07.origin).toBe('ai');
     expect(opp07.status).toBe('detected');
-    expect(opp07.sources.map((s) => s.key)).toEqual(expect.arrayContaining(['SRC-014', 'SRC-021', 'SRC-040']));
+    expect(opp07.sources.map((s) => s.key)).toEqual(
+      expect.arrayContaining(['SRC-014', 'SRC-021', 'SRC-040']),
+    );
     const opp12 = body.items.find((o) => o.key === 'OPP-12')!;
     expect(opp12.likelyDuplicateOfId).toBe(opp07.id);
     expect(body.discoveryPartial).toBe(true);
@@ -33,17 +37,27 @@ describe('opportunities', () => {
     expect(body.items.find((o) => o.key === 'OPP-03')!.status).toBe('dismissed');
     // filters
     const dismissed = ListResponse.parse(
-      (await api(w, API.opportunities.list, await w.cookie('a', 'maya'), { query: { mandateId: mandateId(), status: 'dismissed' } })).json(),
+      (
+        await api(w, API.opportunities.list, await w.cookie('a', 'maya'), {
+          query: { mandateId: mandateId(), status: 'dismissed' },
+        })
+      ).json(),
     );
     expect(dismissed.items.map((o) => o.key)).toEqual(['OPP-03']);
   });
 
   it('get returns one candidate; another tenant gets 404; admin without a case role gets 404', async () => {
-    const ok = await api(w, API.opportunities.get, await w.cookie('a', 'priya'), { params: { ref: 'OPP-07' } });
+    const ok = await api(w, API.opportunities.get, await w.cookie('a', 'priya'), {
+      params: { ref: 'OPP-07' },
+    });
     expect(Opportunity.parse(ok.json()).unknowns).toContain('Adoption rate');
-    const other = await api(w, API.opportunities.get, await w.cookie('b', 'maya'), { params: { ref: oppId(A(), 'OPP-07') } });
+    const other = await api(w, API.opportunities.get, await w.cookie('b', 'maya'), {
+      params: { ref: oppId(A(), 'OPP-07') },
+    });
     expect(other.statusCode).toBe(404);
-    const admin = await api(w, API.opportunities.get, await w.cookie('a', 'admin'), { params: { ref: 'OPP-07' } });
+    const admin = await api(w, API.opportunities.get, await w.cookie('a', 'admin'), {
+      params: { ref: 'OPP-07' },
+    });
     expect(admin.statusCode).toBe(404);
   });
 
@@ -61,10 +75,16 @@ describe('opportunities', () => {
     expect((await auditFor(w, A(), m.merged.id)).map((e) => e.action)).toContain('opportunity.merge');
 
     const key = 'shortlist-opp07';
-    const first = await api(w, API.opportunities.shortlist, maya, { params: { ref: 'OPP-07' }, idempotencyKey: key });
+    const first = await api(w, API.opportunities.shortlist, maya, {
+      params: { ref: 'OPP-07' },
+      idempotencyKey: key,
+    });
     expect(first.statusCode).toBe(200);
     expect(Opportunity.parse(first.json()).status).toBe('shortlisted');
-    const replay = await api(w, API.opportunities.shortlist, maya, { params: { ref: 'OPP-07' }, idempotencyKey: key });
+    const replay = await api(w, API.opportunities.shortlist, maya, {
+      params: { ref: 'OPP-07' },
+      idempotencyKey: key,
+    });
     expect(replay.statusCode).toBe(200);
     expect(replay.headers['idempotent-replayed']).toBe('true');
     const events = await analyticsFor(w, A(), 'opportunity_shortlisted');
@@ -90,13 +110,32 @@ describe('opportunities', () => {
 
   it('dismiss needs a reason and stays visible; restore brings it back', async () => {
     const maya = await w.cookie('a', 'maya');
-    const noReason = await api(w, API.opportunities.dismiss, maya, { params: { ref: 'OPP-16' }, body: { reason: '' } });
+    const noReason = await api(w, API.opportunities.dismiss, maya, {
+      params: { ref: 'OPP-16' },
+      body: { reason: '' },
+    });
     expect(noReason.statusCode).toBe(400);
-    const d = await api(w, API.opportunities.dismiss, maya, { params: { ref: 'OPP-16' }, body: { reason: 'Language variants' } });
-    expect(Opportunity.parse(d.json())).toMatchObject({ status: 'dismissed', dismissReason: 'Language variants' });
-    const r = await api(w, API.opportunities.restore, maya, { params: { ref: 'OPP-16' }, body: { reason: 'Reconsidered' } });
+    const d = await api(w, API.opportunities.dismiss, maya, {
+      params: { ref: 'OPP-16' },
+      body: { reason: 'Language variants' },
+    });
+    expect(Opportunity.parse(d.json())).toMatchObject({
+      status: 'dismissed',
+      dismissReason: 'Language variants',
+    });
+    const r = await api(w, API.opportunities.restore, maya, {
+      params: { ref: 'OPP-16' },
+      body: { reason: 'Reconsidered' },
+    });
     expect(Opportunity.parse(r.json())).toMatchObject({ status: 'detected', dismissReason: null });
-    expect((await api(w, API.opportunities.restore, maya, { params: { ref: 'OPP-16' }, body: { reason: 'again' } })).statusCode).toBe(409);
+    expect(
+      (
+        await api(w, API.opportunities.restore, maya, {
+          params: { ref: 'OPP-16' },
+          body: { reason: 'again' },
+        })
+      ).statusCode,
+    ).toBe(409);
   });
 
   it('adds a manual candidate as Detected with no evidence', async () => {
@@ -104,7 +143,11 @@ describe('opportunities', () => {
       body: { mandateId: mandateId(), name: 'Belgian food plants', trigger: 'GTM review', fitRationale: '' },
     });
     expect(res.statusCode).toBe(201);
-    expect(Opportunity.parse(res.json())).toMatchObject({ origin: 'manual', status: 'detected', sourceCount: 0 });
+    expect(Opportunity.parse(res.json())).toMatchObject({
+      origin: 'manual',
+      status: 'detected',
+      sourceCount: 0,
+    });
     const lena = await api(w, API.opportunities.createManual, await w.cookie('a', 'lena'), {
       body: { mandateId: mandateId(), name: 'x', trigger: '', fitRationale: '' },
     });
@@ -127,7 +170,9 @@ describe('opportunities', () => {
     expect(c.sponsor.displayName).toBe('Elena Fischer');
     expect(c.originId).toBe(body.opportunity.id);
 
-    const header = CaseHeader.parse((await api(w, API.cases.header, maya, { params: { caseRef: 'ME-104' } })).json());
+    const header = CaseHeader.parse(
+      (await api(w, API.cases.header, maya, { params: { caseRef: 'ME-104' } })).json(),
+    );
     expect(header.rail.find((n) => n.gateCode === 'G0')!.status).toBe('approved');
     expect(header.marketLabel).toContain('Germany');
     const audit = await auditFor(w, A(), c.id);
@@ -135,7 +180,14 @@ describe('opportunities', () => {
     expect(audit[0]!.summary).not.toContain('excerpt');
 
     // A different owner cannot convert twice; converted is terminal.
-    expect((await api(w, API.opportunities.convert, maya, { params: { ref: 'OPP-07' }, body: { ownerId: A().user('maya') } })).statusCode).toBe(409);
+    expect(
+      (
+        await api(w, API.opportunities.convert, maya, {
+          params: { ref: 'OPP-07' },
+          body: { ownerId: A().user('maya') },
+        })
+      ).statusCode,
+    ).toBe(409);
   });
 
   it('step 5: converting before G0 is approved → PRECONDITIONS_UNMET', async () => {
@@ -153,8 +205,13 @@ describe('opportunities', () => {
     const sl = await api(w, API.opportunities.shortlist, maya, { params: { ref: o.key } });
     expect(sl.statusCode).toBe(409);
     expect(sl.json().code).toBe('PRECONDITIONS_UNMET');
-    await inTenant(w, A(), (tx) => tx.updateTable('me.opportunity').set({ status: 'shortlisted' }).where('id', '=', o.id).execute());
-    const conv = await api(w, API.opportunities.convert, maya, { params: { ref: o.key }, body: { ownerId: A().user('maya') } });
+    await inTenant(w, A(), (tx) =>
+      tx.updateTable('me.opportunity').set({ status: 'shortlisted' }).where('id', '=', o.id).execute(),
+    );
+    const conv = await api(w, API.opportunities.convert, maya, {
+      params: { ref: o.key },
+      body: { ownerId: A().user('maya') },
+    });
     expect(conv.statusCode).toBe(409);
     expect(conv.json()).toMatchObject({ code: 'PRECONDITIONS_UNMET' });
     expect(conv.json().blockers.map((b: { key: string }) => b.key)).toContain('mandate_approved');

@@ -35,7 +35,8 @@ export function exactValue(n: LineageNode, currency: string | null): string | nu
   }
   if (n.unit.startsWith('currency')) {
     const sym = CURRENCY[currency ?? ''] ?? `${currency ?? ''} `;
-    const suffix = n.unit === 'currency_one_time' ? ' one-time' : n.unit === 'currency_per_year' ? '/year' : '';
+    const suffix =
+      n.unit === 'currency_one_time' ? ' one-time' : n.unit === 'currency_per_year' ? '/year' : '';
     return `${sym}${group(n.value)}${suffix}`;
   }
   return `${group(n.value)}${n.unit === 'text' ? '' : ` ${n.unit.replace(/_/g, ' ')}`}`;
@@ -43,14 +44,26 @@ export function exactValue(n: LineageNode, currency: string | null): string | nu
 
 type Pair = { sizing: SizingVersionRow | undefined; economics: EconomicsVersionRow | undefined };
 
-async function pick(tx: Tx, c: CaseRecord, model: 'sizing' | 'economics', version: number | 'draft' | undefined): Promise<Pair> {
+async function pick(
+  tx: Tx,
+  c: CaseRecord,
+  model: 'sizing' | 'economics',
+  version: number | 'draft' | undefined,
+): Promise<Pair> {
   const sv = await sizingVersions(tx, c.id);
   const ev = await economicsVersions(tx, c.id);
   const sel = <T extends { state: string; version: number }>(xs: T[]) =>
-    version === 'draft' ? xs.find((x) => x.state === 'draft') : version === undefined ? xs.filter((x) => x.state === 'committed').pop() : xs.find((x) => x.version === version && x.state === 'committed');
+    version === 'draft'
+      ? xs.find((x) => x.state === 'draft')
+      : version === undefined
+        ? xs.filter((x) => x.state === 'committed').pop()
+        : xs.find((x) => x.version === version && x.state === 'committed');
   if (model === 'sizing') {
     const sizing = sel(sv);
-    const economics = version === 'draft' ? ev.find((e) => e.state === 'draft') : ev.filter((e) => e.state === 'committed' && e.sizing_version_id === sizing?.id).pop();
+    const economics =
+      version === 'draft'
+        ? ev.find((e) => e.state === 'draft')
+        : ev.filter((e) => e.state === 'committed' && e.sizing_version_id === sizing?.id).pop();
     return { sizing, economics };
   }
   const economics = sel(ev);
@@ -71,23 +84,36 @@ export const lineageHandlers: HandlerMap = {
       const main = model === 'sizing' ? sOut : eOut;
       if (!main) throw notFound();
       if (main.blocked && model === 'sizing') throw blocked(main.checks);
-      const graph = model === 'sizing' ? mergeLineage(sOut?.lineage ?? [], eOut?.lineage ?? []) : mergeLineage(eOut?.lineage ?? [], sOut?.lineage ?? []);
+      const graph =
+        model === 'sizing'
+          ? mergeLineage(sOut?.lineage ?? [], eOut?.lineage ?? [])
+          : mergeLineage(eOut?.lineage ?? [], sOut?.lineage ?? []);
       const view = lineageView(graph, key);
       if (!view) throw notFound();
-      const currency = main.engine === 'sizing' ? (main as SizingOutput).ladder.tam.value.currency : p.economics?.currency ?? null;
+      const currency =
+        main.engine === 'sizing'
+          ? (main as SizingOutput).ladder.tam.value.currency
+          : (p.economics?.currency ?? null);
       // History of this figure across committed versions of the model.
-      const rows = model === 'sizing' ? (await sizingVersions(tx, c.id)) : await economicsVersions(tx, c.id);
+      const rows = model === 'sizing' ? await sizingVersions(tx, c.id) : await economicsVersions(tx, c.id);
       const history: { at: string; text: string }[] = [];
       for (const r of rows.filter((x) => x.state === 'committed')) {
         const o = await calcOutput<SizingOutput | EconomicsOutput>(tx, r.calculation_result_id);
         const n = o?.lineage.find((x) => x.nodeKey === key);
-        if (n) history.push({ at: isoDateTime(r.committed_at!), text: `v${r.version} · ${exactValue(n, currency) ?? 'Not available'}` });
+        if (n)
+          history.push({
+            at: isoDateTime(r.committed_at!),
+            text: `v${r.version} · ${exactValue(n, currency) ?? 'Not available'}`,
+          });
       }
       const tab = (k: string) => (k.startsWith('economics') ? 'economics' : 'sizing');
       return {
         node: view.node,
         inputs: view.inputs,
-        usedBy: view.usedBy.map((n) => ({ label: n.label, href: `${caseHref(c.display_key, tab(n.nodeKey))}?node=${encodeURIComponent(n.nodeKey)}` })),
+        usedBy: view.usedBy.map((n) => ({
+          label: n.label,
+          href: `${caseHref(c.display_key, tab(n.nodeKey))}?node=${encodeURIComponent(n.nodeKey)}`,
+        })),
         history,
         exactValue: exactValue(view.node, currency),
         engineLabel: `Calculated by ${main.engine} engine v${main.engineVersion} · reproducible`,

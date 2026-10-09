@@ -4,8 +4,21 @@
  * An incomparable boundary that is not excluded blocks the whole ranking. Weights are versioned.
  * Creating a comparison for a candidate set that already has one on the mandate returns it.
  */
-import { API, type Comparison, type ComparisonAttribute, type ComparisonCell, type RankingWeights } from '@growth-os/contracts';
-import { createRankingEngine, opportunityMachine, RANKING_FORMULA_TEXT, totalWeight, weightsValid, type RankingInputRow } from '@growth-os/domain';
+import {
+  API,
+  type Comparison,
+  type ComparisonAttribute,
+  type ComparisonCell,
+  type RankingWeights,
+} from '@growth-os/contracts';
+import {
+  createRankingEngine,
+  opportunityMachine,
+  RANKING_FORMULA_TEXT,
+  totalWeight,
+  weightsValid,
+  type RankingInputRow,
+} from '@growth-os/domain';
 import type { Tx } from '@growth-os/db';
 import { roleAllows } from '../../../platform/authz';
 import type { Authorization, Identity } from '../../../platform/context';
@@ -33,8 +46,7 @@ type Mandate = NonNullable<Awaited<ReturnType<typeof findMandate>>>;
 
 async function loadComparison(tx: Tx, id: string): Promise<{ cmp: ComparisonRow; mandate: Mandate }> {
   const cmp = (await tx.selectFrom('me.comparison').selectAll().where('id', '=', id).executeTakeFirst()) as
-    | ComparisonRow
-    | undefined;
+    ComparisonRow | undefined;
   if (!cmp) throw notFound();
   const mandate = await findMandate(tx, cmp.mandate_id);
   if (!mandate) throw notFound();
@@ -44,13 +56,25 @@ async function loadComparison(tx: Tx, id: string): Promise<{ cmp: ComparisonRow;
 function canTriage(identity: Identity, m: Mandate): Authorization {
   const v = mandateVisible(identity, m.business_unit_id);
   if (!v.allow) return v;
-  return roleAllows(identity.subject, 'opportunity.triage', { businessUnitId: m.business_unit_id, caseId: null });
+  return roleAllows(identity.subject, 'opportunity.triage', {
+    businessUnitId: m.business_unit_id,
+    caseId: null,
+  });
 }
 
 async function rankingInputs(tx: Tx, cmp: ComparisonRow): Promise<RankingInputRow[]> {
-  const cells = await tx.selectFrom('me.comparison_cell').selectAll().where('comparison_id', '=', cmp.id).execute();
-  const excluded = await tx.selectFrom('me.comparison_exclusion').select('opportunity_id').where('comparison_id', '=', cmp.id).execute();
-  const rating = (o: string, a: string) => (cells.find((c) => c.opportunity_id === o && c.attribute === a)?.rating ?? null) as 1 | 2 | 3 | null;
+  const cells = await tx
+    .selectFrom('me.comparison_cell')
+    .selectAll()
+    .where('comparison_id', '=', cmp.id)
+    .execute();
+  const excluded = await tx
+    .selectFrom('me.comparison_exclusion')
+    .select('opportunity_id')
+    .where('comparison_id', '=', cmp.id)
+    .execute();
+  const rating = (o: string, a: string) =>
+    (cells.find((c) => c.opportunity_id === o && c.attribute === a)?.rating ?? null) as 1 | 2 | 3 | null;
   return cmp.opportunity_ids.map((o) => ({
     opportunityId: o,
     productFit: rating(o, 'product_fit'),
@@ -62,7 +86,12 @@ async function rankingInputs(tx: Tx, cmp: ComparisonRow): Promise<RankingInputRo
 }
 
 async function weightRows(tx: Tx, id: string): Promise<RankingWeights[]> {
-  const rows = await tx.selectFrom('me.comparison_weights_version').selectAll().where('comparison_id', '=', id).orderBy('version').execute();
+  const rows = await tx
+    .selectFrom('me.comparison_weights_version')
+    .selectAll()
+    .where('comparison_id', '=', id)
+    .orderBy('version')
+    .execute();
   return rows.map((w) => ({
     version: w.version,
     productFit: w.product_fit,
@@ -72,9 +101,21 @@ async function weightRows(tx: Tx, id: string): Promise<RankingWeights[]> {
 }
 
 export async function toComparison(tx: Tx, identity: Identity, cmp: ComparisonRow): Promise<Comparison> {
-  const cells = await tx.selectFrom('me.comparison_cell').selectAll().where('comparison_id', '=', cmp.id).execute();
-  const opps = await tx.selectFrom('me.opportunity').select(['id', 'name']).where('id', 'in', cmp.opportunity_ids).execute();
-  const chips = await sourceChips(tx, identity, cells.flatMap((c) => c.source_ids));
+  const cells = await tx
+    .selectFrom('me.comparison_cell')
+    .selectAll()
+    .where('comparison_id', '=', cmp.id)
+    .execute();
+  const opps = await tx
+    .selectFrom('me.opportunity')
+    .select(['id', 'name'])
+    .where('id', 'in', cmp.opportunity_ids)
+    .execute();
+  const chips = await sourceChips(
+    tx,
+    identity,
+    cells.flatMap((c) => c.source_ids),
+  );
   const out: ComparisonCell[] = [];
   for (const o of cmp.opportunity_ids) {
     for (const c of cells.filter((x) => x.opportunity_id === o))
@@ -135,7 +176,13 @@ type WeightsBody = { productFit: number; channelAccess: number; evidenceCoverage
 function checkWeights(w: WeightsBody): void {
   if (!weightsValid(w))
     throw new ApiError('VALIDATION_FAILED', 'Weights must total 100%', {
-      errors: [{ path: 'body', code: 'weights_total', message: `Weights total ${totalWeight(w)}%; they must total 100%` }],
+      errors: [
+        {
+          path: 'body',
+          code: 'weights_total',
+          message: `Weights total ${totalWeight(w)}%; they must total 100%`,
+        },
+      ],
     });
 }
 
@@ -150,18 +197,21 @@ export const comparisonHandlers: HandlerMap = {
         if (!o || o.mandate_id !== mandate.id) throw notFound();
         if (!ids.includes(o.id)) ids.push(o.id);
       }
-      if (ids.length < 2) throw new ApiError('VALIDATION_FAILED', 'Compare at least two different candidates.');
+      if (ids.length < 2)
+        throw new ApiError('VALIDATION_FAILED', 'Compare at least two different candidates.');
       return { mandate, ids };
     },
     authorize: (ctx, l) => canTriage(ctx.identity, l.mandate),
     handle: async (ctx, t, { mandate, ids }) => {
       const { tx } = t;
-      const existing = ((await tx
-        .selectFrom('me.comparison')
-        .selectAll()
-        .where('mandate_id', '=', mandate.id)
-        .orderBy('created_at', 'desc')
-        .execute()) as ComparisonRow[]).find((c) => sameSet(c.opportunity_ids, ids));
+      const existing = (
+        (await tx
+          .selectFrom('me.comparison')
+          .selectAll()
+          .where('mandate_id', '=', mandate.id)
+          .orderBy('created_at', 'desc')
+          .execute()) as ComparisonRow[]
+      ).find((c) => sameSet(c.opportunity_ids, ids));
       if (existing) {
         await t.audit({
           action: 'comparison.reopened',
@@ -313,13 +363,19 @@ export const comparisonHandlers: HandlerMap = {
           .onConflict((oc) => oc.columns(['comparison_id', 'opportunity_id']).doNothing())
           .execute();
       } else {
-        await t.tx.deleteFrom('me.comparison_exclusion').where('comparison_id', '=', cmp.id).where('opportunity_id', '=', o).execute();
+        await t.tx
+          .deleteFrom('me.comparison_exclusion')
+          .where('comparison_id', '=', cmp.id)
+          .where('opportunity_id', '=', o)
+          .execute();
       }
       await t.audit({
         action: ctx.body.excluded ? 'comparison.candidate_excluded' : 'comparison.candidate_included',
         objectType: 'comparison',
         objectId: cmp.id,
-        summary: ctx.body.excluded ? 'Candidate excluded from the ranking (stays in the table)' : 'Candidate included in the ranking',
+        summary: ctx.body.excluded
+          ? 'Candidate excluded from the ranking (stays in the table)'
+          : 'Candidate included in the ranking',
         details: { opportunityId: o },
       });
       return toComparison(t.tx, ctx.identity, cmp);
@@ -339,9 +395,16 @@ export const comparisonHandlers: HandlerMap = {
         });
         if (!r.ok) throw machineRefusal(r);
         await t.tx.updateTable('me.opportunity').set({ status: 'shortlisted' }).where('id', '=', o).execute();
-        await t.analytics('opportunity_shortlisted', { objectType: 'opportunity', objectId: o }, { origin: opp.origin as 'ai' });
+        await t.analytics(
+          'opportunity_shortlisted',
+          { objectType: 'opportunity', objectId: o },
+          { origin: opp.origin as 'ai' },
+        );
       } else if (opp.status !== 'shortlisted' && opp.status !== 'converted') {
-        throw new ApiError('INVALID_TRANSITION', `${opp.display_key} is ${opp.status} and cannot be selected.`);
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          `${opp.display_key} is ${opp.status} and cannot be selected.`,
+        );
       }
       const updated = (await t.tx
         .updateTable('me.comparison')
