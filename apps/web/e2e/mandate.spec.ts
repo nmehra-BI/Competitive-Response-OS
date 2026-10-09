@@ -62,7 +62,7 @@ test('draft → validation → submit → return with comment → resubmit → a
   await page.getByLabel('Investment constraint · pilot spend ceiling').fill('120,000');
   await page.getByRole('option', { name: /Maya Rao/ }).click();
   await waitSaved(page);
-  await expect(page.getByText(/block submission to G0/)).toHaveCount(0);
+  await expect(page.getByText(/blocks? submission to G0/)).toHaveCount(0);
   await expect(page.getByLabel('Scope preview').getByText(/owned by Maya Rao/)).toBeVisible();
   await expect(submit).toBeEnabled();
   await submit.click();
