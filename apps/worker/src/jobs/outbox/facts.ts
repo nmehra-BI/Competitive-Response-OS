@@ -51,6 +51,8 @@ export async function actorMayStillSend(
   tx: Tx,
   userId: string | null,
   scope: { businessUnitId: string; caseId: string },
+  /** For a validation task set: its experiment's owner may send while they may edit experiments (D-098). */
+  experimentId: string | null = null,
 ): Promise<boolean> {
   if (!userId) return false;
   const user = await tx
@@ -65,15 +67,20 @@ export async function actorMayStillSend(
     .where('user_id', '=', userId)
     .where('revoked_at', 'is', null)
     .execute();
-  return mayStillSend(
-    roles.map((r) => ({
-      role: r.role as RoleCode,
-      businessUnitId: r.business_unit_id,
-      caseId: r.case_id,
-      revokedAt: null,
-    })),
-    scope,
-  );
+  const held = roles.map((r) => ({
+    role: r.role as RoleCode,
+    businessUnitId: r.business_unit_id,
+    caseId: r.case_id,
+    revokedAt: null,
+  }));
+  if (mayStillSend(held, scope)) return true;
+  if (!experimentId) return false;
+  const e = await tx
+    .selectFrom('me.experiment')
+    .select('owner_user_id')
+    .where('id', '=', experimentId)
+    .executeTakeFirst();
+  return e?.owner_user_id === userId && mayStillSend(held, scope, 'experiment.edit');
 }
 
 export async function loadSendFacts(
@@ -92,9 +99,11 @@ export async function loadSendFacts(
     approval: approvalEffectiveness(gate, input.now),
     planCurrent: await planIsCurrent(tx, input.set),
     connector: input.connectionStatus,
-    actorAuthorized: await actorMayStillSend(tx, input.actorUserId, {
-      businessUnitId: input.businessUnitId,
-      caseId: input.set.caseId,
-    }),
+    actorAuthorized: await actorMayStillSend(
+      tx,
+      input.actorUserId,
+      { businessUnitId: input.businessUnitId, caseId: input.set.caseId },
+      input.set.ownerType === 'experiment' ? input.set.ownerId : null,
+    ),
   };
 }

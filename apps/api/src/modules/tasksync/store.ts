@@ -71,6 +71,8 @@ export interface LoadedSet {
   id: string;
   ownerType: TaskSetOwnerType;
   ownerId: string;
+  /** The experiment's owner for a validation task set (D-098); null for a pilot set. */
+  experimentOwnerId: string | null;
   gateRequestId: string;
   kase: CaseRow;
   connection: ConnectionRow | null;
@@ -150,11 +152,20 @@ export async function loadTaskSet(
     .where('task_id', 'in', tasks.length ? tasks.map((t) => t.id) : ['00000000-0000-0000-0000-000000000000']);
   if (opts.lockLinks) linkQuery = linkQuery.forUpdate();
   const links = await linkQuery.execute();
+  const experiment =
+    set.owner_type === 'experiment'
+      ? await tx
+          .selectFrom('me.experiment')
+          .select('owner_user_id')
+          .where('id', '=', set.owner_id)
+          .executeTakeFirst()
+      : undefined;
 
   return {
     id: set.id,
     ownerType: set.owner_type as TaskSetOwnerType,
     ownerId: set.owner_id,
+    experimentOwnerId: experiment?.owner_user_id ?? null,
     gateRequestId: set.authorizing_gate_request_id,
     kase,
     connection: conn

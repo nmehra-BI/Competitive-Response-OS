@@ -46,11 +46,12 @@ export const approvalEffectiveness = approvalEffectivenessOf;
 export function mayStillSend(
   roles: readonly Pick<RoleAssignment, 'role' | 'businessUnitId' | 'caseId' | 'revokedAt'>[],
   scope: { businessUnitId: string; caseId: string },
+  action: 'task_sync.send' | 'experiment.edit' = 'task_sync.send',
 ): boolean {
   return roles.some(
     (r) =>
       !r.revokedAt &&
-      ROLE_ACTIONS[r.role].includes('task_sync.send') &&
+      ROLE_ACTIONS[r.role].includes(action) &&
       (r.businessUnitId === null || r.businessUnitId === scope.businessUnitId) &&
       (r.caseId === null || r.caseId === scope.caseId),
   );

@@ -5,12 +5,11 @@
  * validation task set; WS6 previews and sends; the outbox worker confirms VAL-1…VAL-5 in the
  * simulated Jira only after keys come back.
  *
- * One seam has no endpoint yet: nothing authors the tasks of a validation task set (the G1 lock
- * creates the set empty; PQ-13). The five fixture tasks are inserted into the set the lock created.
+ * The G1 decision drafts the five validation tasks from the locked plan (D-090, PQ-13 interim).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API } from '@growth-os/contracts';
-import { gates, validationTasks } from '@growth-os/fixtures-aster';
+import { gates } from '@growth-os/fixtures-aster';
 import { call, login, seedTenant, type SeededTenant } from '../../../src/platform/testing';
 import {
   convertOpp07,
@@ -21,6 +20,7 @@ import {
 import { currentPackage, decideBody, exp03Plan } from '../../../src/modules/me/gates/testkit';
 import {
   analyticsCount,
+  auditActions,
   drain,
   expectNoDuplicates,
   harness,
@@ -167,24 +167,20 @@ describe('step 12: G1 lock → validation task set → send (WS4a, WS4b, WS6)', 
     expect(set).toMatchObject({ owner_type: 'experiment', authorizing_gate_request_id: gateId });
     connectionId = set.connection_id!;
     expect(await analyticsCount(h, s, 'validation_authorized')).toBe(1);
-    // The seam with no endpoint yet (PQ-13): the five fixture validation tasks join the locked set.
-    await inTenant(h.t.db, s, async (tx) => {
-      for (const v of validationTasks)
-        await tx
-          .insertInto('platform.task')
-          .values({
-            tenant_id: s.tenantId,
-            case_id: set.case_id,
-            task_set_id: setId,
-            ordinal: v.ordinal,
-            title: v.title,
-            function: v.function,
-            owner_user_id: s.id(v.ownerId),
-            due_on: v.dueOn,
-            deliverable: v.deliverable,
-          })
-          .execute();
-    });
+    // PQ-13 interim (D-090): the G1 decision drafted the validation tasks from the locked plan —
+    // owners and due dates from the plan, nothing sent yet.
+    const drafted = await inTenant(h.t.db, s, (tx) =>
+      tx
+        .selectFrom('platform.task')
+        .select(['ordinal', 'title', 'owner_user_id', 'due_on'])
+        .where('task_set_id', '=', setId)
+        .orderBy('ordinal')
+        .execute(),
+    );
+    expect(drafted.map((t) => t.ordinal)).toEqual([1, 2, 3, 4, 5]);
+    expect(drafted[0]!.owner_user_id).toBe(s.user('maya'));
+    expect(drafted[1]!.owner_user_id).toBe(s.user('jonas'));
+    expect(await auditActions(h, s, 'task_set.drafted')).toEqual(['task_set.drafted']);
   });
 
   it('step 12: preview shows destination and assignees; "Confirmed · VAL-n" only after the tool returns keys', async () => {

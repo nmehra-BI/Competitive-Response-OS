@@ -418,7 +418,8 @@ describe('access', () => {
     expect((await call(t.app, API.taskSync.exportCsv, { params: { id }, cookie: c.daniel })).statusCode).toBe(
       403,
     );
-    // Maya (case owner) may update tasks, so she can export, but she cannot send.
+    // Maya owns EXP-03, so she may preview and send its validation tasks (D-098): the retry passes
+    // authorization and is refused only because nothing has failed (409).
     expect((await call(t.app, API.taskSync.exportCsv, { params: { id }, cookie: c.maya })).statusCode).toBe(
       200,
     );
@@ -431,7 +432,7 @@ describe('access', () => {
           idempotencyKey: true,
         })
       ).statusCode,
-    ).toBe(403);
+    ).toBe(409);
     expect((await call(t.app, API.taskSync.get, { params: { id }, cookie: c.admin })).statusCode).toBe(404);
     expect((await call(t.app, API.taskSync.get, { params: { id } })).statusCode).toBe(401);
   });

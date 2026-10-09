@@ -11,6 +11,7 @@ import { sql, type Tx } from '@growth-os/db';
 import {
   createMaterialityEvaluator,
   createPolicyEngine,
+  draftValidationTasks,
   experimentMachine,
   followOnForGate,
   gateRequestMachine,
@@ -279,6 +280,72 @@ async function writeConditions(
   }
 }
 
+/**
+ * The validation tasks of a newly locked experiment, drafted from its pre-registered plan in the G1
+ * decision's transaction (D-090, PQ-13 interim): owners and due dates come from the plan, nothing is
+ * sent (WS6 previews and sends), and the set has the WS6 shape (owner experiment, authorizing G1,
+ * validation mapping). An empty plan still gets its selection and result tasks.
+ */
+async function draftValidationTaskSet(
+  t: Tools,
+  gate: GateRow,
+  taskSetId: string,
+  experimentId: string,
+  planId: string,
+  experimentKey: string,
+) {
+  const e = await t.tx
+    .selectFrom('me.experiment')
+    .select(['owner_user_id', 'fieldwork_owner_user_id'])
+    .where('id', '=', experimentId)
+    .executeTakeFirstOrThrow();
+  const plan = await t.tx
+    .selectFrom('me.experiment_plan_version')
+    .select(['sample_size', 'window_start', 'window_end', 'version'])
+    .where('id', '=', planId)
+    .executeTakeFirstOrThrow();
+  const metrics = await t.tx
+    .selectFrom('me.experiment_metric')
+    .select(['name', 'threshold_text', 'unit'])
+    .where('plan_version_id', '=', planId)
+    .orderBy('metric_key')
+    .execute();
+  const isoDate = (d: unknown) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+  const drafts = draftValidationTasks(
+    {
+      sampleSize: plan.sample_size,
+      windowStart: isoDate(plan.window_start),
+      windowEnd: isoDate(plan.window_end),
+      metrics: metrics.map((m) => ({ name: m.name, thresholdText: m.threshold_text, unit: m.unit })),
+    },
+    { ownerUserId: e.owner_user_id, fieldworkOwnerUserId: e.fieldwork_owner_user_id },
+  );
+  for (const d of drafts)
+    await t.tx
+      .insertInto('platform.task')
+      .values({
+        tenant_id: tenantIdSql,
+        case_id: gate.case_id!,
+        task_set_id: taskSetId,
+        ordinal: d.ordinal,
+        title: d.title,
+        function: d.function,
+        owner_user_id: d.ownerUserId,
+        due_on: d.dueOn,
+        deliverable: d.deliverable,
+      })
+      .execute();
+  await t.audit({
+    action: 'task_set.drafted',
+    objectType: 'task_set',
+    objectId: taskSetId,
+    objectVersion: plan.version,
+    caseId: gate.case_id,
+    summary: `${drafts.length} validation tasks drafted from ${experimentKey} plan v${plan.version} · nothing sent`,
+    details: { gateRequestId: gate.id, tasks: drafts.length },
+  });
+}
+
 /** G1 approval locks the experiment plans its snapshot pins (pre-registration). */
 async function lockExperiments(t: Tools, gate: GateRow, snapshotId: string, now: Date) {
   const pinned = await t.tx
@@ -317,7 +384,7 @@ async function lockExperiments(t: Tools, gate: GateRow, snapshotId: string, now:
       .select(['id', 'connection_id'])
       .where('purpose', '=', 'validation_tasks')
       .executeTakeFirst();
-    await t.tx
+    const set = await t.tx
       .insertInto('platform.task_set')
       .values({
         tenant_id: tenantIdSql,
@@ -330,7 +397,9 @@ async function lockExperiments(t: Tools, gate: GateRow, snapshotId: string, now:
         created_at: now,
       })
       .onConflict((oc) => oc.columns(['owner_type', 'owner_id']).doNothing())
-      .execute();
+      .returning('id')
+      .executeTakeFirst();
+    if (set) await draftValidationTaskSet(t, gate, set.id, p.experiment_id, p.plan_id, p.display_key);
     await t.audit({
       action: r.auditAction,
       objectType: 'experiment',
@@ -341,6 +410,134 @@ async function lockExperiments(t: Tools, gate: GateRow, snapshotId: string, now:
       details: { gateRequestId: gate.id, planVersion: p.version },
     });
   }
+}
+
+/**
+ * The pilot plan the G2 request asks to approve (D-102): a draft plan version with the requested budget
+ * ceiling, window, scope and pre-registered thresholds, and its empty task set (WS6 shape: owner the
+ * draft version, authorizing this G2, the pilot-task mapping). Tasks are added to the draft (S11);
+ * activation commits it. A later G2 request re-points an existing draft instead of creating another.
+ */
+async function draftPilotPlan(
+  t: Tools,
+  c: { id: string; key: string },
+  gateId: string,
+  scope: {
+    amount: string | null;
+    currency: string | null;
+    windowStart: string | null;
+    windowEnd: string | null;
+    maxSites: number | null;
+    segmentLabel: string | null;
+    durationDays: number | null;
+  },
+  targets: { name: string; thresholdText: string }[],
+  userId: string,
+  now: Date,
+) {
+  const values = {
+    budget_ceiling: scope.amount ?? '0',
+    currency: scope.currency ?? 'EUR',
+    window_start: scope.windowStart ?? now.toISOString().slice(0, 10),
+    window_end: scope.windowEnd ?? scope.windowStart ?? now.toISOString().slice(0, 10),
+    scope_text:
+      [
+        scope.maxSites
+          ? `Up to ${scope.maxSites} ${scope.segmentLabel ?? ''} sites`.replace(/\s+/g, ' ')
+          : null,
+        scope.durationDays ? `${scope.durationDays} days` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'Pilot scope as requested in G2',
+    thresholds_text: targets.map((x) => `${x.name}: ${x.thresholdText}`),
+  };
+  const existing = await t.tx
+    .selectFrom('me.pilot_plan')
+    .select(['id', 'draft_version_id', 'status'])
+    .where('case_id', '=', c.id)
+    .executeTakeFirst();
+  if (existing) {
+    if (!existing.draft_version_id || existing.status === 'active') return;
+    await t.tx
+      .updateTable('me.pilot_plan')
+      .set({ gate_request_id: gateId })
+      .where('id', '=', existing.id)
+      .execute();
+    await t.tx
+      .updateTable('me.pilot_plan_version')
+      .set(values)
+      .where('id', '=', existing.draft_version_id)
+      .execute();
+    await t.tx
+      .updateTable('platform.task_set')
+      .set({ authorizing_gate_request_id: gateId })
+      .where('owner_type', '=', 'pilot_plan_version')
+      .where('owner_id', '=', existing.draft_version_id)
+      .execute();
+    return;
+  }
+  const mapping = await t.tx
+    .selectFrom('platform.connector_mapping')
+    .select(['id', 'connection_id'])
+    .where('purpose', '=', 'pilot_tasks')
+    .executeTakeFirst();
+  const plan = await t.tx
+    .insertInto('me.pilot_plan')
+    .values({
+      tenant_id: tenantIdSql,
+      case_id: c.id,
+      gate_request_id: gateId,
+      status: 'draft',
+      created_at: now,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  const version = await t.tx
+    .insertInto('me.pilot_plan_version')
+    .values({
+      tenant_id: tenantIdSql,
+      pilot_plan_id: plan.id,
+      version: 1,
+      state: 'draft',
+      ...values,
+      created_by: userId,
+      created_at: now,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  const set = await t.tx
+    .insertInto('platform.task_set')
+    .values({
+      tenant_id: tenantIdSql,
+      case_id: c.id,
+      owner_type: 'pilot_plan_version',
+      owner_id: version.id,
+      authorizing_gate_request_id: gateId,
+      connection_id: mapping?.connection_id ?? null,
+      mapping_id: mapping?.id ?? null,
+      created_at: now,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  await t.tx
+    .updateTable('me.pilot_plan_version')
+    .set({ task_set_id: set.id })
+    .where('id', '=', version.id)
+    .execute();
+  await t.tx
+    .updateTable('me.pilot_plan')
+    .set({ draft_version_id: version.id })
+    .where('id', '=', plan.id)
+    .execute();
+  await t.audit({
+    action: 'pilot_plan.drafted',
+    objectType: 'pilot_plan_version',
+    objectId: version.id,
+    objectVersion: 1,
+    caseId: c.id,
+    summary: `${c.key} pilot plan v1 drafted from the G2 request · tasks are added on the Pilot tab`,
+    details: { gateRequestId: gateId, thresholds: targets.length },
+  });
 }
 
 export const gateHandlers: HandlerMap = {
@@ -372,6 +569,15 @@ export const gateHandlers: HandlerMap = {
     },
     handle: async (ctx, t, c) => {
       const { gateCode: code, scope, parentGateRequestId, proposedConditions } = ctx.body;
+      const outcomeTargets = ctx.body.outcomeTargets ?? [];
+      if (outcomeTargets.length && code !== 'G2')
+        throw new ApiError('VALIDATION_FAILED', 'Pilot thresholds are pre-registered with the G2 request.', {
+          errors: [{ path: 'body.outcomeTargets', code: 'custom', message: 'G2 only' }],
+        });
+      if (new Set(outcomeTargets.map((o) => o.metricKey)).size !== outcomeTargets.length)
+        throw new ApiError('VALIDATION_FAILED', 'Each pilot threshold needs its own measure.', {
+          errors: [{ path: 'body.outcomeTargets', code: 'custom', message: 'Duplicate metricKey' }],
+        });
       if (code === 'G0')
         throw new ApiError('VALIDATION_FAILED', 'G0 is requested from the mandate (Submit for G0).', {
           errors: [{ path: 'body.gateCode', code: 'invalid_enum_value', message: 'Use G1, G2, G3 or X' }],
@@ -424,7 +630,7 @@ export const gateHandlers: HandlerMap = {
           business_unit_id: c.businessUnitId,
           gate_code: code,
           status: 'draft',
-          scope: JSON.stringify({ ...scope, proposedConditions }),
+          scope: JSON.stringify({ ...scope, proposedConditions, outcomeTargets }),
           requested_amount: amount,
           currency: amount ? scope.currency : null,
           duration_days: scope.durationDays,
@@ -440,8 +646,13 @@ export const gateHandlers: HandlerMap = {
         objectId: row.id,
         caseId: c.id,
         summary: `${key} drafted`,
-        details: { gate: code, proposedConditions: proposedConditions.length },
+        details: {
+          gate: code,
+          proposedConditions: proposedConditions.length,
+          outcomeTargets: outcomeTargets.length,
+        },
       });
+      if (code === 'G2') await draftPilotPlan(t, c, row.id, scope, outcomeTargets, ctx.userId, ctx.now);
       return toGateRequest(t.tx, (await gateById(t.tx, row.id))!);
     },
   }),

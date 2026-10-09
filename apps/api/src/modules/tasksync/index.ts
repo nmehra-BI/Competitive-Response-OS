@@ -34,6 +34,11 @@ export const PREVIEW_TTL_MS = 30 * 60_000;
 const OUTBOX_DISPATCH = 'outbox.dispatch';
 const UNSENT = new Set(['not_sent', 'in_preview']);
 
+/**
+ * Who may preview and send a task set: a role with `task_sync.*` in scope (the pilot owner), or — for a
+ * validation task set only — the experiment's own owner while they may still edit experiments in scope
+ * (acceptance step 12, D-098). The worker repeats the same rule at send time (`actorMayStillSend`).
+ */
 function access(
   identity: Identity,
   s: LoadedSet,
@@ -41,7 +46,11 @@ function access(
 ): Authorization {
   const visible = caseVisible(identity.subject, s.kase);
   if (!visible.allow) return visible;
-  return roleAllows(identity.subject, action, { businessUnitId: s.kase.businessUnitId, caseId: s.kase.id });
+  const scope = { businessUnitId: s.kase.businessUnitId, caseId: s.kase.id };
+  const byRole = roleAllows(identity.subject, action, scope);
+  if (byRole.allow || s.experimentOwnerId === null || s.experimentOwnerId !== identity.user.id) return byRole;
+  const owner = roleAllows(identity.subject, 'experiment.edit', scope);
+  return owner.allow ? { ...owner, rule: `experiment_owner:${action}` } : byRole;
 }
 
 function refuse(r: Extract<ApplyResult<string, string>, { ok: false }>): never {
