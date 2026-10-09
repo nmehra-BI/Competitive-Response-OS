@@ -26,3 +26,4 @@ export const STATUS_ICONS = {
   notMet: 'target', // + dash overlay
   inconclusive: 'target', // + question overlay
 } as const;
+export { SWATCH_GROUPS, type Swatch } from './tokens/swatches';

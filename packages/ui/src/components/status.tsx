@@ -173,12 +173,19 @@ export function GateDiamond({ status, size = 16, label }: GateDiamondProps) {
   const inner: ReactNode = (() => {
     switch (status) {
       case 'approved':
-        return <path d="m8.3 12 2.6 2.6 4.8-5" stroke="var(--bg-surface)" strokeWidth={2} />;
+        return <path d="m8.3 12 2.6 2.6 4.8-5" style={{ stroke: 'var(--bg-surface)' }} strokeWidth={2} />;
       case 'approved_with_conditions':
         return (
           <>
-            <path d="m8.3 12 2.6 2.6 4.8-5" stroke="var(--bg-surface)" strokeWidth={2} />
-            <circle cx="20.2" cy="4" r="3" fill="currentColor" stroke="var(--bg-surface)" strokeWidth={1.4} />
+            <path d="m8.3 12 2.6 2.6 4.8-5" style={{ stroke: 'var(--bg-surface)' }} strokeWidth={2} />
+            <circle
+              cx="20.2"
+              cy="4"
+              r="3"
+              fill="currentColor"
+              style={{ stroke: 'var(--bg-surface)' }}
+              strokeWidth={1.4}
+            />
           </>
         );
       case 'awaiting_decision':
@@ -460,7 +467,7 @@ export function ScenarioMark({ scenario, size = 12 }: ScenarioMarkProps) {
       data-scenario={scenario}
       data-glyph={s.glyph}
     >
-      <g fill={s.fill}>{s.shape}</g>
+      <g style={{ fill: s.fill }}>{s.shape}</g>
     </svg>
   );
 }

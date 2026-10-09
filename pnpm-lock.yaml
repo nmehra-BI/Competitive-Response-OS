@@ -93,6 +93,9 @@ importers:
       '@axe-core/playwright':
         specifier: ^4.13.0
         version: 4.13.0(playwright-core@1.64.0)
+      '@growth-os/fixtures-aster':
+        specifier: workspace:*
+        version: link:../../fixtures/aster
       '@playwright/test':
         specifier: ^1.64.0
         version: 1.64.0

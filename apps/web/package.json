@@ -8,8 +8,9 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json",
-    "test:e2e": "echo 'Playwright suites land with WS8 (see BUILD_PLAN.md)' && exit 0"
+    "typecheck": "tsc -p tsconfig.json && tsc -p e2e/support/tsconfig.json",
+    "dev:mock": "VITE_MSW=on vite",
+    "test:e2e": "playwright test -c e2e/support/playwright.config.ts"
   },
   "dependencies": {
     "@growth-os/contracts": "workspace:*",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@growth-os/fixtures-aster": "workspace:*",
     "@playwright/test": "^1.64.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
@@ -31,5 +33,10 @@
     "@vitejs/plugin-react": "^4.3.4",
     "msw": "~2.14.7",
     "vite": "^6.0.3"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

@@ -59,6 +59,7 @@ export default tseslint.config(
       'design/**',
       'docs/**',
       'packages/db/src/generated/**',
+      'apps/web/public/mockServiceWorker.js',
       '**/*.d.ts',
     ],
   },
