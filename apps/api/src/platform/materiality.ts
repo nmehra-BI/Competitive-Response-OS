@@ -1,30 +1,41 @@
 /**
- * Applying materiality (ARCHITECTURE.md §9.3) to a committed change, in the caller's transaction.
+ * Applying materiality (ARCHITECTURE.md §9.3, D-013) to a committed change, in the caller's transaction.
  *
  *   pins      snapshots that pin the changed object (platform.snapshot_component), still current or stale
- *   decide    MaterialityEvaluator from @growth-os/domain (WS3) with the tenant's active policy
- *   apply     material_change + impacts; current snapshots → stale (gate request → stale);
- *             approvals → approval_invalidation (gate request → invalidated), unsent outbox rows and
- *             external task links paused; analytics approval_invalidated; audit material_change.detected
+ *   decide    the WS3 MaterialityEvaluator (@growth-os/domain) with the tenant's active policy
+ *   apply     material_change + the evaluator's impacts; gate commands go through the gate-request and
+ *             snapshot machines (system actor): `mark_stale` → snapshot + gate request stale;
+ *             `invalidate` → approval_invalidation, gate request invalidated, unsent outbox rows and
+ *             external task links paused, analytics approval_invalidated, and the case follow-on
+ *             (`g1_invalidated` / `g2_invalidated`) when the case is in a stage that allows it;
+ *             audit material_change.detected (+ case.stage_changed).
  *
- * Moving the case stage back (§8.2) belongs to the case machine (WS3/WS4); callers do it from the
- * returned outcome. With no pins nothing is evaluated or written.
+ * Uncertain changes escalate: snapshots go stale, approvals stay effective until the sponsor resolves
+ * the change (`gates.resolveMateriality`). With no pins nothing is evaluated or written.
  */
 import { sql, type Tx } from '@growth-os/db';
 import {
   MaterialityPolicyBody,
+  type CaseStage,
   type GateCode,
   type MaterialChangeType,
   type MaterialityPolicyBody as PolicyBody,
 } from '@growth-os/contracts';
 import {
+  caseMachine,
   createMaterialityEvaluator,
+  followOnForGate,
+  gateRequestMachine,
+  snapshotMachine,
   type ChangeDescriptor,
   type MaterialityEvaluator,
   type MaterialityOutcome,
   type SnapshotPin,
 } from '@growth-os/domain';
 import type { Tools } from './pipeline';
+
+/** Tenant-local calendar used for business copy ("changed on 26 Nov"). */
+export const TENANT_TIME_ZONE = 'Europe/Berlin';
 
 export interface PinnedChange {
   changeType: MaterialChangeType;
@@ -35,12 +46,28 @@ export interface PinnedChange {
   fromVersion?: number | null;
   toVersion?: number | null;
   decisionCritical?: boolean;
+  /** Business name of what changed for the stale banner, e.g. "source SRC-014". */
+  label?: string;
 }
 
 export interface AppliedMateriality {
   caseId: string;
   materialChangeId: string;
   outcome: MaterialityOutcome;
+  /** Case stage move made by the invalidation follow-on, if any. */
+  caseStage?: { from: CaseStage; to: CaseStage };
+}
+
+/** "2026-11-26T12:00:00+01:00"-style local timestamp for the evaluator's reason copy. */
+export function tenantLocalIso(at: Date, timeZone = TENANT_TIME_ZONE): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(at);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 async function activePolicy(tx: Tx): Promise<{ id: string | null; body: PolicyBody }> {
@@ -102,6 +129,9 @@ export async function findPins(
   return pins;
 }
 
+const SYSTEM = { kind: 'system', reason: 'material_change' } as const;
+const AFFECTS = { materialChange: { affectsSnapshot: true } };
+
 export async function applyMateriality(
   t: Tools,
   change: PinnedChange,
@@ -124,6 +154,9 @@ export async function applyMateriality(
       fromVersion: change.fromVersion ?? null,
       toVersion: change.toVersion ?? null,
       decisionCritical: change.decisionCritical,
+      committed: true,
+      label: change.label,
+      at: tenantLocalIso(opts.now),
     };
     const outcome = evaluator.evaluate(descriptor, policy.body, casePins);
     const mc = await tx
@@ -144,35 +177,50 @@ export async function applyMateriality(
       })
       .returning('id')
       .executeTakeFirstOrThrow();
-    const impact = (snapshotId: string, effect: 'snapshot_stale' | 'approval_invalidated' | 'escalated') =>
-      tx
+
+    for (const im of outcome.impacts)
+      await tx
         .insertInto('platform.material_change_impact')
         .values({
           tenant_id: sql<string>`platform.current_tenant_id()`,
           material_change_id: mc.id,
-          snapshot_id: snapshotId,
-          effect,
+          snapshot_id: im.snapshotId,
+          effect: im.effect,
         })
         .onConflict((oc) => oc.doNothing())
         .execute();
 
+    // Snapshots: current → stale through the snapshot machine.
     for (const snapshotId of outcome.staleSnapshotIds) {
       const pin = casePins.find((p) => p.snapshotId === snapshotId);
+      if (!pin || !snapshotMachine.apply(pin.snapshotStatus, 'mark_stale', SYSTEM, AFFECTS).ok) continue;
       await tx
         .updateTable('platform.decision_snapshot')
         .set({ status: 'stale', stale_reason: outcome.reason, stale_at: opts.now })
         .where('id', '=', snapshotId)
         .where('status', '=', 'current')
         .execute();
-      if (pin)
-        await tx
-          .updateTable('platform.gate_request')
-          .set({ status: 'stale' })
-          .where('id', '=', pin.gateRequestId)
-          .where('status', '=', 'awaiting_decision')
-          .execute();
-      await impact(snapshotId, 'snapshot_stale');
-      if (outcome.escalate) await impact(snapshotId, 'escalated');
+    }
+
+    const invalidatedGates: { gateRequestId: string; gateCode: GateCode }[] = [];
+    for (const gc of outcome.gateCommands) {
+      const pin = casePins.find((p) => p.gateRequestId === gc.gateRequestId);
+      if (!pin) continue;
+      const r = gateRequestMachine.apply(
+        pin.gateStatus as Parameters<typeof gateRequestMachine.apply>[0],
+        gc.command,
+        SYSTEM,
+        AFFECTS,
+      );
+      if (!r.ok) continue;
+      await tx
+        .updateTable('platform.gate_request')
+        .set({ status: r.to })
+        .where('id', '=', pin.gateRequestId)
+        .where('status', '=', pin.gateStatus)
+        .execute();
+      if (gc.command === 'invalidate')
+        invalidatedGates.push({ gateRequestId: pin.gateRequestId, gateCode: pin.gateCode });
     }
 
     for (const approvalId of outcome.invalidateApprovalIds) {
@@ -190,39 +238,33 @@ export async function applyMateriality(
         })
         .onConflict((oc) => oc.doNothing())
         .execute();
-      await tx
-        .updateTable('platform.gate_request')
-        .set({ status: 'invalidated' })
-        .where('id', '=', pin.gateRequestId)
-        .execute();
-      // Never-rule 10: unsent external writes pause; executed ones are preserved.
-      await tx
-        .updateTable('platform.outbox_message')
-        .set({ status: 'paused', updated_at: opts.now })
-        .where('status', 'in', ['pending', 'checking'])
-        .where(sql<string>`authorization_ref->>'gateRequestId'`, '=', pin.gateRequestId)
-        .execute();
-      await tx
-        .updateTable('platform.external_task_link')
-        .set({ sync_status: 'paused_approval_changed', updated_at: opts.now })
-        .where('sync_status', 'in', ['not_sent', 'in_preview', 'sending', 'retry_scheduled', 'checking'])
-        .where('task_id', 'in', (eb) =>
-          eb
-            .selectFrom('platform.task as tk')
-            .innerJoin('platform.task_set as ts', 'ts.id', 'tk.task_set_id')
-            .select('tk.id')
-            .where('ts.authorizing_gate_request_id', '=', pin.gateRequestId),
-        )
-        .execute();
-      await impact(pin.snapshotId, 'approval_invalidated');
+      if (outcome.pauseUnsentWrites) {
+        // Never-rule 10: unsent external writes pause; executed ones are preserved.
+        await tx
+          .updateTable('platform.outbox_message')
+          .set({ status: 'paused', updated_at: opts.now })
+          .where('status', 'in', ['pending', 'checking'])
+          .where(sql<string>`authorization_ref->>'gateRequestId'`, '=', pin.gateRequestId)
+          .execute();
+        await tx
+          .updateTable('platform.external_task_link')
+          .set({ sync_status: 'paused_approval_changed', updated_at: opts.now })
+          .where('sync_status', 'in', ['not_sent', 'in_preview', 'sending', 'retry_scheduled', 'checking'])
+          .where('task_id', 'in', (eb) =>
+            eb
+              .selectFrom('platform.task as tk')
+              .innerJoin('platform.task_set as ts', 'ts.id', 'tk.task_set_id')
+              .select('tk.id')
+              .where('ts.authorizing_gate_request_id', '=', pin.gateRequestId),
+          )
+          .execute();
+      }
       await t.analytics(
         'approval_invalidated',
         { objectType: 'approval', objectId: approvalId, caseId },
         { gate: pin.gateCode, changeType: change.changeType },
       );
     }
-    if (outcome.escalate && outcome.staleSnapshotIds.length === 0)
-      for (const p of casePins) await impact(p.snapshotId, 'escalated');
 
     await t.audit({
       action: 'material_change.detected',
@@ -238,7 +280,46 @@ export async function applyMateriality(
         escalated: outcome.escalate,
       },
     });
-    results.push({ caseId, materialChangeId: mc.id, outcome });
+
+    // Case follow-on for invalidated gates (G1 → back to Assessment, G2 → Pilot approval pending).
+    let caseStage: AppliedMateriality['caseStage'];
+    for (const g of invalidatedGates) {
+      const follow = followOnForGate(g.gateCode, 'invalidate');
+      if (!follow.case) continue;
+      const row = await tx
+        .selectFrom('platform.workflow_case')
+        .select('stage')
+        .where('id', '=', caseId)
+        .executeTakeFirst();
+      if (!row) continue;
+      const from = row.stage as CaseStage;
+      const r = caseMachine.apply(from, follow.case, SYSTEM, {});
+      if (!r.ok || !r.changed) continue;
+      // The row_version trigger bumps the version.
+      const moved = await tx
+        .updateTable('platform.workflow_case')
+        .set({ stage: r.to })
+        .where('id', '=', caseId)
+        .where('stage', '=', from)
+        .returning('row_version')
+        .executeTakeFirst();
+      if (!moved) continue;
+      await t.audit({
+        action: 'case.stage_changed',
+        objectType: 'case',
+        objectId: caseId,
+        objectVersion: moved.row_version,
+        caseId,
+        summary: `Approval no longer applies: ${outcome.reasonShort}. Case returned for review.`.slice(
+          0,
+          280,
+        ),
+        details: { from, to: r.to, reason: follow.case },
+      });
+      caseStage = { from, to: r.to };
+    }
+
+    results.push({ caseId, materialChangeId: mc.id, outcome, ...(caseStage ? { caseStage } : {}) });
   }
   return results;
 }
