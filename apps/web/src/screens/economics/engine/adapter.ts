@@ -6,9 +6,8 @@
  * one. Both run the same engine on the same input, built by `economicsInputFromDrivers`, so they
  * agree to the last digit (asserted in adapter.test.ts). Committed versions never recalculate.
  *
- * Swap when `@growth-os/domain` ships the engines (WS2 merged): replace the import below with
- *   import { createEconomicsEngine, CASH_FLOW_INPUT_LABELS } from '@growth-os/domain';
- * and delete ./economics.ts. Nothing else changes.
+ * The engine is the WS2 economics engine from `@growth-os/domain` (D-063), the same code the API
+ * runs for `economics.calculateDraft`.
  */
 import Decimal from 'decimal.js';
 import {
@@ -18,7 +17,7 @@ import {
   type EngineInput,
   type LedgerRow,
 } from '@growth-os/contracts';
-import { CASH_FLOW_INPUT_LABELS, createEconomicsEngine } from './economics';
+import { CASH_FLOW_INPUT_LABELS, createEconomicsEngine } from '@growth-os/domain';
 
 export { CASH_FLOW_INPUT_LABELS };
 

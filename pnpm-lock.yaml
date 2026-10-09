@@ -77,6 +77,9 @@ importers:
       '@growth-os/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@growth-os/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@growth-os/ui':
         specifier: workspace:*
         version: link:../../packages/ui

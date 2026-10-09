@@ -1,5 +1,5 @@
 /**
- * The ported engines reproduce the WS2 domain engines exactly: golden fixture values (PRD §6),
+ * The web adapters run the WS2 domain engines (`@growth-os/domain`): golden fixture values (PRD §6),
  * the same input hashes WS2 records for the Aster fixture, and the S06 blocking variants.
  */
 import {
@@ -20,7 +20,7 @@ import { sizingEngine } from './adapter';
 const WS2_SIZING_HASH = '74cedbb39b6f6fc25a7556009bd0d3f45150adfa933f50dbe2f072c682c7bc35';
 const WS2_ECONOMICS_HASH = '3b748b4df20a2abc8ee77b0b6c1b798c4ceae1a4bfefd5c8a5571fba84e4f7b2';
 
-describe('sizing engine port', () => {
+describe('sizing engine (web adapter)', () => {
   it('matches the golden ladder and the WS2 input hash', async () => {
     const out = await sizingEngine.calculate(sizingV2Input);
     expect(out.inputHash).toBe(WS2_SIZING_HASH);
@@ -98,7 +98,7 @@ describe('sizing engine port', () => {
   });
 });
 
-describe('economics engine port', () => {
+describe('economics engine (web adapter)', () => {
   it('matches the golden scenarios and the WS2 input hash', async () => {
     const out = await economicsEngine.calculate(economicsV2Input);
     expect(out.inputHash).toBe(WS2_ECONOMICS_HASH);
