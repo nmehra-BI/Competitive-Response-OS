@@ -10,10 +10,15 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "evals:smoke": "tsx ../../evals/src/run.ts --provider fixture --suite smoke"
+    "evals:smoke": "tsx ../../evals/src/run.ts --provider fixture --suite smoke",
+    "skills:schemas": "tsx scripts/write-skill-schemas.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.1",
     "@growth-os/contracts": "workspace:*",
-    "zod": "^3.24.1"
+    "@growth-os/domain": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.25.2"
   }
 }
