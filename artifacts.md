@@ -24,6 +24,27 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-09 | Analysis run lifecycle with checkpoint and resume | §8, ME-15, ME-16 |
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
 
+
+### Build status overview (Wave 1 integrated, 2026-10-09)
+
+Wave 1 delivered the domain (WS2 engines, WS3 machines/policy/materiality/timers), the platform runtime
+(WS1 pipeline, sessions, evidence, seed) and the web shell (WS7). The `me` API modules (WS4), analysis
+(WS5) and connector/outbox (WS6) are Wave 3 (`docs/market-expansion/build/WAVE3.md`). 26 of 144 endpoints
+have handlers.
+
+| ID | Status | Done in Wave 1 | Still to build |
+|---|---|---|---|
+| WF-01 | Partial | mandate + gate machines, G0 preconditions, policy, snapshot builder, seeded G0 history | mandate/gate API (WS4a/WS4b), S02 (WS8a) |
+| WF-02 | Partial | opportunity machine, ranking engine, opportunity MSW mocks | opportunity/comparison API (WS4a), discovery runs (WS5), S03/S04 |
+| WF-03 | Partial | sizing engine, lineage builder, seeded sizing v2 from the real engine | sizing/lineage API (WS4a), S06 |
+| WF-04 | Partial | economics engine, materiality evaluator | economics API (WS4a), S08 |
+| WF-05 | Partial | experiment machine (lock, amend, record), seeded EXP-03 | assumption/experiment API (WS4a/WS4b), S09 |
+| WF-06 | Partial | gate/snapshot machines, policy, preconditions, snapshot builder, materiality applied end to end, expiry timer, approval panel | gates/snapshots/decisions API (WS4b), S10 |
+| WF-07 | Partial | sync machine, activation guards, pause-on-invalidation/expiry, outbox claim fix (0002) | connector simulator, dispatcher, task-sync API (WS6), pilot API (WS4b), S11 |
+| WF-08 | Partial | G3/X preconditions, pilot-window timer, case follow-ons | outcomes/reviews API (WS4b), S12 |
+| WF-09 | Not started | run machine only | harness, providers, gateway, analysis API (WS5) |
+| WF-10 | Implemented (API) | evidence API, entitlements, ingestion, freshness, materiality on stale/replace | S13 screen (WS8d), multipart client path |
+
 ---
 
 ## Stage: Architecture (2026-10-09)
@@ -89,6 +110,14 @@ owner/currency/incompatible horizon → 400 with inline errors; sponsor without 
 (`SELF_APPROVAL_PROHIBITED`); a decision against v1 after v2 exists → `SNAPSHOT_STALE`/hash mismatch;
 double click → same `Idempotency-Key` replays the first response.
 
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: `mandateMachine` and `gateRequestMachine`
+(`packages/domain/src/me/lifecycle/runtime.ts`, `platform/workflow/runtime.ts`), G0 preconditions
+(`me/gates/preconditions.ts`), policy (`platform/policy/policy-engine.ts`), snapshot builder
+(`me/gates/snapshot-builder.ts`); MD-21 v1 returned and v2 approved are seeded through the real approval
+guard (`packages/db/src/seed/start.ts`). G0 snapshots now name the mandate as `subject` (D-036). Not
+started: mandate and gate endpoints (WS4a/WS4b), S02. New failure path: submitting MD-21 with a missing
+owner lists `owner_set` and `currency_set` together (every failed guard is listed, D-046).
+
 ---
 
 ### WF-02 — Opportunity discovery → shortlist → convert
@@ -137,6 +166,12 @@ Discovery because MD-21 is G0-approved. **Events:** `opportunity_shortlisted`. *
 market-data connection → banner "ask admin · upload instead"; convert before G0 → `PRECONDITIONS_UNMET`;
 AI down → manual add still works; merge into a candidate of another mandate → `INVALID_TRANSITION`.
 
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: `opportunityMachine` (shortlist, dismiss with reason, merge,
+restore, convert) and the ranking engine (`packages/domain/src/me/comparison/ranking.ts`, D-057); MSW mocks
+for `opportunities.list/get/shortlist/dismiss`. Not started: opportunity, comparison and conversion
+endpoints (WS4a), discovery runs (WS5), S03/S04. Ranking semantics fixed: one non-excluded incomparable row
+blocks the whole set ("Not ranked — boundary conflict in set") until excluded.
+
 ---
 
 ### WF-03 — Sizing calculation and lineage
@@ -183,6 +218,14 @@ imported; restricted site list → aggregates only or "Unavailable under your ac
 currency/year/unit → blocking check; concurrent edit → 412 conflict banner; top-down outside range →
 amber "Explain the gap before G1", never averaged.
 
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: `SizingEngine` and lineage (`packages/domain/src/me/sizing/`,
+golden + property tests); `aster-demo` commits sizing v2 from the real engine and aborts on any golden
+mismatch (`packages/db/src/seed/outputs.ts`, D-053). Not started: sizing and lineage endpoints (WS4a), S06.
+New failure paths (blocking checks): `TOO_MANY_COHORTS_FOR_AGGREGATE_METHOD`, `MISSING_INPUT` (overlap pair
+or site IDs), `ANNUALIZATION_METHOD_MISSING`, `REACHABLE_EXCEEDS_SAM`, cross-check currency/year mismatch.
+When SAM cannot be computed `ladder.sam.available` is false and the UI shows "Not available" (D-033).
+"Used by" from SAM reaches SOM and economics through the reachable pool (D-056).
+
 ---
 
 ### WF-04 — Economics scenario recompute (draft vs snapshot)
@@ -212,6 +255,12 @@ Committing creates v3 and runs materiality: if a current G2 snapshot pins v2, th
 → "Recommendation incomplete — opex scope missing" (commit blocked); currency/year mismatch → "Normalize
 to EUR 2026"; finance review only lists what was checked and not checked; editing a committed version is
 refused by the database.
+
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: `EconomicsEngine` (`packages/domain/src/me/economics/engine.ts`)
+with the PRD scenario table, separate one-time investment, Unavailable cash flow/payback and break-even 50;
+materiality evaluator for the commit step. Not started: economics draft/commit endpoints (WS4a), S08. New
+failure path: a missing one-time investment blocks the run ("Recommendation incomplete") while per-year
+scenarios still show (D-058).
 
 ---
 
@@ -261,6 +310,11 @@ append-only versions compared with the locked thresholds: 9 of 8 → Met, 4 of 4
 results seen is flagged on the card; result without period or source → 400; a failed threshold can never be
 deleted (database refuses updates to result versions); before the window closes the result shows "Too
 early to read".
+
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: `experimentMachine` (lock on G1 via `followOnForGate`, amendment as
+an unchanged transition with a required reason, result recording; "Too early to read" counts as recorded);
+EXP-03 seeded with the original plan, amendment 1, results and VAL-1…5 confirmed. Not started: assumption,
+dispute and experiment endpoints (WS4a/WS4b), S09.
 
 ---
 
@@ -315,6 +369,39 @@ authored this package and cannot approve it."); agent or service identity → `A
 amount above ceiling or no grant → `AUTHORITY_INSUFFICIENT` with routing reason; hash mismatch →
 `SNAPSHOT_HASH_MISMATCH`; missing specialist sign-off → `PRECONDITIONS_UNMET` with "Why?" list; the
 database refuses any of these even if the API were wrong.
+
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: gate request and snapshot machines, policy engine (D-045), G1/G2
+preconditions, snapshot builder, materiality evaluator (WS3) applied end to end by
+`apps/api/src/platform/materiality.ts` (D-047), approval-expiry timer (`apps/worker/src/jobs/timers/`,
+D-049), connected `ApprovalPanel` bound to the snapshot the page read (D-059). Not started: gate request,
+snapshot, decision, position and materiality-resolution endpoints (WS4b), S10. Flow changes and new
+failure paths:
+- an unused G2 approval past `expires_at` → gate `expired`, `approval_invalidation(kind expired)`, pending
+  outbox rows paused, case `pilot_approved → pilot_approval_pending` (`g2_expired`, D-035); executed
+  approvals never expire;
+- a decision on an older snapshot id → `SNAPSHOT_STALE`, even if that row still says current;
+- an uncertain change (default for sources) → snapshots stale and escalated, approvals untouched until the
+  sponsor resolves it; resolving as not material leaves stale snapshots stale;
+- the invalidation follow-on moves the case only when the case machine allows it (G1 invalidation while the
+  case is already past Validation moves nothing).
+
+Update (2026-10-09) — material change and expiry as built:
+
+```mermaid
+flowchart TD
+  C["Committed change to a pinned object<br/>(assumption, model, scope, source, plan)"] --> P["findPins: snapshots pinning it"]
+  P -->|none| N["No effect"]
+  P --> E["MaterialityEvaluator.evaluate(change, tenant policy, pins)"]
+  E -->|not_material| N
+  E -->|uncertain| U["awaiting snapshots → stale (snapshot + gate machines)<br/>impacts: snapshot_stale + escalated<br/>approvals untouched; sponsor resolves"]
+  E -->|material| M["awaiting snapshots → stale<br/>effective approvals → approval_invalidation<br/>gate → invalidated; unsent outbox + task links paused<br/>analytics approval_invalidated"]
+  M --> F["followOnForGate(invalidate): G1 → assessment, G2 → pilot_approval_pending<br/>(only if the case machine allows)"]
+  U & M --> A["material_change + audit material_change.detected (same transaction)"]
+  T["timers.approval_expiry (every 15 min)"] --> X{"approved, past expires_at,<br/>not executed?"}
+  X -->|yes| XE["gate → expired; approval_invalidation(expired)<br/>pending outbox paused; audit gate.approval_expired"]
+  XE --> XC["G2: case pilot_approved → pilot_approval_pending (g2_expired)"]
+  X -->|no| XS["skipped (executed or not due)"]
+```
 
 ---
 
@@ -376,6 +463,14 @@ backoff up to 5 attempts then Failed with Retry; worker crash mid-send → sweep
 reconciles; double click on Create → same Idempotency-Key replays. Outbound prospect messages stay drafts:
 there is no send endpoint.
 
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: `syncMachine` with `approval_effective` and
+`connector_connected` re-checks at send time and human `enqueue`/`manual_retry` guards; activation guard
+lists open blocking conditions and unowned tasks together; invalidation and expiry pause unsent outbox rows
+and their task links; migration 0002 makes `claim_outbox_batch()` and `list_tenant_ids()` work under
+FORCE RLS (D-043). Not started: simulator over `sim`, outbox dispatch/reconcile/sweep, task-sync API and
+fault suite (WS6), pilot plan endpoints (WS4b), S11. Convention fixed for WS6: outbox rows carry
+`authorization_ref.gateRequestId`, `aggregate_type = 'external_task_link'`, `aggregate_id` = link id.
+
 ---
 
 ### WF-08 — Outcome review → revise/extend, scale gate blocked
@@ -420,6 +515,26 @@ outcome_review incomplete → ready → decided; X1 draft → awaiting_decision.
 **Failure paths:** missing actuals → "Review incomplete — 1 metric has no data for Oct"; "scale" as a
 review outcome → 400 (scale needs G3); G3 request → `PRECONDITIONS_UNMET`; no G3 approver configured →
 "Authority gap" in S14.
+
+**Build status (Wave 1, 2026-10-09):** Partial. Implemented: G3 and X preconditions (X never unblocks G3), the pilot-window
+timer (`pilot_running → review_due` after the tenant-local window end), case follow-ons. Not started:
+outcome, review and decision endpoints (WS4b), S12. Flow change (D-039, interim pending PQ-1): G3 lists
+every unmet precondition — four on the honest step-28 facts, not two. X1 can be requested with the `€[cap]`
+placeholder but cannot be approved until a real cap is set (D-040).
+
+Update (2026-10-09) — scale gate as built:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Maya as Maya Rao
+  participant API
+  participant Domain as PreconditionEvaluator
+  Maya->>API: Request scale approval (G3)
+  API->>Domain: evaluateGate(G3 facts from committed records)
+  Domain-->>API: 4 unmet - demand 3 of 4 (4 of 4 required), specialist scale-readiness incomplete, economics and capacity not updated after the pilot, no scale budget stated
+  API-->>Maya: 409 PRECONDITIONS_UNMET with four blockers, button disabled with the summary
+```
 
 ---
 
@@ -468,6 +583,10 @@ is saved"; malformed output → one repair attempt then failed; budget exhausted
 instructions in evidence → treated as data, no write tools exist; AI disabled → every screen still works
 manually; the agent can never sign a review or decide a gate (database refuses agent identities).
 
+**Build status (Wave 1, 2026-10-09):** Not started (WS5). Only the frozen interfaces exist (`packages/ai`) plus `runMachine`
+(WS3) and the job catalogue entry; the worker task list (`apps/worker/src/tasks.ts`) is where WS5 registers
+its run job.
+
 ---
 
 ### WF-10 — Evidence challenge and restricted-source handling
@@ -514,3 +633,13 @@ stale / superseded; availability available → deleted_by_provider; challenge op
 404 (no existence leak); impact lists only accessible cases ("Cases you cannot access are not listed or
 counted"); upload with a duplicate hash links to the existing source; ingestion failure → "ingestion
 failed" status, never fabricated content.
+
+**Build status (Wave 1, 2026-10-09):** Implemented on the API side (WS1): `apps/api/src/modules/platform/evidence/`,
+`apps/api/src/platform/entitlements.ts`, worker jobs `evidence.ingest` and `evidence.freshness`
+(`apps/worker/src/jobs/evidence/`). Marking a pinned source stale or replacing it runs materiality through
+the real evaluator (D-047; DB-tested). S13 is WS8d's; the web client still needs the multipart path for
+uploads (D-051). Changes: uploads are `multipart/form-data` (`metadata` + one file); identical bytes return
+the existing source; admins get 404 on source detail. New failure paths: upload without a file → 400;
+licence from another tenant → 400; mark stale on a superseded source → 409 `INVALID_TRANSITION` ("mark its
+replacement instead"); replacing a source with itself → 400; superseded or deleted replacement → 409;
+ingestion `failed` on a missing object or hash mismatch and `partial` for binary files.

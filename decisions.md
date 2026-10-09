@@ -409,3 +409,401 @@ change request, see D-031) · `Superseded by D-xxx`.
 - Alternatives considered: no freeze (contract churn across 11 streams); freeze everything including
   implementations (blocks the build).
 - Consequences: Streams can work in parallel with confidence; changes are visible and deliberate.
+
+---
+
+## Stage: Build — Wave 1 integration (2026-10-09)
+
+Wave 1 merged WS2 (domain engines), WS3 (workflow and authorization), WS1 (platform, DB, identity) and
+WS7 (frontend shell and design system) into `claude/zen-euler-ph3oag`. Stream notes are in
+`docs/market-expansion/build/notes/WS{1,2,3,7}.md`. The entries below consolidate those notes, the Principal
+Engineer's (PE) seam wiring and the change-request (CR) decisions. CRs follow D-031: additive changes are
+fast-tracked by the PE and recorded here; nothing breaking was accepted.
+
+### D-032 — Wave 1 integration order and build-stage change control
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Four streams built in parallel worktrees from `4eebc3c`. They overlapped in shared registry files
+  (`vitest.config.ts`, `apps/worker/src/main.ts`, `apps/api/src/modules/index.ts`, `pnpm-lock.yaml`) and left
+  seams for each other (timers, materiality, seed engines).
+- Decision: Merge with `--no-ff` in dependency order WS2 → WS3 → WS1 → WS7, never rewriting history.
+  Conflicts are resolved by keeping both sides' lines; the lockfile is always regenerated with
+  `pnpm install`, never hand-edited. The PE wires the seams in separate commits after the merges and
+  decides CRs: additive contract or DB changes are accepted in the same integration (new optional fields,
+  new endpoints, new transition rows, index-only migrations); anything breaking is deferred to the
+  Principal Architect. Each decision is recorded below; each CR is listed in the register at the end.
+- Alternatives considered: rebasing the stream branches (rewrites shared history); one squash commit per
+  stream (loses the streams' logical commits).
+- Consequences: Two conflicts in Wave 1 (`vitest.config.ts` db include glob; `pnpm-lock.yaml`). The
+  integrated head passes install, typecheck, lint, format, unit, migrate, db, web build and the API smoke.
+
+### D-033 — Uncomputable SAM is flagged, never a displayable zero (CR-WS2-1)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The frozen `SizingOutput.ladder.sam` has required numeric fields. When SAM cannot be computed
+  (wrong cohort count, missing overlap or site IDs) the engine had to write `0` there, which conflicts
+  with never-rule 5 ("Missing is never zero"). WS2 proposed making `ladder.sam` nullable.
+- Decision: Accept the additive form: `ladder.sam.available?: boolean` (absent = computed). The sizing
+  engine always sets it; `false` means the numbers beside it are placeholders. Consumers render
+  "Not available — <blocking check>" when `available === false`, and never render or commit ladder
+  values while `blocked` is true (WS2-3). Nullable `sam` is rejected as breaking.
+- Alternatives considered: nullable `sam` (breaks every consumer and stored output); the `blocked` flag
+  alone (correct but implicit).
+- Consequences: Contract stays backward compatible; golden and property tests assert the flag; the seed's
+  golden check requires `available` true.
+
+### D-034 — The investment committee may stop a case (CR-WS3-1)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: ARCHITECTURE.md §7.3 gives the investment committee "Outcome decision, stop case" and PRD §4
+  lists "stop" as a G3 outcome for "investment committee / sponsor", but the frozen `ROLE_ACTIONS` lacked
+  `case.stop` for `investment_committee`. The code disagreed with its own specification.
+- Decision: Add `case.stop` to `ROLE_ACTIONS.investment_committee` (amends the frozen table, D-031 §3;
+  D-016 stays in force). Scope rules are unchanged (the committee must be in scope for the case).
+- Alternatives considered: correct the document instead (contradicts the PRD's G3 outcomes).
+- Consequences: The role × action test matrix expects sponsor and investment committee for `case.stop`.
+
+### D-035 — An expired G2 approval returns the case to Pilot approval pending (CR-WS3-3)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Gate requests that expire are terminal. The frozen case table had no transition for an expired
+  G2, so the case stayed `pilot_approved` with activation blocked by `APPROVAL_EXPIRED`, and a new G2 could
+  never move it (`g2_submitted` starts from Validation): a dead end.
+- Decision: Add the system transition `g2_expired: pilot_approved → pilot_approval_pending` (same target as
+  `g2_invalidated`), map `followOnForGate('G2', 'expire')` to it, and apply it in `timers.approval_expiry`
+  with a `case.stage_changed` audit event. Expiry is never applied to an executed approval, so
+  `pilot_running` is not a source state. G1 expiry moves no stage (the case stays in Validation and a new
+  G1 decision can be recorded there). WS4 rule: when a gate follow-on targets the stage the case is
+  already in (a new G2 submitted while Pilot approval pending), skip the case move.
+- Alternatives considered: `pilot_approved → validation` (consistent with "returned", but inconsistent
+  with invalidation, which keeps the case in the approval stage); leave as is (dead end).
+- Consequences: Planner unit test and timer DB test cover the move; the rail shows G2 Expired and the next
+  action is a new G2 request.
+
+### D-036 — Standalone G0 snapshots name the mandate as their subject (CR-WS1-2)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: `SnapshotContent.caseId/caseKey` are required, but a G0 on a mandate has no case.
+- Decision: Add optional `SnapshotContent.subject: { type: 'case' | 'mandate', id, key }`. For a mandate
+  subject, `caseId`/`caseKey` carry the mandate id and key for compatibility (documented in the schema).
+  The seed sets `subject` on MD-21's G0 snapshots. Absent means the subject is the case.
+- Alternatives considered: nullable `caseId` (breaking, and it changes the hashed shape of every snapshot).
+- Consequences: Hashing is unchanged for existing content; WS4 sets `subject` on every new snapshot.
+
+### D-037 — `cases.members` endpoint for owner pickers (WS7 request)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: `OwnerPickerProps` has no source of candidates; conditions, tasks and reviews need people who
+  can work on the case. The data exists (`platform.case_participant`, case- and BU-scoped
+  `role_assignment`).
+- Decision: Add `GET /me/cases/:caseRef/members` (`cases.members`) returning `{ items: CaseMember[] }`,
+  `CaseMember = PersonRef + roles[] + participantRoles[]`: human principals whose roles reach the case and
+  case participants; no agents or services; tenant admins only if they also hold a case role. 404 when the
+  case is hidden. The registry now has 144 endpoints. WS4a implements it.
+- Alternatives considered: derive candidates from the gate package (what the connected panel does today;
+  incomplete for pilot tasks); reuse `admin.roles` (admin-only).
+- Consequences: The connected `ApprovalPanel` and S11 owner pickers switch to it when WS4a lands.
+
+### D-038 — Migration 0003: indexes for the integrated seams
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Materiality and the expiry timer look up outbox rows by `authorization_ref->>'gateRequestId'`;
+  the expiry sweep scans approved gates by `expires_at`; `findPins` reads approvals by snapshot; members
+  read participants by user.
+- Decision: `0003_pe_wave1_indexes.sql` adds four indexes and nothing else (index-only migrations are
+  outside the freeze, D-031).
+- Consequences: No type regeneration needed; `db:migrate` applies it.
+
+### D-039 — G3 "blocked" lists every unmet precondition (interim, PE)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: BUILD_PLAN §8 step 28 and `fixtures/aster gates.g3.blockedBy` show two blockers, but G3 also
+  requires `updated_economics_and_capacity` and `approved_scale_budget`. With honest step-28 facts (no
+  scale budget requested, economics not refreshed with actuals) four are unmet. Hiding two would tell the
+  user they are closer to scale than they are.
+- Decision: Interim until product decides (PQ-1): the evaluator and the API list every unmet precondition;
+  the summary reads "G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist
+  scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget
+  stated". The acceptance script step 28 is updated to this text and to four `blockers`. The frozen
+  fixture keeps its two `blockedBy` entries (they remain the first two blockers, in order). Blocker copy
+  follows the fixture's "<what> · <state>" pattern.
+- Alternatives considered: treat the two extra facts as met in the seed (dishonest data); drop them from
+  G3 (changes PRD §4 gate preconditions).
+- Consequences: e2e step 28 asserts four blockers; if product chooses the two-blocker narrative, the seed
+  adds a scale budget and refreshed economics instead and the script reverts.
+
+### D-040 — Extension cap stays a placeholder; X1 can be requested but not approved (interim)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The PRD gives no extension cap or duration (`€[cap]`, `[duration] days`), yet step 27 needs X1
+  "Awaiting decision" and the X gate requires `extension_cap_set`.
+- Decision: `XFacts.capPlaceholder: true` satisfies `extension_cap_set` for submission only. A spend gate
+  with no amount is never approvable (D-045), so X1 cannot be approved until a real cap is set. The UI
+  shows "€[cap]" verbatim and the approve button carries the policy reason. Open as PQ-2.
+- Consequences: The journey reaches step 27 honestly; nobody can approve unbounded spend.
+
+### D-041 — Upside adoption stays at the fixture's 30% (interim)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: D-025 chose 30% upside adoption (not in the PRD); any value ≥ 24% reaches the 120-customer
+  capacity cap, so every displayed PRD figure is the same for any such value.
+- Decision: Keep 30% until product confirms (PQ-3). It stays an assumption in the fixture (never
+  evidence), and the upside row explains "Capped at 120 customers by capacity".
+- Consequences: No engine or golden change if product picks any value ≥ 24%; a lower value changes the
+  upside row and needs a fixture CR.
+
+### D-042 — Command pipeline is the only write path
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: CLAUDE.md requires validate → policy → domain → state + audit + analytics + outbox in one
+  transaction; four API-side streams build on it.
+- Decision (WS1): handlers are built with `command()`/`query()` (`apps/api/src/platform/pipeline.ts`):
+  session → Zod validation (400 with `errors[].path`) → interactive-human check for `auth: 'human'` →
+  `If-Match` (428/412) and `Idempotency-Key` (428) → `withTenant()` → `load` → `authorize` → `handle` →
+  a command that wrote no audit event is refused (500, rolled back) → response parsed by the endpoint
+  schema (unknown fields stripped; a contract violation is a 500). `tools` give `tx`, `audit`,
+  `analytics` (strict PRD §17 props), `enqueue` (graphile `add_job` in the transaction) and `emit`.
+  Audit stores hashes of before/after and refuses content-like keys; hidden resources deny with
+  `NOT_FOUND`. `systemTools()` gives the same writers to timers and seams. The audit writer lives in
+  `packages/db` so API, worker and seed write identical rows.
+- Consequences: WS4/5/6 never write outside `command()`; the pipeline tests cover each step.
+
+### D-043 — Sessions, dev login and the 0002 RLS fix
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: Sessions are tenant-isolated but the tenant is unknown before the cookie resolves; every table
+  has `FORCE ROW LEVEL SECURITY`, which also binds the owner, so the frozen `SECURITY DEFINER` functions
+  (`list_tenant_ids`, `claim_outbox_batch`) saw no rows (a bug in 0001).
+- Decision (WS1): migration `0002_ws1_platform_runtime.sql` adds owner-only policies (`TO me_owner`) on
+  tenant, app_user, session and outbox_message so definer functions work while `me_app`/`me_worker` stay
+  isolated; `platform.resolve_session(token_hash)` returns ids for live sessions only. The cookie
+  (`gos_session`, httpOnly, SameSite=Lax, Secure) holds 32 random bytes; only SHA-256 is stored. Dev login
+  answers only for `tenant.illustrative = true` and only in `AUTH_MODE=dev`; agents/services are refused;
+  re-login revokes the previous session; login and logout are audited.
+- Alternatives considered: a BYPASSRLS role (cannot be created locally; broader); tenant id in the cookie.
+- Consequences: Timers and the outbox sweep work across tenants through ids only; a misconfigured
+  production `AUTH_MODE=dev` still cannot enter a real tenant.
+
+### D-044 — Idempotency semantics and per-intent key reuse
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: D-028 requires `Idempotency-Key` on creates, submissions, decisions, sends and retries; both
+  server and client need a precise rule.
+- Decision: Server (WS1): `begin` commits an `in_progress` row in its own short transaction per (tenant,
+  user, key); the response is stored inside the business transaction; any failure releases the key
+  (errors are not cached, so the same intent can be retried after fixing the cause); an `in_progress` row
+  older than 2 minutes can be taken over; the request hash covers operation, params, query, body and file
+  hashes; a different body with the same key is 422 `IDEMPOTENCY_KEY_REUSED`; a replay returns the stored
+  response with `Idempotent-Replayed: true`. Client (WS7): one key per intent, keyed by the body
+  fingerprint; transient failures (network, 5xx, `IDEMPOTENCY_IN_PROGRESS`, 429) retry with the same key;
+  4xx never retry; a new key after success or a body change. Never-rule 9's connector key
+  (`externalTaskIdempotencyKey`) is separate and unaffected.
+- Alternatives considered: caching 4xx responses (forces a new key after every validation fix).
+- Consequences: Double clicks and retries never double-decide; expired records are reused safely (a purge
+  job is still to do).
+
+### D-045 — Policy engine order, authority and invariants
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: D-016 fixes roles, scope, grants and invariants; the order of checks decides which error a user
+  sees, and the domain cannot read the clock.
+- Decision (WS3): `gate.decide` checks visibility (hidden → `NOT_FOUND`, never 403) → admin (any
+  `tenant_admin` role blocks, even with a sponsor role and a grant) → self (package author, then case owner →
+  `SELF_APPROVAL_PROHIBITED`) → conflict → deciding role → authority (gate × BU × amount ≤ ceiling × currency
+  × `PolicySubject.asOf` within validity). Without `asOf` authority fails closed. A spend gate (G1/G2/G3/X)
+  with no amount is never approvable; G0 needs a null-ceiling grant. Agents may only read case, source
+  metadata and licensed excerpts in run scope; service principals nothing; non-interactive humans reads
+  only. Specialist sign-off coverage is structural (`coversGates`, `maxSites`, `maxDays`): Lena's
+  pilot-only sign-off covers G2, never G3. `approvalPanel()` lists exactly the dispositions allowed.
+- Consequences: Maya forcing a G2 decision gets `SELF_APPROVAL_PROHIBITED` (step 18); 410 role × action
+  cells are tested. WS1's `roleAllows()` helper uses the same table for non-gate actions.
+
+### D-046 — State machine runtime contract
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The frozen `StateMachine` stub returned too little for the API to explain refusals.
+- Decision (WS3): `apply()` returns `{ ok, from, to, changed, events, auditAction, domainEvent, nextAction,
+  guards }` or `{ ok: false, code, failed[], reasons[], nextAction }`; every failed guard is listed in table
+  order and the first decides the code (stale beats hash mismatch beats self-approval, matching API.md
+  §6.1). `evaluate()` lists every command with `enabled` and reasons for disabled buttons. Agents never
+  apply anything; `human` rows need an interactive human; `system` rows only take a system actor; unknown or
+  throwing guards fail closed. The result and `GuardResult.code` were extended additively in
+  `packages/domain`; the frozen transition tables and guard names are unchanged except D-035.
+  `followOnForGate()` names the case/mandate transitions a gate command triggers (X never moves the case).
+- Consequences: WS4 maps `code` to problem+json and `failed` to `blockers`.
+
+### D-047 — Materiality behaviour and the applied seam
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: D-013 defines material/uncertain/not-material; WS1 built `applyMateriality` against a stub and
+  WS3 built the evaluator; marking a pinned source stale returned 500.
+- Decision: The evaluator (WS3) classifies by the tenant policy (unlisted → uncertain; a non-critical
+  assumption under a material rule → uncertain; undefined `decisionCritical` treated as critical; drafts do
+  nothing). Material: current snapshots of gates awaiting decision go stale (`mark_stale`), effective
+  approvals are invalidated (`invalidate`, pause unsent writes). Uncertain: snapshots stale, escalated to
+  the policy owner, approvals untouched until `resolveEscalation('material')`; resolving as not material
+  leaves stale snapshots stale (refresh needed). `MaterialityOutcome` gained `reasonShort`, `impacts`,
+  `gateCommands`, `escalatedApprovalIds`, `escalateTo`, `pauseUnsentWrites`, and the interface gained
+  `resolveEscalation` (additive). The PE wired `applyMateriality` to it: impacts as returned, gate and
+  snapshot status through the machines with a system actor, pauses only when the outcome says so, the
+  G1/G2 invalidation follow-on moves the case when the case machine allows, stale reasons carry the
+  tenant-local date ("source SRC-014 changed on 26 Nov", Europe/Berlin until a tenant time-zone setting
+  exists).
+- Consequences: `evidence.markStale` and `evidence.replace` on a pinned source succeed (DB tests); the
+  Aster default classifies source changes as uncertain, so G2 v3 goes stale and G1 stays approved.
+
+### D-048 — Precondition evaluator and snapshot builder
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS3): `evaluateGate()` returns contract `Precondition[]`, problem `blockers`, counts and a
+  one-line summary; unknown or wrong-gate keys fail closed; task completion is never an input; only targets
+  with a numeric threshold gate G3 (placeholders such as `[hours per site]` and qualitative targets cannot);
+  missing observations are unmet ("no data recorded"), never zero. `createSnapshot()` refuses drafts
+  (`PRECONDITIONS_UNMET`), validates content and money, de-duplicates and sorts components, deep-freezes
+  the result and hashes with the frozen canonical algorithm; `diffSnapshotContent()` backs "See what
+  changed". A decision on an older snapshot id is `SNAPSHOT_STALE` even if that row still says current.
+- Consequences: WS4 inserts `decision_snapshot` from the builder's canonical bytes and hash only.
+
+### D-049 — Timer jobs and worker task registration
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: graphile-worker's crontab text grammar rejects the frozen dotted task names; WS3's timers needed
+  registration in a file WS1 owned.
+- Decision: The worker builds its task list in `apps/worker/src/tasks.ts` (`createTaskList`) and converts
+  `CRONTAB` lines into structured cron items for registered tasks only (`schedule.ts`), so a job runs exactly
+  when its handler exists. Timers (WS3): approval expiry every 15 min skips executed approvals ("executed" =
+  G0/G3 always; pilot activated; locked experiment started; or an outbox row authorized by the gate that is
+  sending/checking/confirmed/sent), writes `approval_invalidation(kind='expired')`, pauses pending outbox
+  rows and their task links, audits `gate.approval_expired`, and applies D-035. Pilot window hourly moves
+  `pilot_running → review_due` after the tenant-local window end (Europe/Berlin default); overdue
+  experiments are counted, never changed. One transaction per tenant; a failing tenant does not block the
+  others but fails the job for retry. `db:migrate` installs the graphile schema and grants; the API enqueues
+  inside the business transaction.
+- Consequences: WS5 and WS6 add their task maps to `createTaskList` (one line each).
+
+### D-050 — Analytics flush and domain events (domain-event table deferred)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The machines return `domainEvent` types but 0001 has no domain-event table (CR-WS3-4); analytics
+  need delivery without leaking content.
+- Decision: `platform.analytics_event` is itself the analytics outbox (`emitted_at` NULL until the
+  `analytics.flush` job delivers and stamps it; only the worker may update). Domain events are validated by
+  `DomainEvent` and collected per transaction (`auditWriter.emitted(tx)`), not stored; the audit event (its
+  `action` carries the type) is the persisted record. A domain-event table is deferred until a consumer needs
+  replay or subscriptions; outbox rows cover delivery to external systems.
+- Consequences: No double-write; WS6's dispatcher never routes analytics.
+
+### D-051 — Evidence entitlements, visibility, uploads and freshness
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS1): licence access resolves user rows › role rows › case member › `*` › none (fail closed),
+  most permissive within a level; a restricted source reduces excerpt to aggregate-only, a deleted one to
+  none; only `excerpt` returns passages and the quoted-fact panel. A source used only by cases the viewer
+  cannot read is 404 and never listed, counted or searched; admins read no evidence. Uploads are
+  `multipart/form-data` (`metadata` JSON part + one file); identical bytes return the existing source; the
+  original goes to the content-addressed object store and ingestion is queued in the same transaction.
+  Ingestion strips scripts, styles, comments, hidden elements and control/bidi characters, keeps at most 3
+  passages cut to the licence's sentence limit, stores binaries without passages (`partial`) and never
+  fabricates. Freshness ageing after 365 days (licensed), 30 (uploads, web), 90 (internal); the daily job
+  only moves Current → Ageing (Stale and Superseded are human acts because they run materiality). Access
+  requests are audit events (CR deferred, see register). The web client gains a multipart path for
+  `evidence.upload` (CR-WS1-1 accepted, no contract change; WS8d with a one-function edit to the WS7 client).
+- Consequences: Entitlement suites are release gates; thresholds become a tenant policy only by CR.
+
+### D-052 — Administration invariants
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS1): admins cannot change their own roles or grants; `tenant_admin` cannot be combined with
+  sponsor or investment committee; no authority grant to a tenant admin; only human principals hold roles
+  or authority; publishing a policy retires the previous active version (kept); a gate policy cannot allow
+  self-approval. Authority gaps are computed per BU × gate from grants effective today. Connection health is
+  readable by case roles (S03, S11).
+- Consequences: S14 "Authority gap" and "Admin cannot approve" are data-driven.
+
+### D-053 — Seed runner runs the real engines and guards
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: WS1 seeded engine outputs from golden values (`+aster-golden`) until WS2 landed.
+- Decision: The seed runs in one tenant transaction with RLS and all guard triggers on; seeded approvals go
+  through the real approval guard with a short-lived approver session; history is `actor_kind 'system'`
+  audit dated at the fixture moments; `isolated: true` remaps ids for independent test tenants; display-key
+  counters make OPP-07's conversion yield ME-104. `aster-demo` now runs the WS2 sizing and economics
+  engines and aborts if any golden value differs (`sizingGoldenMismatches`, `economicsGoldenMismatches`);
+  the stand-in path is removed. Supersedes WS1 note decision 17.
+- Consequences: Seeded calculation rows carry engine version `1.0.0`, full lineage and `sam.available`.
+
+### D-054 — Typed money and decimal context in the engines
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS2): branded `PerYearAmount` and `OneTimeAmount` (`sizing/numeric.ts`); arithmetic exists only
+  for per-year amounts and throws on currency or price-year mismatch; one-time amounts have no arithmetic; a
+  `@ts-expect-error` test proves mixing does not compile. decimal.js is cloned with 50 significant digits and
+  ROUND_HALF_EVEN; amounts serialize with 2–8 fraction digits; zero is `"0.00"`, never `-0.00`; ranking
+  scores have 2 decimals. Engines never round for display; `formulaWithValues` shows exact grouped values.
+- Consequences: WS4/WS5 build money through these helpers and never do arithmetic on `Money.amount`.
+
+### D-055 — Sizing engine semantics: blocked output and duplicate cohorts
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS2): when blocked, the engine still returns TAM and SAM from the raw inputs (so "SAM 2,000 >
+  TAM 500" can be shown), SOM `[]` and cross-check `not_available`; when SAM cannot be computed, D-033
+  applies. A cohort is a duplicate when marked `duplicate_candidate`, when two active cohorts share rule and
+  source ref, or when both carry site IDs with Jaccard similarity ≥ 0.9 (a subset cohort is not flagged).
+  New blocking checks: `TOO_MANY_COHORTS_FOR_AGGREGATE_METHOD`, `MISSING_INPUT` (overlap pair or site IDs),
+  `ANNUALIZATION_METHOD_MISSING`, `REACHABLE_EXCEEDS_SAM`, cross-check currency/price-year mismatch;
+  non-blocking `CAPACITY_CAP_APPLIED` and `CROSS_CHECK_OUTSIDE_RANGE`.
+
+### D-056 — Lineage graph and "Used by" (CR-WS2-2 rejected)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS2): input nodes share `input.<inputKey>` so sizing and economics lineage merge into one graph;
+  SAM has a sites node and a money node; the reachable pool takes SAM sites as input (SAM bounds it), so
+  "Used by" from SAM leads to SOM and economics through the reachable pool, never by a false direct edge.
+  `lineageView`, `usedByTransitive` and `dependsOnAssumptionCount` back the drawer. CR-WS2-2 (a stored
+  `LineageNode.usedBy`) is rejected: `lineage.get` already returns `usedBy`, and storing a derived reverse
+  edge in every node would duplicate data that can drift.
+- Consequences: BUILD_PLAN step 8 "used by SOM, economics" holds through the reachable pool.
+
+### D-057 — Ranking semantics
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS2): score = Σ(rating × weight) ÷ 100 on the 1–3 scale, explained as
+  `3 × 40% + 3 × 30% + 2 × 30% = 2.70 of 3`; any non-excluded incomparable row blocks the whole set ("Not
+  ranked — boundary conflict in set", matching the S04 "Aggregate ranking blocked" banner); excluded rows read
+  "Excluded until normalized"; unknown inputs give "Not ranked — n input(s) missing (names)", never 0;
+  weights must be whole numbers summing to 100; ranked rows by score with ties in input order, then unranked
+  rows in input order. No market-size criterion while candidates are not sized on a common boundary.
+
+### D-058 — Economics blocking scope
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS2): scenarios are suppressed and break-even is null only when a blocking check names a
+  recurring input. A missing or invalid one-time investment blocks the run ("Recommendation incomplete") and
+  makes `oneTimeInvestment` Unavailable, but per-year scenarios are still returned. Cash flow and payback are
+  always Unavailable (D-030) with the missing inputs listed by their S08 labels.
+
+### D-059 — Frontend composition: presentational UI, connected app components
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS7): `packages/ui` exports pure view components (`ApprovalPanelView`, `LineageDrawerView`, …)
+  with glyph + text for every status; `apps/web/src/app` implements the frozen id-based props
+  (`ApprovalPanel`, `LineageDrawer`, `CaseHeader`) on top of them; links are injected through
+  `UiLinkContext`. The connected approval panel sends the snapshot id and hash the page rendered, never the
+  latest fetched, and disables approval when they differ (never-rule 2). Query invalidation is a generated
+  map (`INVALIDATES`) tested to cover every command; no optimistic updates for decisions, sends, activation
+  or submissions. A unit test forbids raw hex outside tokens; Expired shares the Invalidated gate glyph;
+  the design-system page is lazy-loaded.
+- Consequences: Screens import connected components; `packages/ui` stays reusable by another Growth OS app.
+
+### D-060 — MSW mocks mirror the API edges at the aster-demo moment
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS7): `dev:mock` serves MSW handlers that validate every response against the contract, enforce
+  session (401), `Idempotency-Key`/`If-Match` (428), body validation (400), replay and key reuse, and gate
+  decision rules (self-approval, admin, authority, hash, stale). Unmocked endpoints answer the skeleton's
+  `500 INTERNAL`. Screen streams add `screens/<screen>/mocks.ts`, auto-collected by `import.meta.glob`, built
+  from `@growth-os/fixtures-aster` only. Playwright + axe harness lives in `apps/web/e2e/support`.
+- Consequences: WS8 switches endpoint by endpoint to the real API with the same client.
+
+### Change-request register — Wave 1
+
+| CR | From | Request | Decision | Record |
+|---|---|---|---|---|
+| CR-WS2-1 | WS2 | Nullable or flagged SAM | **Accepted** (additive `sam.available`) | D-033 |
+| CR-WS2-2 | WS2 | `LineageNode.usedBy` | **Rejected** — API already returns `usedBy`; derived data would drift | D-056 |
+| CR-WS3-1 | WS3 | Investment committee `case.stop` | **Accepted** | D-034 |
+| CR-WS3-2 | WS3 | G3 message: 2 vs 4 blockers | **Interim (PE)**: list all unmet; product to confirm | D-039, PQ-1 |
+| CR-WS3-3 | WS3 | Case transition on G2 expiry | **Accepted** (`g2_expired`) | D-035 |
+| CR-WS3-4 | WS3 | Domain-event table | **Deferred** — audit is the record, outbox delivers; revisit for replay/subscribers | D-050 |
+| CR-WS1-1 | WS1 | Web client multipart upload | **Accepted** (no contract change; WS8d) | D-051 |
+| CR-WS1-2 | WS1 | G0 snapshot without a case | **Accepted** (additive `subject`) | D-036 |
+| CR-WS1-3 | WS1 | MD-21 v1 incomplete vs DB completeness | **Rejected** (DB rule stays: committed versions are complete); seeded v1 = v2 values minus the outreach exclusion; narrative wording to product | PQ-4 |
+| CR-WS1-4 | WS1 | Sizing/economics v1 in the fixture | **Deferred** — History shows v2 only; SRC-011 "Sizing v1 only" impact has no row until a fixture CR | PQ-5 |
+| CR-WS1-5 | WS1 | `platform.access_request` table | **Deferred** — no endpoint lists requests; audit events suffice until a licence-owner inbox is specified | D-051 |
+| CR-WS1-6 | WS1 | Freshness thresholds as tenant policy | **Deferred** — fixed thresholds until a customer needs different ones | D-051 |
+| CR-WS7-1 | WS7 | Case members endpoint | **Accepted** (`cases.members`) | D-037 |
+
+### Open product questions
+
+- **PQ-1 — G3 acceptance message.** Should step 28 show only the demand and scale-readiness blockers (then
+  the seed needs a requested scale budget and economics refreshed with actuals) or all four unmet
+  preconditions? Interim: all four (D-039). Owner: PM.
+- **PQ-2 — Extension cap and duration.** What cap (`€[cap]`) and duration (`[duration] days`) does X1
+  request? Interim: placeholders; X1 can be requested, not approved (D-040). Owner: PM with finance.
+- **PQ-3 — Upside adoption.** Confirm 30% (any value ≥ 24% gives identical displayed figures). Interim: 30%
+  (D-041). Owner: PM.
+- **PQ-4 — MD-21 v1 narrative.** The fixture says v1 was returned for a missing owner and currency, but
+  submission requires both. Proposed wording: "returned to change the owner and confirm EUR". Owner: PM.
+- **PQ-5 — Version history depth.** Does the History tab need sizing/economics v1 in the demo? If yes, the
+  fixture needs v1 inputs (fixture CR). Owner: PM with design.
