@@ -1,0 +1,221 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-09T12:00:00Z"
+ },
+ "title": "Market Expansion OS — Prototype",
+ "launch": {
+  "view": "canvas"
+ },
+ "pages": [],
+ "boards": {
+  "Main.dc.html": {
+   "x": 0,
+   "y": 300,
+   "w": 1440,
+   "h": 1500,
+   "title": "S01 Portfolio overview — Elena Fischer",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "DesignSystem.dc.html": {
+   "x": 1520,
+   "y": 300,
+   "w": 1440,
+   "h": 3400,
+   "title": "Foundations — type, palette, kinds, gates, status, components",
+   "expand": "fill",
+   "is_interactive": false
+  },
+  "Mandate.dc.html": {
+   "x": 0,
+   "y": 4120,
+   "w": 1440,
+   "h": 1500,
+   "title": "S02 Mandate — create, validate, submit to G0",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Opportunities.dc.html": {
+   "x": 1520,
+   "y": 4120,
+   "w": 1440,
+   "h": 1500,
+   "title": "S03 Opportunity discovery — Maya shortlists",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Compare.dc.html": {
+   "x": 3040,
+   "y": 4120,
+   "w": 1440,
+   "h": 1500,
+   "title": "S04 Compare up to 4 candidates",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Thesis.dc.html": {
+   "x": 0,
+   "y": 6040,
+   "w": 1440,
+   "h": 2000,
+   "title": "S05 Expansion case — thesis",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Sizing.dc.html": {
+   "x": 1520,
+   "y": 6040,
+   "w": 1440,
+   "h": 2300,
+   "title": "S06 Sizing workbench — ladder, cohorts, ledger",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Feasibility.dc.html": {
+   "x": 3040,
+   "y": 6040,
+   "w": 1440,
+   "h": 1500,
+   "title": "S07 Feasibility and ability to win",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Economics.dc.html": {
+   "x": 4560,
+   "y": 6040,
+   "w": 1440,
+   "h": 2000,
+   "title": "S08 Economics and scenarios",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Validation.dc.html": {
+   "x": 0,
+   "y": 8760,
+   "w": 1440,
+   "h": 2100,
+   "title": "S09 Assumptions and validation",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Decisions.dc.html": {
+   "x": 1520,
+   "y": 8760,
+   "w": 1440,
+   "h": 2500,
+   "title": "S10 Decision package — G2 pilot approval",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Pilot.dc.html": {
+   "x": 0,
+   "y": 11680,
+   "w": 1440,
+   "h": 2000,
+   "title": "S11 Pilot execution — activate and create tasks",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Outcomes.dc.html": {
+   "x": 1520,
+   "y": 11680,
+   "w": 1440,
+   "h": 2200,
+   "title": "S12 Outcome review and scale decision",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "MyWork.dc.html": {
+   "x": 3040,
+   "y": 11680,
+   "w": 1440,
+   "h": 1400,
+   "title": "My Work — Jonas Klein",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Evidence.dc.html": {
+   "x": 0,
+   "y": 14300,
+   "w": 1440,
+   "h": 1700,
+   "title": "S13 Evidence detail and history",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Admin.dc.html": {
+   "x": 1520,
+   "y": 14300,
+   "w": 1440,
+   "h": 2200,
+   "title": "S14 Administration and connections",
+   "expand": "fill",
+   "is_interactive": true
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "DesignSystem.dc.html",
+  "Mandate.dc.html",
+  "Opportunities.dc.html",
+  "Compare.dc.html",
+  "Thesis.dc.html",
+  "Sizing.dc.html",
+  "Feasibility.dc.html",
+  "Economics.dc.html",
+  "Validation.dc.html",
+  "Decisions.dc.html",
+  "Pilot.dc.html",
+  "Outcomes.dc.html",
+  "MyWork.dc.html",
+  "Evidence.dc.html",
+  "Admin.dc.html"
+ ],
+ "notes": {
+  "n1": {
+   "x": 0,
+   "y": 0,
+   "text": "Foundations",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n2": {
+   "x": 0,
+   "y": 3820,
+   "text": "Discover",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n3": {
+   "x": 0,
+   "y": 5740,
+   "text": "Assess",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n4": {
+   "x": 0,
+   "y": 8460,
+   "text": "Validate → Decide",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n5": {
+   "x": 0,
+   "y": 11380,
+   "text": "Execute → Review",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n6": {
+   "x": 0,
+   "y": 14000,
+   "text": "Supporting",
+   "kind": "title1",
+   "maxW": 3000
+  }
+ },
+ "designSystems": []
+}
