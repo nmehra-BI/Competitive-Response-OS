@@ -32,6 +32,7 @@ import {
 } from '@growth-os/fixtures-aster';
 import { hashFor, personRef, P } from '../../mocks/data';
 import { hasResults, ws, type Ws8cState } from '../decisions/mock-state';
+import { assumptionDisputes, scenario as assessmentScenario } from '../sizing/mock-state';
 
 const ME104 = cases[0];
 export const EXP_ID = exp03.id;
@@ -117,6 +118,25 @@ export function dispute(w: Ws8cState): Challenge {
   };
 }
 
+/**
+ * The open dispute shown on an assumption row. The fixture dispute (Daniel on 20% adoption) is
+ * WS8c journey state (replies, resolution); the assessment mocks (WS8b) can switch it off for the
+ * moment before step 9 (`adoptionDisputed: false`) and add disputes raised on S08.
+ */
+function openDisputeFor(a: (typeof assumptions)[number], w: Ws8cState): Challenge | null {
+  const fixtureOn = a.key === 'ASM-01' && a.disputed && assessmentScenario().adoptionDisputed !== false;
+  if (fixtureOn) return dispute(w);
+  return (
+    assumptionDisputes().find(
+      (c) => c.id !== adoptionDispute.id && c.targetId === a.id && c.status === 'open',
+    ) ?? null
+  );
+}
+
+/**
+ * The one assumption register for ME-104 (S08, S09, S10 read it). Shared by the WS8b and WS8c
+ * mocks so a dispute raised on S08 shows on S09 and a reply on S09 shows on S08.
+ */
 export function assumptionList(): Assumption[] {
   const w = ws();
   const linked = w.exp === 'none' ? [] : experimentLinks(w);
@@ -172,7 +192,7 @@ export function assumptionList(): Assumption[] {
         createdAt: version > 1 ? gates.g2.staleVariant.changedAt : J.sizingCommitted,
       },
       registerGroup: registerGroupOf(a.sensitivity, a.evidenceQuality),
-      openDispute: a.key === 'ASM-01' && a.disputed ? dispute(w) : null,
+      openDispute: openDisputeFor(a, w),
       usedBy: USED_BY[a.key] ?? [],
       rowVersion: version,
     };

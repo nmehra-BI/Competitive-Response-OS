@@ -39,6 +39,7 @@ import {
 } from '@growth-os/fixtures-aster';
 import { personRef } from '../../mocks/data';
 import { state as ws7 } from '../../mocks/state';
+import { ws as ws8c } from '../decisions/mock-state';
 import { economicsEngine } from '../economics/engine/adapter';
 import { sizingEngine } from './engine/adapter';
 
@@ -400,6 +401,8 @@ export function resolveDuplicate(keepCohortId: string, excludeCohortId: string):
 // ---------------------------------------------------------------------------
 
 export function fixtureDispute(): Challenge {
+  // The thread (replies, resolution) is WS8c journey state, shared with S09 (D-061).
+  const w = ws8c();
   return {
     id: adoptionDispute.id,
     kind: 'dispute',
@@ -409,17 +412,25 @@ export function fixtureDispute(): Challenge {
     raisedBy: personRef(adoptionDispute.raisedBy),
     statement: adoptionDispute.statement,
     proposedValue: adoptionDispute.proposedValue,
-    status: 'open',
-    resolution: null,
-    resolvedBy: null,
-    resolvedAt: null,
+    status: w.disputeResolved ? 'resolved' : 'open',
+    resolution: w.disputeResolved?.text ?? null,
+    resolvedBy: w.disputeResolved ? personRef(w.disputeResolved.by) : null,
+    resolvedAt: w.disputeResolved?.at ?? null,
     createdAt: adoptionDispute.raisedAt,
-    replies: adoptionDispute.replies.map((r, i) => ({
-      id: wsId(22, i + 1),
-      author: personRef(r.authorId),
-      body: r.body,
-      createdAt: r.at,
-    })),
+    replies: [
+      ...adoptionDispute.replies.map((r, i) => ({
+        id: wsId(22, i + 1),
+        author: personRef(r.authorId),
+        body: r.body,
+        createdAt: r.at,
+      })),
+      ...w.disputeReplies.map((r, i) => ({
+        id: wsId(22, 100 + i),
+        author: personRef(r.authorId),
+        body: r.body,
+        createdAt: r.at,
+      })),
+    ],
   };
 }
 

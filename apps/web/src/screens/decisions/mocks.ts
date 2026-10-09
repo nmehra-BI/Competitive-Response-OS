@@ -7,9 +7,11 @@
 import { API, type GateRequest } from '@growth-os/contracts';
 import { cases, gates, people } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
-import { findCase, gateRequestById } from '../../mocks/data';
+import { findCase } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
 import { state } from '../../mocks/state';
+import { scoped } from '../mandate/mock-kit';
+import { convertedInThisTab } from '../opportunities/mocks';
 import {
   cannotDecideReason,
   G1_HASH,
@@ -48,34 +50,60 @@ function requestById(id: string): GateRequest | null {
   return null;
 }
 
+/**
+ * Shared endpoints claim only what this journey owns (see `scoped()` and D-061): ME-104's header
+ * (unless the discovery journey converted it in this tab), its G1/G2 preconditions, and the G1/G2
+ * requests. G0 requests fall through to the mandate mocks, X to the outcomes mocks, the rest to WS7.
+ */
+const ownsMe104 = (p: Record<string, string>) =>
+  findCase(p.caseRef ?? '')?.key === ME104.key && !convertedInThisTab(p.caseRef!);
+const ownsG1G2Rail = (p: Record<string, string>) =>
+  findCase(p.caseRef ?? '')?.key === ME104.key && (p.gateCode === 'G1' || p.gateCode === 'G2');
+const ownsGate = (p: Record<string, string>) => p.id === G1_ID || p.id === G2_ID;
+
 export const handlers: HttpHandler[] = [
   // ----- Case envelope follows the journey moment -----
-  mock(API.cases.header, ({ params }) => header(requireCase(params.caseRef))),
+  scoped(
+    API.cases.header,
+    ownsMe104,
+    mock(API.cases.header, ({ params }) => header(requireCase(params.caseRef))),
+  ),
 
-  mock(API.gates.rail, ({ params }) => {
-    requireCase(params.caseRef);
-    return preconditionsFor(params.gateCode);
-  }),
+  scoped(
+    API.gates.rail,
+    ownsG1G2Rail,
+    mock(API.gates.rail, ({ params }) => {
+      requireCase(params.caseRef);
+      return preconditionsFor(params.gateCode);
+    }),
+  ),
 
-  mock(API.gates.get, ({ params }) => {
-    ws();
-    const req =
-      params.id === G1_ID || params.id === G2_ID ? requestById(params.id) : gateRequestById(params.id);
-    if (!req) throw notFound();
-    return req;
-  }),
+  scoped(
+    API.gates.get,
+    ownsGate,
+    mock(API.gates.get, ({ params }) => {
+      ws();
+      const req = requestById(params.id);
+      if (!req) throw notFound();
+      return req;
+    }),
+  ),
 
-  mock(API.gates.package, ({ params, query, viewerId }) => {
-    ws();
-    const pkg =
-      params.id === G1_ID
-        ? g1Package(viewerId)
-        : params.id === G2_ID
-          ? g2Package(viewerId, query.version, query.compareTo)
-          : null;
-    if (!pkg) throw notFound();
-    return pkg;
-  }),
+  scoped(
+    API.gates.package,
+    ownsGate,
+    mock(API.gates.package, ({ params, query, viewerId }) => {
+      ws();
+      const pkg =
+        params.id === G1_ID
+          ? g1Package(viewerId)
+          : params.id === G2_ID
+            ? g2Package(viewerId, query.version, query.compareTo)
+            : null;
+      if (!pkg) throw notFound();
+      return pkg;
+    }),
+  ),
 
   mock(
     API.gates.createRequest,
@@ -218,62 +246,66 @@ export const handlers: HttpHandler[] = [
     return { changes };
   }),
 
-  mock(
+  scoped(
     API.gates.decide,
-    persisting(({ params, body, viewerId }) => {
-      const w = ws();
-      const req = requestById(params.id);
-      if (!req) throw notFound();
-      assertDecider(viewerId);
-      if (params.id === G1_ID) {
-        if (w.g1 !== 'awaiting')
+    ownsGate,
+    mock(
+      API.gates.decide,
+      persisting(({ params, body, viewerId }) => {
+        const w = ws();
+        const req = requestById(params.id);
+        if (!req) throw notFound();
+        assertDecider(viewerId);
+        if (params.id === G1_ID) {
+          if (w.g1 !== 'awaiting')
+            throw new MockProblem('INVALID_TRANSITION', 'This gate has already been decided.');
+          if (body.snapshotHash !== G1_HASH)
+            throw new MockProblem('SNAPSHOT_HASH_MISMATCH', 'The snapshot you read is not the current one.');
+          if (body.disposition === 'abstain') return g1Package(viewerId)!;
+          w.g1Decision = {
+            disposition: body.disposition,
+            rationale: body.rationale,
+            by: viewerId!,
+            at: new Date().toISOString(),
+          };
+          w.g1 = 'approved';
+          if (body.disposition === 'approve' || body.disposition === 'approve_with_conditions')
+            w.exp = 'locked';
+          return g1Package(viewerId)!;
+        }
+        // G2
+        if (w.g2 !== 'submitted' || state.g2Decision)
           throw new MockProblem('INVALID_TRANSITION', 'This gate has already been decided.');
-        if (body.snapshotHash !== G1_HASH)
+        const current = g2Package(viewerId)!.snapshot;
+        if (isStale())
+          throw new MockProblem(
+            'SNAPSHOT_STALE',
+            `Snapshot v${current.version} is out of date. Refresh to create v${current.version + 1}.`,
+          );
+        if (body.snapshotId !== current.id) {
+          throw new MockProblem(
+            'SNAPSHOT_STALE',
+            'This snapshot was superseded. Read the current version before deciding.',
+          );
+        }
+        if (body.snapshotHash !== current.contentHash)
           throw new MockProblem('SNAPSHOT_HASH_MISMATCH', 'The snapshot you read is not the current one.');
-        if (body.disposition === 'abstain') return g1Package(viewerId)!;
-        w.g1Decision = {
+        if (body.disposition === 'approve_with_conditions' && body.conditions.length === 0)
+          throw new MockProblem(
+            'VALIDATION_FAILED',
+            'Add at least one condition or approve without conditions.',
+          );
+        const proposed = new Set(req.conditions.map((c) => c.text));
+        state.g2Decision = {
           disposition: body.disposition,
           rationale: body.rationale,
+          note: body.note,
           by: viewerId!,
           at: new Date().toISOString(),
+          conditions: body.conditions.filter((c) => !proposed.has(c.text)),
         };
-        w.g1 = 'approved';
-        if (body.disposition === 'approve' || body.disposition === 'approve_with_conditions')
-          w.exp = 'locked';
-        return g1Package(viewerId)!;
-      }
-      // G2
-      if (w.g2 !== 'submitted' || state.g2Decision)
-        throw new MockProblem('INVALID_TRANSITION', 'This gate has already been decided.');
-      const current = g2Package(viewerId)!.snapshot;
-      if (isStale())
-        throw new MockProblem(
-          'SNAPSHOT_STALE',
-          `Snapshot v${current.version} is out of date. Refresh to create v${current.version + 1}.`,
-        );
-      if (body.snapshotId !== current.id) {
-        throw new MockProblem(
-          'SNAPSHOT_STALE',
-          'This snapshot was superseded. Read the current version before deciding.',
-        );
-      }
-      if (body.snapshotHash !== current.contentHash)
-        throw new MockProblem('SNAPSHOT_HASH_MISMATCH', 'The snapshot you read is not the current one.');
-      if (body.disposition === 'approve_with_conditions' && body.conditions.length === 0)
-        throw new MockProblem(
-          'VALIDATION_FAILED',
-          'Add at least one condition or approve without conditions.',
-        );
-      const proposed = new Set(req.conditions.map((c) => c.text));
-      state.g2Decision = {
-        disposition: body.disposition,
-        rationale: body.rationale,
-        note: body.note,
-        by: viewerId!,
-        at: new Date().toISOString(),
-        conditions: body.conditions.filter((c) => !proposed.has(c.text)),
-      };
-      return g2Package(viewerId)!;
-    }),
+        return g2Package(viewerId)!;
+      }),
+    ),
   ),
 ];

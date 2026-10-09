@@ -4,7 +4,7 @@
  * economics engine; `mock()` validates every response against the contract.
  */
 import { API, type Challenge } from '@growth-os/contracts';
-import { people } from '@growth-os/fixtures-aster';
+import { adoptionDispute, people } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
 import { findCase, personRef } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
@@ -15,20 +15,16 @@ import {
   CASE_KEY,
   economicsResult,
   nowIso,
-  openDisputeFor,
   wsId,
 } from '../sizing/mock-state';
+import { scoped } from '../mandate/mock-kit';
+import { assumptionList } from '../validation/mock-data';
 import { economicsEngine } from './engine/adapter';
-import {
-  assumptionList,
-  committedVersion,
-  economicsCurrent,
-  economicsView,
-  financeReview,
-  setDriver,
-} from './mock-builders';
+import { committedVersion, economicsCurrent, economicsView, financeReview, setDriver } from './mock-builders';
 
 const notFound = () => new MockProblem('NOT_FOUND', 'Not found.');
+/** The fixture adoption dispute's thread is WS8c journey state (../validation); these claim the rest. */
+const ownsChallenge = (p: Record<string, string>) => p.id !== adoptionDispute.id;
 
 function requireMe104(caseRef: string) {
   const c = findCase(caseRef);
@@ -129,18 +125,14 @@ export const handlers: HttpHandler[] = [
   }),
 
   // ----- Assumption register slice -----
-  mock(API.assumptions.list, ({ params }) => {
-    requireMe104(params.caseRef);
-    return { items: assumptionList() };
-  }),
-
+  // assumptions.list is served by the shared register in ../validation (one register for S08–S10).
   mock(API.assumptions.dispute, ({ params, body, viewerId }) => {
     const a = assumptionList().find((x) => x.id === params.id);
     if (!a) throw notFound();
     if (a.owner.id === viewerId) {
       throw new MockProblem('FORBIDDEN', 'You own this assumption. Change its value with a reason instead.');
     }
-    if (openDisputeFor(a.id)) {
+    if (a.openDispute?.status === 'open') {
       throw new MockProblem('INVALID_TRANSITION', 'This assumption already has an open dispute.');
     }
     const c: Challenge = {
@@ -163,42 +155,54 @@ export const handlers: HttpHandler[] = [
     return c;
   }),
 
-  mock(API.assumptions.replyToChallenge, ({ params, body, viewerId }) => {
-    const c = findChallenge(params.id);
-    if (!c) throw notFound();
-    const reply = {
-      id: wsId(26, Date.now() % 1_000_000),
-      author: personRef(viewerId!),
-      body: body.body,
-      createdAt: nowIso(),
-    };
-    if (assessment.thesis.challenges[c.targetId]?.id === c.id) {
-      const t = assessment.thesis.challenges[c.targetId]!;
-      t.replies = [...t.replies, reply];
-      return t;
-    }
-    assessment.disputeReplies[c.id] = [...(assessment.disputeReplies[c.id] ?? []), reply];
-    return findChallenge(c.id)!;
-  }),
+  scoped(
+    API.assumptions.replyToChallenge,
+    ownsChallenge,
+    mock(API.assumptions.replyToChallenge, ({ params, body, viewerId }) => {
+      const c = findChallenge(params.id);
+      if (!c) throw notFound();
+      const reply = {
+        id: wsId(26, Date.now() % 1_000_000),
+        author: personRef(viewerId!),
+        body: body.body,
+        createdAt: nowIso(),
+      };
+      if (assessment.thesis.challenges[c.targetId]?.id === c.id) {
+        const t = assessment.thesis.challenges[c.targetId]!;
+        t.replies = [...t.replies, reply];
+        return t;
+      }
+      assessment.disputeReplies[c.id] = [...(assessment.disputeReplies[c.id] ?? []), reply];
+      return findChallenge(c.id)!;
+    }),
+  ),
 
-  mock(API.assumptions.resolveChallenge, ({ params, body, viewerId }) => {
-    const c = findChallenge(params.id);
-    if (!c) throw notFound();
-    if (c.status !== 'open') throw new MockProblem('INVALID_TRANSITION', 'This thread is already resolved.');
-    if (c.kind === 'dispute' && viewerId !== c.raisedBy.id && viewerId !== people.elena.id) {
-      throw new MockProblem('FORBIDDEN', 'Only the disputing reviewer or the sponsor can resolve a dispute.');
-    }
-    if (assessment.thesis.challenges[c.targetId]?.id === c.id) {
-      const t = assessment.thesis.challenges[c.targetId]!;
-      Object.assign(t, {
-        status: 'resolved',
-        resolution: body.resolution,
-        resolvedBy: personRef(viewerId!),
-        resolvedAt: nowIso(),
-      });
-      return t;
-    }
-    assessment.disputeResolved[c.id] = { resolution: body.resolution, byId: viewerId!, at: nowIso() };
-    return findChallenge(c.id)!;
-  }),
+  scoped(
+    API.assumptions.resolveChallenge,
+    ownsChallenge,
+    mock(API.assumptions.resolveChallenge, ({ params, body, viewerId }) => {
+      const c = findChallenge(params.id);
+      if (!c) throw notFound();
+      if (c.status !== 'open')
+        throw new MockProblem('INVALID_TRANSITION', 'This thread is already resolved.');
+      if (c.kind === 'dispute' && viewerId !== c.raisedBy.id && viewerId !== people.elena.id) {
+        throw new MockProblem(
+          'FORBIDDEN',
+          'Only the disputing reviewer or the sponsor can resolve a dispute.',
+        );
+      }
+      if (assessment.thesis.challenges[c.targetId]?.id === c.id) {
+        const t = assessment.thesis.challenges[c.targetId]!;
+        Object.assign(t, {
+          status: 'resolved',
+          resolution: body.resolution,
+          resolvedBy: personRef(viewerId!),
+          resolvedAt: nowIso(),
+        });
+        return t;
+      }
+      assessment.disputeResolved[c.id] = { resolution: body.resolution, byId: viewerId!, at: nowIso() };
+      return findChallenge(c.id)!;
+    }),
+  ),
 ];

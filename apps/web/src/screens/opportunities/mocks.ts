@@ -238,6 +238,14 @@ function conversionFor(caseRef: string): Conversion | null {
   return Object.values(st().converted).find((c) => c.caseKey === caseRef || c.caseId === caseRef) ?? null;
 }
 
+/**
+ * True when the discovery journey converted this case in this tab. Its header and activity then
+ * belong to these mocks; later-journey mocks (decisions) yield to them for the same case.
+ */
+export function convertedInThisTab(caseRef: string): boolean {
+  return !!conversionFor(caseRef);
+}
+
 function g0ApprovedText(): string {
   const at = findMandate('MD-21')?.g0?.decisions.find((d) => d.disposition === 'approve')?.at;
   return at

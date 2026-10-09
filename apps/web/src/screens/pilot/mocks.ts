@@ -35,6 +35,7 @@ import type { z } from 'zod';
 import { G2_HASH, G2_SNAPSHOT_ID, hashFor, mockId, P, personRef } from '../../mocks/data';
 import { mock, MockProblem, mswPath, problem } from '../../mocks/define';
 import { session } from '../../mocks/state';
+import { scoped } from '../mandate/mock-kit';
 import { at, audit, save, ws8d, type TaskSyncState } from '../history/journey';
 
 type In<S extends z.ZodTypeAny> = z.input<S>;
@@ -51,6 +52,8 @@ const PERMISSION_MESSAGE = 'assignee [Operations lead] is not a member of projec
 
 const notFound = () => new MockProblem('NOT_FOUND', 'Not found.');
 const isMe104 = (ref: string) => ref === ME104.key || ref === ME104.id;
+/** taskSync.* is shared with the validation mocks (VAL task set); these claim the PIL set only. */
+const ownsPilotTaskSet = (p: Record<string, string>) => p.id === TASK_SET_ID;
 
 function requireCase(ref: string) {
   if (!isMe104(ref)) throw notFound();
@@ -136,11 +139,9 @@ export function tasks(): In<typeof Task>[] {
       dueRule: t.dueRule,
       deliverable: t.deliverable,
       conditionKey: 'conditionKey' in t ? t.conditionKey : null,
-      status: s.blockedTasks[t.id]
-        ? 'blocked'
-        : activated() && t.ordinal === 1
-          ? 'in_progress'
-          : 'not_started',
+      status:
+        s.taskStatus?.[t.id]?.status ??
+        (s.blockedTasks[t.id] ? 'blocked' : activated() && t.ordinal === 1 ? 'in_progress' : 'not_started'),
       sync: {
         status: sync.status,
         connectionId: fid('connection', 2),
@@ -152,7 +153,7 @@ export function tasks(): In<typeof Task>[] {
         retryable: sync.retryable,
         confirmedAt: sync.confirmedAt,
       },
-      rowVersion: 1,
+      rowVersion: s.taskStatus?.[t.id]?.rowVersion ?? 1,
     };
   });
 }
@@ -309,6 +310,13 @@ function messageDraft() {
 // ---------------------------------------------------------------------------
 
 /** A read while "checking": the reconcile finds the issue on the second read (no resend). */
+/**
+ * A task in Checking is reconciled (found by its idempotency key) on the second read that comes at
+ * least RECONCILE_MS after the timeout, so the screen always shows "Checking" before "Confirmed"
+ * (the post-send refetch alone never confirms it).
+ */
+export const RECONCILE_MS = 1500;
+
 function advanceChecking() {
   const s = ws8d();
   let changed = false;
@@ -316,7 +324,7 @@ function advanceChecking() {
     const st = s.sync[t.id];
     if (st?.status !== 'checking') continue;
     st.checkingReads += 1;
-    if (st.checkingReads >= 2) {
+    if (st.checkingReads >= 2 && Date.now() - (st.checkingSince ?? 0) >= RECONCILE_MS) {
       st.status = 'confirmed';
       st.externalKey = t.externalKey;
       st.confirmedAt = at(J.pilotActivated);
@@ -377,6 +385,7 @@ function sendOne(t: (typeof pilotTasks)[number]) {
       lastErrorMessage: 'Jira did not answer in time · checking before any retry',
       retryable: false,
       checkingReads: 0,
+      checkingSince: Date.now(),
     });
   } else {
     Object.assign(st, {
@@ -610,12 +619,47 @@ export const handlers: HttpHandler[] = [
     };
   }),
 
+  // tasks.update (S11, My Work): internal status only; never changes sync status or passes a gate.
+  mock(API.pilot.updateTask, ({ params, body, viewerId, ifMatch }) => {
+    const t = tasks().find((x) => x.id === params.id);
+    if (!t) throw notFound();
+    if (viewerId === people.admin.id)
+      throw new MockProblem('FORBIDDEN', 'Administrators cannot change task status.');
+    if (viewerId !== t.owner?.id && viewerId !== people.jonas.id && viewerId !== people.maya.id)
+      throw new MockProblem(
+        'FORBIDDEN',
+        'Only the task owner, the pilot owner or the case owner can update it.',
+      );
+    if (ifMatch !== t.rowVersion)
+      throw new MockProblem('VERSION_CONFLICT', 'Someone updated this task. Reload to see the latest.');
+    const st = ws8d();
+    const status = body.status ?? t.status;
+    if (status !== 'blocked') delete st.blockedTasks[t.id];
+    (st.taskStatus ??= {})[t.id] = { status, rowVersion: t.rowVersion + 1 };
+    audit({
+      at: at(J.pilotActivated, 1),
+      actorId: viewerId,
+      actorKind: 'human',
+      actorRole: viewerId === people.jonas.id ? 'pilot_owner' : null,
+      action: 'task.updated',
+      objectType: 'task',
+      objectId: t.id,
+      objectVersion: t.rowVersion + 1,
+      summary: `Set “${t.title}” to ${status.replace(/_/g, ' ')}`,
+      rule: 'task.update',
+    });
+    save();
+    return tasks().find((x) => x.id === params.id)!;
+  }),
+
   mock(API.pilot.reportBlocker, ({ params, body, viewerId }) => {
     const t = tasks().find((x) => x.id === params.id);
     if (!t) throw notFound();
     if (viewerId === people.admin.id)
       throw new MockProblem('FORBIDDEN', 'Administrators cannot report blockers.');
-    ws8d().blockedTasks[t.id] = body.text;
+    const st = ws8d();
+    st.blockedTasks[t.id] = body.text;
+    (st.taskStatus ??= {})[t.id] = { status: 'blocked', rowVersion: t.rowVersion + 1 };
     audit({
       at: at(J.pilotActivated, 1),
       actorId: viewerId,
@@ -632,73 +676,89 @@ export const handlers: HttpHandler[] = [
     return tasks().find((x) => x.id === params.id)!;
   }),
 
-  mock(API.taskSync.get, ({ params }) => {
-    requireTaskSet(params.id);
-    ensureVariantSync();
-    advanceChecking();
-    return taskSet();
-  }),
+  scoped(
+    API.taskSync.get,
+    ownsPilotTaskSet,
+    mock(API.taskSync.get, ({ params }) => {
+      requireTaskSet(params.id);
+      ensureVariantSync();
+      advanceChecking();
+      return taskSet();
+    }),
+  ),
 
-  mock(API.taskSync.preview, ({ params, viewerId }) => {
-    requireTaskSet(params.id);
-    requirePilotOwner(viewerId, 'preview external tasks');
-    requireSendable();
-    return previewFor();
-  }),
+  scoped(
+    API.taskSync.preview,
+    ownsPilotTaskSet,
+    mock(API.taskSync.preview, ({ params, viewerId }) => {
+      requireTaskSet(params.id);
+      requirePilotOwner(viewerId, 'preview external tasks');
+      requireSendable();
+      return previewFor();
+    }),
+  ),
 
-  mock(API.taskSync.send, ({ params, body, viewerId }) => {
-    requireTaskSet(params.id);
-    requirePilotOwner(viewerId, 'create external tasks');
-    requireSendable();
-    const s = ws8d();
-    if (!s.preview || s.preview.id !== body.previewId || s.preview.hash !== body.previewHash)
-      throw new MockProblem('PRECONDITIONS_UNMET', 'Preview the tasks again before creating them.', {
-        blockers: [{ key: 'preview_current', message: 'The preview is not current.' }],
+  scoped(
+    API.taskSync.send,
+    ownsPilotTaskSet,
+    mock(API.taskSync.send, ({ params, body, viewerId }) => {
+      requireTaskSet(params.id);
+      requirePilotOwner(viewerId, 'create external tasks');
+      requireSendable();
+      const s = ws8d();
+      if (!s.preview || s.preview.id !== body.previewId || s.preview.hash !== body.previewHash)
+        throw new MockProblem('PRECONDITIONS_UNMET', 'Preview the tasks again before creating them.', {
+          blockers: [{ key: 'preview_current', message: 'The preview is not current.' }],
+        });
+      audit({
+        at: at(J.pilotActivated, 1),
+        actorId: viewerId,
+        actorKind: 'human',
+        actorRole: 'pilot_owner',
+        action: 'task_set.send_requested',
+        objectType: 'task_set',
+        objectId: TASK_SET_ID,
+        objectVersion: s.preview.n,
+        summary: 'Created 6 tasks in Jira project PIL from preview',
+        rule: 'task_sync.send',
       });
-    audit({
-      at: at(J.pilotActivated, 1),
-      actorId: viewerId,
-      actorKind: 'human',
-      actorRole: 'pilot_owner',
-      action: 'task_set.send_requested',
-      objectType: 'task_set',
-      objectId: TASK_SET_ID,
-      objectVersion: s.preview.n,
-      summary: 'Created 6 tasks in Jira project PIL from preview',
-      rule: 'task_sync.send',
-    });
-    for (const t of pilotTasks) {
-      const st = syncFor(t.id);
-      if (st.status === 'confirmed' || st.status === 'checking') continue; // never re-sent
-      sendOne(t);
-    }
-    save();
-    return taskSet();
-  }),
+      for (const t of pilotTasks) {
+        const st = syncFor(t.id);
+        if (st.status === 'confirmed' || st.status === 'checking') continue; // never re-sent
+        sendOne(t);
+      }
+      save();
+      return taskSet();
+    }),
+  ),
 
-  mock(API.taskSync.retry, ({ params, body, viewerId }) => {
-    requireTaskSet(params.id);
-    requirePilotOwner(viewerId, 'retry external tasks');
-    requireSendable();
-    const s = ws8d();
-    const failed = pilotTasks.filter((t) => s.sync[t.id]?.status === 'failed');
-    const chosen = body.taskIds?.length ? failed.filter((t) => body.taskIds!.includes(t.id)) : failed;
-    audit({
-      at: at(J.pilotActivated, 1),
-      actorId: viewerId,
-      actorKind: 'human',
-      actorRole: 'pilot_owner',
-      action: 'task_set.retry_requested',
-      objectType: 'task_set',
-      objectId: TASK_SET_ID,
-      objectVersion: null,
-      summary: `Retried ${chosen.length} failed task${chosen.length === 1 ? '' : 's'} · same references`,
-      rule: 'task_sync.retry',
-    });
-    for (const t of chosen) sendOne(t);
-    save();
-    return taskSet();
-  }),
+  scoped(
+    API.taskSync.retry,
+    ownsPilotTaskSet,
+    mock(API.taskSync.retry, ({ params, body, viewerId }) => {
+      requireTaskSet(params.id);
+      requirePilotOwner(viewerId, 'retry external tasks');
+      requireSendable();
+      const s = ws8d();
+      const failed = pilotTasks.filter((t) => s.sync[t.id]?.status === 'failed');
+      const chosen = body.taskIds?.length ? failed.filter((t) => body.taskIds!.includes(t.id)) : failed;
+      audit({
+        at: at(J.pilotActivated, 1),
+        actorId: viewerId,
+        actorKind: 'human',
+        actorRole: 'pilot_owner',
+        action: 'task_set.retry_requested',
+        objectType: 'task_set',
+        objectId: TASK_SET_ID,
+        objectVersion: null,
+        summary: `Retried ${chosen.length} failed task${chosen.length === 1 ? '' : 's'} · same references`,
+        rule: 'task_sync.retry',
+      });
+      for (const t of chosen) sendOne(t);
+      save();
+      return taskSet();
+    }),
+  ),
 
   // CSV export (outage fallback). Not JSON, so it is a raw handler with the same session rule.
   http.get(mswPath(API.taskSync.exportCsv), ({ params }) => {

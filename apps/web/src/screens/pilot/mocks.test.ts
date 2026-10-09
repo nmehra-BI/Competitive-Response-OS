@@ -5,11 +5,11 @@
  */
 import { API } from '@growth-os/contracts';
 import { fid, people, pilotTasks } from '@growth-os/fixtures-aster';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { api, ApiProblem } from '../../lib/api-client';
 import { mockServer, resetMockState, resetReplay, session } from '../../mocks/node';
 import { seedWs8d, ws8d } from '../history/journey';
-import { TASK_SET_ID } from './mocks';
+import { RECONCILE_MS, TASK_SET_ID } from './mocks';
 
 beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
@@ -148,8 +148,15 @@ describe('S11 pilot mocks', () => {
     });
     expect(sent.tasks[3]!.sync.status).toBe('checking');
     expect(sent.summaryText).toBe('5 of 6 tasks confirmed in Jira · 1 checking');
+    // Reads straight after the send (the screen's refetch) never reconcile: Checking stays visible.
     await api(API.pilot.get, { params: { caseRef } });
+    const early = await api(API.pilot.get, { params: { caseRef } });
+    expect(early.taskSet!.tasks[3]!.sync.status).toBe('checking');
+    // The next poll after the reconcile delay finds the issue by its key.
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + RECONCILE_MS);
     const after = await api(API.pilot.get, { params: { caseRef } });
+    clock.mockRestore();
     expect(after.taskSet!.tasks[3]!.sync).toMatchObject({
       status: 'confirmed',
       externalKey: 'PIL-14',

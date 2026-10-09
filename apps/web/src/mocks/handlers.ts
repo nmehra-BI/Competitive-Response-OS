@@ -203,7 +203,22 @@ export const handlers: HttpHandler[] = [
 
 type ScreenMockModule = { handlers?: HttpHandler[] };
 
-/** Handlers contributed by screen streams in `src/screens/<screen>/mocks.ts`. */
+/**
+ * Handlers contributed by screen streams in `src/screens/<screen>/mocks.ts`, in folder order; the
+ * first matching handler wins. An endpoint answered by more than one screen must be claimed by id
+ * with `scoped()` (screens/mandate/mock-kit.ts) so no stream shadows another (D-061):
+ *
+ * | Endpoint                         | Claimed by                                                  |
+ * |----------------------------------|-------------------------------------------------------------|
+ * | cases.header                     | opportunities: cases converted in this tab · decisions: ME-104 · else WS7 |
+ * | gates.get / package / decide     | decisions: G1, G2 · mandate: G0 of its mandates · else WS7  |
+ * | gates.preconditions              | decisions: ME-104 G1/G2 · outcomes: X · else WS7            |
+ * | taskSync.get / preview / send    | pilot: PIL task set · validation: VAL task set              |
+ * | assumptions.list                 | validation (one register for S08–S10, WS8b disputes merged) |
+ * | assumptions.replyTo/resolveChallenge | validation: the fixture adoption dispute · economics: the rest |
+ * | admin.connections                | admin (stateful; supersedes WS7)                            |
+ * | lineage.get                      | sizing: ME-104 · else WS7                                   |
+ */
 export function screenHandlers(): HttpHandler[] {
   const mods = import.meta.glob<ScreenMockModule>('../screens/*/mocks.ts', { eager: true });
   return Object.values(mods).flatMap((m) => m.handlers ?? []);

@@ -8,7 +8,7 @@
  *
  *   sessionStorage.setItem('growth-os:ws8d-mocks', JSON.stringify({ seed: { pilotVariant: 'expired' } }))
  */
-import type { PrincipalKind, RoleCode, SyncStatus } from '@growth-os/contracts';
+import type { PrincipalKind, RoleCode, SyncStatus, TaskStatus } from '@growth-os/contracts';
 import {
   journeyMoments as J,
   outcomeObservations,
@@ -40,6 +40,8 @@ export interface TaskSyncState {
   confirmedAt: string | null;
   /** Reads while "checking" before the reconcile finds the issue (timeout-after-success). */
   checkingReads: number;
+  /** Wall-clock ms when the task entered Checking (reconcile never completes instantly). */
+  checkingSince?: number;
 }
 
 export interface ObservationState {
@@ -90,6 +92,8 @@ export interface Ws8dState {
   timeoutFaultArmed: boolean;
   sync: Record<string, TaskSyncState>;
   blockedTasks: Record<string, string>;
+  /** Internal task status set through tasks.update (S11, My Work), with the task row version. */
+  taskStatus?: Record<string, { status: TaskStatus; rowVersion: number }>;
   messageDraft: { title: string; body: string; origin: 'human' | 'ai' | 'ai_edited'; rowVersion: number };
   scopeChanges: number;
   observations: ObservationState[];
@@ -137,6 +141,7 @@ function initial(seed: Seed = {}): Ws8dState {
     timeoutFaultArmed: v === 'timeout',
     sync: {},
     blockedTasks: {},
+    taskStatus: {},
     messageDraft: {
       title: 'Welcome note to the 4 pilot site contacts',
       body: 'Thank you for joining the 90-day monitoring pilot. Your site lead will contact you to schedule installation…',

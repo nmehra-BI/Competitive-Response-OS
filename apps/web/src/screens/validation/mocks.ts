@@ -11,6 +11,7 @@ import { findCase } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
 import { state } from '../../mocks/state';
 import { G2_ID } from '../decisions/mock-data';
+import { scoped } from '../mandate/mock-kit';
 import { hasResults, persisting, setStale, ws } from '../decisions/mock-state';
 import {
   assumptionList,
@@ -26,6 +27,8 @@ import {
 } from './mock-data';
 
 const notFound = () => new MockProblem('NOT_FOUND', 'Not found.');
+/** taskSync.* is shared with the pilot mocks (PIL task set); these claim the VAL task set only. */
+const ownsValidationTaskSet = (p: Record<string, string>) => p.id === TASK_SET_ID;
 const ME104 = cases[0];
 const ADOPTION_ID = assumptions[0].id;
 const now = () => new Date().toISOString();
@@ -201,53 +204,68 @@ export const handlers: HttpHandler[] = [
   ),
 
   // ----- Validation tasks (honest sync) -----
-  mock(
+  scoped(
     API.taskSync.get,
-    persisting(({ params }) => {
-      const w = ws();
-      if (params.id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
-      const out = taskSet();
-      // The simulated tool answers on the next poll: "Sending…" first, then "Confirmed · VAL-n".
-      if (w.tasks === 'sending') w.tasks = 'sent';
-      return out;
-    }),
+    ownsValidationTaskSet,
+    mock(
+      API.taskSync.get,
+      persisting(({ params }) => {
+        const w = ws();
+        if (params.id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
+        const out = taskSet();
+        // The simulated tool answers on the next poll: "Sending…" first, then "Confirmed · VAL-n".
+        if (w.tasks === 'sending') w.tasks = 'sent';
+        return out;
+      }),
+    ),
   ),
 
-  mock(
+  scoped(
     API.taskSync.preview,
-    persisting(({ params, viewerId }) => {
-      const w = ws();
-      if (params.id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
-      if (viewerId !== people.maya.id)
-        throw new MockProblem('FORBIDDEN', 'Only the experiment owner creates validation tasks.');
-      if (w.tasks === 'sent' || w.tasks === 'sending')
-        throw new MockProblem('INVALID_TRANSITION', 'These tasks were already created.');
-      // A preview is a dry run: it writes nothing and leaves every task "Not sent".
-      w.previewId = PREVIEW_ID;
-      return taskPreview();
-    }),
+    ownsValidationTaskSet,
+    mock(
+      API.taskSync.preview,
+      persisting(({ params, viewerId }) => {
+        const w = ws();
+        if (params.id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
+        if (viewerId !== people.maya.id)
+          throw new MockProblem('FORBIDDEN', 'Only the experiment owner creates validation tasks.');
+        if (w.tasks === 'sent' || w.tasks === 'sending')
+          throw new MockProblem('INVALID_TRANSITION', 'These tasks were already created.');
+        // A preview is a dry run: it writes nothing and leaves every task "Not sent".
+        w.previewId = PREVIEW_ID;
+        return taskPreview();
+      }),
+    ),
   ),
 
-  mock(
+  scoped(
     API.taskSync.send,
-    persisting(({ params, body, viewerId }) => {
-      const w = ws();
-      if (params.id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
-      if (viewerId !== people.maya.id)
-        throw new MockProblem('FORBIDDEN', 'Only the experiment owner creates validation tasks.');
-      if (w.tasks === 'sent' || w.tasks === 'sending') return taskSet();
-      if (body.previewId !== w.previewId || body.previewHash !== PREVIEW_HASH)
-        throw new MockProblem(
-          'PRECONDITIONS_UNMET',
-          'The plan changed or the preview expired. Preview again.',
-          {
-            blockers: [
-              { key: 'preview_current', message: 'The plan changed or the preview expired. Preview again.' },
-            ],
-          },
-        );
-      w.tasks = 'sending';
-      return taskSet();
-    }),
+    ownsValidationTaskSet,
+    mock(
+      API.taskSync.send,
+      persisting(({ params, body, viewerId }) => {
+        const w = ws();
+        if (params.id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
+        if (viewerId !== people.maya.id)
+          throw new MockProblem('FORBIDDEN', 'Only the experiment owner creates validation tasks.');
+        if (w.tasks === 'sent' || w.tasks === 'sending') return taskSet();
+        if (body.previewId !== w.previewId || body.previewHash !== PREVIEW_HASH)
+          throw new MockProblem(
+            'PRECONDITIONS_UNMET',
+            'The plan changed or the preview expired. Preview again.',
+            {
+              blockers: [
+                {
+                  key: 'preview_current',
+                  message: 'The plan changed or the preview expired. Preview again.',
+                },
+              ],
+            },
+          );
+        w.tasks = 'sending';
+        return taskSet();
+      }),
+    ),
   ),
 ];
