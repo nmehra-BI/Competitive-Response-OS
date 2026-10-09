@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EconomicsOutput, SizingOutput } from '@growth-os/contracts';
 import { ECONOMICS_ENGINE_VERSION, SIZING_ENGINE_VERSION } from '@growth-os/domain';
-import { expectedSizing, gates, people, sources } from '@growth-os/fixtures-aster';
+import { expectedSizing, gates, mandate as md21, people, sources } from '@growth-os/fixtures-aster';
 import { createDb, sql, withTenant, type Db } from '../src';
 import { AlreadySeededError, randomRemap, seedAster, type SeedResult } from '../src/seed';
 import { economicsGoldenMismatches, sizingGoldenMismatches } from '../src/seed/outputs';
@@ -58,7 +58,7 @@ describe('aster-start', () => {
       expect(g0.status).toBe('approved');
       const snaps = await tx
         .selectFrom('platform.decision_snapshot')
-        .select(['version', 'status', 'content_hash'])
+        .select(['version', 'status', 'content_hash', 'content'])
         .where('gate_request_id', '=', g0.id)
         .orderBy('version')
         .execute();
@@ -66,6 +66,12 @@ describe('aster-start', () => {
         [1, 'superseded'],
         [2, 'current'],
       ]);
+      // D-036: a standalone G0 names the mandate as its subject.
+      expect((snaps[1]!.content as { subject?: unknown }).subject).toEqual({
+        type: 'mandate',
+        id: start.id(md21.id),
+        key: md21.key,
+      });
       const approvals = await tx
         .selectFrom('platform.approval')
         .select(['disposition', 'snapshot_hash'])

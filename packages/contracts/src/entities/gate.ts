@@ -118,6 +118,11 @@ export const SnapshotContent = z.object({
   schemaVersion: z.literal(1),
   caseId: Id,
   caseKey: DisplayKey,
+  /**
+   * D-036 (CR-WS1-2, additive): what the gate decides on. A standalone G0 has no case yet; its subject
+   * is the mandate, and caseId/caseKey repeat the mandate id/key for compatibility. Absent = the case.
+   */
+  subject: z.object({ type: z.enum(['case', 'mandate']), id: Id, key: DisplayKey }).optional(),
   gateCode: GateCode,
   ask: z.string(),
   scope: GateScope,

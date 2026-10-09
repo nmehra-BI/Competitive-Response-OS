@@ -325,6 +325,7 @@ function g0Content(s: SeedCtx, versionId: string, version: number): SnapshotCont
     // A standalone G0 has no case yet: the mandate is the subject (gate_request.subject_type = 'mandate').
     caseId: s.R.id(mandate.id),
     caseKey: mandate.key,
+    subject: { type: 'mandate', id: s.R.id(mandate.id), key: mandate.key }, // D-036
     gateCode: 'G0',
     ask: `Approve the mandate scope: ${v2.objective}`,
     scope: {
