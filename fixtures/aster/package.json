@@ -1,0 +1,17 @@
+{
+  "name": "@growth-os/fixtures-aster",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canonical Aster Industrial Systems fixture (PRD §6, §15). Illustrative, synthetic data. Seeds dev, drives golden tests and the e2e journey.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*"
+  }
+}
