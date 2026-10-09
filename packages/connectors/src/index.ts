@@ -5,6 +5,10 @@ import { createHash } from 'node:crypto';
 
 export * from './task-connector';
 export * from './simulated/simulated-connector';
+export * from './simulated/faults';
+export * from './simulated/memory-store';
+export * from './simulated/pg-store';
+export * from './factory';
 
 /**
  * FROZEN idempotency key for an external task write (D-021): stable across retries, previews and

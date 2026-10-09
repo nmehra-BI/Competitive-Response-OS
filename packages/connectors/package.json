@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@growth-os/contracts": "workspace:*"
+    "@growth-os/contracts": "workspace:*",
+    "kysely": "^0.27.5"
   }
 }
