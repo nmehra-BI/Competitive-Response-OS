@@ -15,6 +15,7 @@ import {
   businessUnits,
   fid,
   cases,
+  comparison,
   connections,
   connectorMappings,
   gatePolicies,
@@ -552,6 +553,80 @@ async function seedOpportunities(s: SeedCtx): Promise<void> {
   });
 }
 
+/**
+ * The reviewers' rating sheet for the four MD-21 candidates (D-093): ratings 1–3 by Priya (fit), Jonas
+ * (access) and Maya (evidence), Unknown where nobody rated, and the incomparable boundary of OPP-09.
+ * Ratings belong to the candidate, so S04 reopens this comparison in the journey (step 4) and the
+ * exclusion is Maya's own act there.
+ */
+async function seedComparisonRatings(s: SeedCtx): Promise<void> {
+  const { tx, R, tenantId } = s;
+  const U = people;
+  const U_maya = R.id(U.maya.id);
+  const cmpId = R.id(comparison.id);
+  await tx
+    .insertInto('me.comparison')
+    .values({
+      id: cmpId,
+      tenant_id: tenantId,
+      mandate_id: R.id(mandate.id),
+      opportunity_ids: comparison.opportunityKeys.map((k) => opportunityId(s, k)),
+      common_unit_text: comparison.commonUnit,
+      created_by: U_maya,
+      created_at: at(journeyMoments.compared),
+    })
+    .execute();
+  await tx
+    .insertInto('me.comparison_weights_version')
+    .values({
+      tenant_id: tenantId,
+      comparison_id: cmpId,
+      version: comparison.weights.version,
+      product_fit: comparison.weights.productFit,
+      channel_access: comparison.weights.channelAccess,
+      evidence_coverage: comparison.weights.evidenceCoverage,
+      applied_by: U_maya,
+      applied_at: at(journeyMoments.compared),
+    })
+    .execute();
+  const raters = { productFit: U.priya, channelAccess: U.jonas, evidenceCoverage: U.maya } as const;
+  const attr = {
+    productFit: 'product_fit',
+    channelAccess: 'channel_access',
+    evidenceCoverage: 'evidence_coverage',
+  } as const;
+  for (const key of comparison.opportunityKeys) {
+    const ratings = comparison.ratings[key];
+    for (const k of ['productFit', 'channelAccess', 'evidenceCoverage'] as const)
+      await tx
+        .insertInto('me.comparison_cell')
+        .values({
+          tenant_id: tenantId,
+          comparison_id: cmpId,
+          opportunity_id: opportunityId(s, key),
+          attribute: attr[k],
+          rating: ratings[k],
+          value_text: ratings[k] === null ? 'Unknown' : null,
+          rated_by: ratings[k] === null ? null : R.id(raters[k].id),
+        })
+        .execute();
+    const o = opportunities.find((x) => x.key === key) as
+      Partial<{ incomparableBoundary: string }> | undefined;
+    if (o?.incomparableBoundary)
+      await tx
+        .insertInto('me.comparison_cell')
+        .values({
+          tenant_id: tenantId,
+          comparison_id: cmpId,
+          opportunity_id: opportunityId(s, key),
+          attribute: 'market_boundary',
+          value_text: o.incomparableBoundary,
+          incomparable: true,
+        })
+        .execute();
+  }
+}
+
 /** The other BU Water cases on S01 (ME-102, ME-105, ME-097). ME-104 is created by the journey. */
 export async function seedOtherCases(s: SeedCtx): Promise<void> {
   const { tx, R, tenantId } = s;
@@ -600,6 +675,7 @@ export async function seedStart(s: SeedCtx): Promise<void> {
   await seedSources(s);
   await seedMandate(s);
   await seedOpportunities(s);
+  await seedComparisonRatings(s);
   await seedOtherCases(s);
   // Journey: converting OPP-07 creates ME-104 (taken keys are skipped by allocateDisplayKey),
   // Maya creates EXP-03; new sources continue after SRC-040.

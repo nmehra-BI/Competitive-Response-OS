@@ -144,21 +144,19 @@ describe('comparisons', () => {
     ]);
   });
 
-  it('a new comparison on aster-start has Unknown cells and ranks nothing', async () => {
+  it('a new comparison on aster-start carries the reviewers’ ratings; a missing rating stays Unknown (D-093)', async () => {
     const res = await api(w, API.comparisons.create, await w.cookie('a', 'maya'), {
       body: { mandateId: w.tenants.a!.id(mandate.id), opportunityRefs: ['OPP-07', 'OPP-14'] },
     });
     const c = Comparison.parse(res.json());
-    // Every rated cell is Unknown (null, never 0); growth evidence is the candidate's own quality.
     const rated = c.cells.filter((x) => x.attribute !== 'growth_evidence');
     expect(rated.length).toBe(6);
-    expect(rated.every((x) => x.rating === null && x.unknown)).toBe(true);
-    expect(c.cells.filter((x) => x.attribute === 'growth_evidence').map((x) => x.rating)).toEqual([
-      null,
-      null,
-    ]);
-    expect(c.ranking.every((r) => !r.ranked && r.reason!.startsWith('Not ranked — 3 inputs missing'))).toBe(
-      true,
-    );
+    // OPP-14 has no channel-access rating: Unknown (null, never 0).
+    const unknown = rated.filter((x) => x.rating === null);
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]).toMatchObject({ attribute: 'channel_access', unknown: true });
+    const r14 = c.ranking.find((r) => r.opportunityId === oppId(w.tenants.a!, 'OPP-14'));
+    expect(r14?.ranked).toBe(false);
+    expect(r14?.reason).toMatch(/^Not ranked — 1 input missing/);
   });
 });

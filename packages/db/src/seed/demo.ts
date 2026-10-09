@@ -26,7 +26,6 @@ import {
   gates,
   journeyMoments,
   mandate,
-  opportunities,
   outboundDraft,
   outcomeTargets,
   people,
@@ -141,69 +140,14 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
     .where('id', '=', opportunityId(s, 'OPP-12'))
     .execute();
 
+  // The reviewers' rating sheet is seeded by aster-start (D-093); the demo adds Maya's pick and the
+  // exclusion she made on S04.
   const cmpId = R.id(comparison.id);
   await tx
-    .insertInto('me.comparison')
-    .values({
-      id: cmpId,
-      tenant_id: tenantId,
-      mandate_id: R.id(mandate.id),
-      opportunity_ids: comparison.opportunityKeys.map((k) => opportunityId(s, k)),
-      common_unit_text: comparison.commonUnit,
-      selected_opportunity_id: opportunityId(s, 'OPP-07'),
-      created_by: maya,
-      created_at: at(journeyMoments.compared),
-    })
+    .updateTable('me.comparison')
+    .set({ selected_opportunity_id: opportunityId(s, 'OPP-07') })
+    .where('id', '=', cmpId)
     .execute();
-  await tx
-    .insertInto('me.comparison_weights_version')
-    .values({
-      tenant_id: tenantId,
-      comparison_id: cmpId,
-      version: comparison.weights.version,
-      product_fit: comparison.weights.productFit,
-      channel_access: comparison.weights.channelAccess,
-      evidence_coverage: comparison.weights.evidenceCoverage,
-      applied_by: maya,
-      applied_at: at(journeyMoments.compared),
-    })
-    .execute();
-  const raters = { productFit: U.priya, channelAccess: U.jonas, evidenceCoverage: U.maya } as const;
-  const attr = {
-    productFit: 'product_fit',
-    channelAccess: 'channel_access',
-    evidenceCoverage: 'evidence_coverage',
-  } as const;
-  for (const key of comparison.opportunityKeys) {
-    const ratings = comparison.ratings[key];
-    for (const k of ['productFit', 'channelAccess', 'evidenceCoverage'] as const)
-      await tx
-        .insertInto('me.comparison_cell')
-        .values({
-          tenant_id: tenantId,
-          comparison_id: cmpId,
-          opportunity_id: opportunityId(s, key),
-          attribute: attr[k],
-          rating: ratings[k],
-          value_text: ratings[k] === null ? 'Unknown' : null,
-          rated_by: ratings[k] === null ? null : R.id(raters[k].id),
-        })
-        .execute();
-    const o = opportunities.find((x) => x.key === key) as
-      Partial<{ incomparableBoundary: string }> | undefined;
-    if (o?.incomparableBoundary)
-      await tx
-        .insertInto('me.comparison_cell')
-        .values({
-          tenant_id: tenantId,
-          comparison_id: cmpId,
-          opportunity_id: opportunityId(s, key),
-          attribute: 'market_boundary',
-          value_text: o.incomparableBoundary,
-          incomparable: true,
-        })
-        .execute();
-  }
   for (const key of comparison.excludedUntilNormalized)
     await tx
       .insertInto('me.comparison_exclusion')
