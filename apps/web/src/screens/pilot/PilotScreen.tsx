@@ -35,7 +35,7 @@ import {
   type DataTableColumn,
 } from '@growth-os/ui';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Modal } from '../../app/shell/Modal';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
 import { api } from '../../lib/api-client';
@@ -270,7 +270,14 @@ function PilotView({
       header: 'Task · milestone',
       cell: (t) => (
         <div>
-          <div style={{ fontWeight: 500 }}>{t.title}</div>
+          <Link
+            to={`?task=${encodeURIComponent(t.sync.externalKey ?? t.id)}`}
+            replace
+            className="gos-link"
+            style={{ fontWeight: 500, color: 'var(--text-primary)' }}
+          >
+            {t.title}
+          </Link>
           <div className="ws8d-sub" style={{ marginTop: 2 }}>
             {t.milestoneLabel ?? '—'}
           </div>
@@ -548,7 +555,11 @@ function TaskTable({
   const ref = useRef<HTMLDivElement>(null);
   const sel = tasks.find((t) => matchesTask(t, selected));
   useEffect(() => {
-    if (!sel || !ref.current) return;
+    if (!ref.current) return;
+    ref.current
+      .querySelectorAll('.ws8d-selected-row')
+      .forEach((r) => r.classList.remove('ws8d-selected-row'));
+    if (!sel) return;
     const row = ref.current.querySelector(`[data-task="${sel.id}"]`);
     row?.closest('tr')?.classList.add('ws8d-selected-row');
     (row as HTMLElement | null)?.scrollIntoView?.({ block: 'center' });
