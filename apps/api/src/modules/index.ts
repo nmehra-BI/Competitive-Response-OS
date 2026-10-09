@@ -9,7 +9,9 @@
  *   analysis/   analysis runs and proposals                                                  (WS5)
  */
 import type { HandlerMap } from '../server';
+import { authHandlers } from './platform/auth';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
+  ...authHandlers,
 };
