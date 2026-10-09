@@ -18,4 +18,10 @@ void lazy;
 
 export const SCREENS: Partial<Record<RouteId, ScreenComponent>> = {
   // ↓ WS8 streams: append one line per screen below this comment.
+  casePilot: lazy(() => import('./pilot/PilotScreen')),
+  caseOutcomes: lazy(() => import('./outcomes/OutcomesScreen')),
+  caseHistory: lazy(() => import('./history/HistoryScreen')),
+  evidence: lazy(() => import('./evidence/EvidenceScreen')),
+  evidenceSource: lazy(() => import('./evidence/EvidenceScreen')),
+  admin: lazy(() => import('./admin/AdminScreen')),
 };
