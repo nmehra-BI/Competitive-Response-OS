@@ -1,0 +1,28 @@
+{
+  "name": "@growth-os/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Postgres schema (SQL migrations with RLS), typed Kysely client with tenant context, seed runner.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "migrate": "tsx src/cli/migrate.ts",
+    "seed": "tsx src/cli/seed.ts",
+    "reset": "tsx src/cli/reset.ts",
+    "codegen": "kysely-codegen --dialect postgres --url \"${DATABASE_OWNER_URL:-postgres://me_owner:me_owner_dev@localhost:5432/growth_os}\" --include-pattern \"(platform|me|sim).*\" --out-file src/generated/db.ts"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*",
+    "@growth-os/fixtures-aster": "workspace:*",
+    "kysely": "^0.27.5",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "kysely-codegen": "^0.17.0"
+  }
+}
