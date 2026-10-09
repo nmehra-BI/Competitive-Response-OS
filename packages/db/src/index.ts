@@ -45,6 +45,63 @@ export async function withTenant<T>(db: Db, ctx: TenantContext, fn: (tx: Tx) => 
   });
 }
 
+/**
+ * Enqueue a background job INSIDE the caller's transaction (transactional enqueue, D-007): the job
+ * exists if and only if the business change commits. Payloads must carry tenantId and correlationId.
+ */
+export async function enqueueJob(
+  tx: Tx,
+  name: string,
+  payload: { tenantId: string; correlationId: string } & Record<string, unknown>,
+  opts: { runAt?: Date; maxAttempts?: number; jobKey?: string } = {},
+): Promise<string> {
+  const r = await sql<{ id: string }>`SELECT (graphile_worker.add_job(
+      identifier => ${name},
+      payload => ${JSON.stringify(payload)}::json,
+      run_at => ${opts.runAt ?? null}::timestamptz,
+      max_attempts => ${opts.maxAttempts ?? null}::int,
+      job_key => ${opts.jobKey ?? null}::text)).id::text AS id`.execute(tx);
+  return r.rows[0]!.id;
+}
+
+/** Zero padding per display-key prefix, matching the fixture and prototype (ME-104, OPP-07, SRC-014). */
+export const DISPLAY_KEY_PAD: Readonly<Record<string, number>> = {
+  ME: 3,
+  MD: 2,
+  OPP: 2,
+  EXP: 2,
+  SRC: 3,
+  ASM: 2,
+  CMP: 2,
+};
+
+/**
+ * Allocate the next per-tenant display key for a prefix (ME-105, SRC-041 …) from
+ * platform.display_key_counter. Keys already taken (seeded or imported rows) are skipped, so a
+ * counter that starts below existing keys never produces a duplicate. Must run inside withTenant.
+ */
+export async function allocateDisplayKey(
+  tx: Tx,
+  tenantId: string,
+  prefix: string,
+  isTaken: (key: string) => Promise<boolean>,
+): Promise<string> {
+  const pad = DISPLAY_KEY_PAD[prefix] ?? 2;
+  for (let i = 0; i < 1000; i++) {
+    const r = await sql<{ value: number }>`
+      INSERT INTO platform.display_key_counter (tenant_id, prefix, next_value)
+      VALUES (${tenantId}, ${prefix}, 2)
+      ON CONFLICT (tenant_id, prefix)
+        DO UPDATE SET next_value = platform.display_key_counter.next_value + 1
+      RETURNING next_value - 1 AS value`.execute(tx);
+    const key = `${prefix}-${String(r.rows[0]!.value).padStart(pad, '0')}`;
+    if (!(await isTaken(key))) return key;
+  }
+  throw new Error(`allocateDisplayKey: no free key for ${prefix}`);
+}
+
+export { createObjectStore, type ObjectStore, type StoredObject } from './object-store';
+
 /** Map Postgres guard errors raised by triggers to stable API error codes. */
 export function guardErrorCode(err: unknown): string | null {
   const msg = err instanceof Error ? err.message : '';
@@ -54,3 +111,15 @@ export function guardErrorCode(err: unknown): string | null {
     );
   return m?.[1] ?? null;
 }
+
+export {
+  assertAuditEntrySafe,
+  auditWriter,
+  createAuditWriter,
+  AuditGuardError,
+  AUDIT_DETAIL_STRING_MAX,
+  AUDIT_SUMMARY_MAX,
+  RESTRICTED_DETAIL_KEYS,
+  type AuditRecord,
+  type PlatformAuditWriter,
+} from './audit';

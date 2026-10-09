@@ -16,5 +16,8 @@
     "@growth-os/db": "workspace:*",
     "@growth-os/domain": "workspace:*",
     "graphile-worker": "^0.16.6"
+  },
+  "devDependencies": {
+    "@growth-os/fixtures-aster": "workspace:*"
   }
 }

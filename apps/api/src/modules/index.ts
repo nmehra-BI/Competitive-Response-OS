@@ -9,7 +9,19 @@
  *   analysis/   analysis runs and proposals                                                  (WS5)
  */
 import type { HandlerMap } from '../server';
+import { adminHandlers } from './platform/admin';
+import { auditHandlers } from './platform/audit';
+import { authHandlers } from './platform/auth';
+import { commentHandlers } from './platform/comments';
+import { evidenceHandlers } from './platform/evidence';
+import { searchHandlers } from './platform/search';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
+  ...authHandlers,
+  ...evidenceHandlers,
+  ...searchHandlers,
+  ...commentHandlers,
+  ...adminHandlers,
+  ...auditHandlers,
 };
