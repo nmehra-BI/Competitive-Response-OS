@@ -15,6 +15,11 @@ import { authHandlers } from './platform/auth';
 import { commentHandlers } from './platform/comments';
 import { evidenceHandlers } from './platform/evidence';
 import { searchHandlers } from './platform/search';
+import { assumptionHandlers } from './me/assumptions';
+import { caseHandlers } from './me/cases';
+import { comparisonHandlers } from './me/comparisons';
+import { mandateHandlers } from './me/mandates';
+import { opportunityHandlers } from './me/opportunities';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -24,4 +29,9 @@ export const handlers: HandlerMap = {
   ...commentHandlers,
   ...adminHandlers,
   ...auditHandlers,
+  ...caseHandlers,
+  ...assumptionHandlers,
+  ...comparisonHandlers,
+  ...mandateHandlers,
+  ...opportunityHandlers,
 };
