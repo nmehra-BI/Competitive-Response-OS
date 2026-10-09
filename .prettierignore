@@ -6,3 +6,4 @@ design/
 docs/
 *.md
 packages/db/src/generated/
+.claude/

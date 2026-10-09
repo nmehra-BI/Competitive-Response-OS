@@ -18,3 +18,6 @@ test-results/
 .data/
 *.log
 .DS_Store
+
+# Agent git worktrees (local only)
+.claude/worktrees/

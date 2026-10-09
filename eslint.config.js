@@ -53,6 +53,7 @@ export default tseslint.config(
   {
     ignores: [
       '**/node_modules/**',
+      '.claude/**',
       '**/dist/**',
       '**/coverage/**',
       'design/**',
