@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+design/
+docs/
+*.md
+packages/db/src/generated/

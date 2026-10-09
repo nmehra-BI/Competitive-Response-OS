@@ -1,0 +1,47 @@
+{
+  "name": "growth-os",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Growth OS monorepo. First app: Market Expansion OS.",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --workspace-concurrency=4 run build",
+    "typecheck": "pnpm -r --workspace-concurrency=4 run typecheck",
+    "test": "vitest run --project unit",
+    "test:all": "vitest run",
+    "test:watch": "vitest",
+    "test:db": "vitest run --project db",
+    "test:e2e": "pnpm --filter @growth-os/web run test:e2e",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "bash scripts/db-up.sh",
+    "db:migrate": "pnpm --filter @growth-os/db run migrate",
+    "db:seed": "pnpm --filter @growth-os/db run seed",
+    "db:reset": "pnpm --filter @growth-os/db run reset && pnpm db:migrate && pnpm db:seed",
+    "db:codegen": "pnpm --filter @growth-os/db run codegen",
+    "evals:smoke": "pnpm --filter @growth-os/ai run evals:smoke",
+    "dev": "pnpm -r --parallel --filter @growth-os/api --filter @growth-os/worker --filter @growth-os/web run dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
