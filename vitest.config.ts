@@ -29,6 +29,7 @@ export default defineConfig({
             'packages/db/test/**/*.test.ts',
             'apps/api/test/db/**/*.test.ts',
             'apps/*/src/**/*.db.test.ts',
+            'apps/api/test/connector-faults/**/*.test.ts',
           ],
           environment: 'node',
           pool: 'forks',
