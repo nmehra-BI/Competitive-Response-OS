@@ -3,7 +3,13 @@
  * Gate events drive stages (system actor); task completion never does. A follow-on that targets the
  * stage the case is already in is skipped (D-035).
  */
-import type { AnalyticsEventName, AnalyticsProps, CaseStage, GateCode, MaterialChangeType } from '@growth-os/contracts';
+import type {
+  AnalyticsEventName,
+  AnalyticsProps,
+  CaseStage,
+  GateCode,
+  MaterialChangeType,
+} from '@growth-os/contracts';
 import { sql } from '@growth-os/db';
 import {
   caseMachine,
@@ -70,10 +76,9 @@ export async function moveCase(
     objectId: caseId,
     objectVersion: moved.row_version,
     caseId,
-    summary: (opts.summary ?? `Stage moved from ${from.replace(/_/g, ' ')} to ${r.to.replace(/_/g, ' ')}`).slice(
-      0,
-      280,
-    ),
+    summary: (
+      opts.summary ?? `Stage moved from ${from.replace(/_/g, ' ')} to ${r.to.replace(/_/g, ' ')}`
+    ).slice(0, 280),
     details: { from, to: r.to, reason: opts.reason ?? command },
   });
   for (const ev of r.events) {
@@ -95,7 +100,14 @@ export async function pinsForSnapshots(t: Tools, snapshotIds: readonly string[])
   const rows = await t.tx
     .selectFrom('platform.decision_snapshot as s')
     .innerJoin('platform.gate_request as g', 'g.id', 's.gate_request_id')
-    .select(['s.id as snapshot_id', 's.status as snapshot_status', 'g.id as gate_id', 'g.status as gate_status', 'g.case_id', 'g.gate_code'])
+    .select([
+      's.id as snapshot_id',
+      's.status as snapshot_status',
+      'g.id as gate_id',
+      'g.status as gate_status',
+      'g.case_id',
+      'g.gate_code',
+    ])
     .where('s.id', 'in', [...snapshotIds])
     .execute();
   const out: PinRow[] = [];

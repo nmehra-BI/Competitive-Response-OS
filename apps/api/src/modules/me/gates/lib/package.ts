@@ -39,7 +39,11 @@ import {
 const policy = createPolicyEngine();
 
 /** Policy resource for deciding a gate request on a given snapshot. */
-export function gateResource(gate: GateRow, caseRow: CaseLite | null, snapshot: SnapshotRow | null): ResourceRef {
+export function gateResource(
+  gate: GateRow,
+  caseRow: CaseLite | null,
+  snapshot: SnapshotRow | null,
+): ResourceRef {
   return {
     type: 'gate_request',
     id: gate.id,
@@ -140,7 +144,13 @@ export function diffChanges(from: SnapshotContent, to: SnapshotContent): Change[
       const t = to.scope as Record<string, unknown>;
       for (const k of Object.keys(t))
         if (JSON.stringify(f[k]) !== JSON.stringify(t[k]))
-          out.push({ path: `scope.${k}`, label: `Scope · ${k}`, from: short(f[k]), to: short(t[k]), material: true });
+          out.push({
+            path: `scope.${k}`,
+            label: `Scope · ${k}`,
+            from: short(f[k]),
+            to: short(t[k]),
+            material: true,
+          });
       continue;
     }
     const f = (from as unknown as Record<string, unknown>)[field];
@@ -240,7 +250,8 @@ export async function buildPackage(
   }
   const gp = await gatePolicy(tx, gate.gate_code as GateCode);
   const received = approvals.filter(
-    (a) => (a.disposition === 'approve' || a.disposition === 'approve_with_conditions') && a.inv_kind === null,
+    (a) =>
+      (a.disposition === 'approve' || a.disposition === 'approve_with_conditions') && a.inv_kind === null,
   ).length;
   const bu = await tx
     .selectFrom('platform.business_unit')
@@ -248,7 +259,8 @@ export async function buildPackage(
     .where('id', '=', gate.business_unit_id)
     .executeTakeFirst();
   const viewerGrant = subject.authority.find(
-    (g) => g.gateCode === gate.gate_code && g.businessUnitId === gate.business_unit_id && g.revokedAt === null,
+    (g) =>
+      g.gateCode === gate.gate_code && g.businessUnitId === gate.business_unit_id && g.revokedAt === null,
   );
   const approverId = caseRow?.sponsorUserId ?? null;
   const approverDecision = approverId ? approvals.find((a) => a.approver_user_id === approverId) : undefined;
@@ -259,14 +271,24 @@ export async function buildPackage(
     .select(['id', 'gate_code', 'status', 'current_snapshot_id', 'display_key'])
     .where('subject_id', '=', gate.subject_id)
     .orderBy('created_at')
-    .execute()) as { id: string; gate_code: string; status: string; current_snapshot_id: string | null; display_key: string }[];
+    .execute()) as {
+    id: string;
+    gate_code: string;
+    status: string;
+    current_snapshot_id: string | null;
+    display_key: string;
+  }[];
   const allApprovals = await approvalRows(tx, { gateRequestIds: subjectGates.map((g) => g.id) });
   const snapIndex = new Map<string, { version: number; hash: string }>();
   if (subjectGates.length) {
     const rows = await tx
       .selectFrom('platform.decision_snapshot')
       .select(['id', 'version', 'content_hash'])
-      .where('gate_request_id', 'in', subjectGates.map((g) => g.id))
+      .where(
+        'gate_request_id',
+        'in',
+        subjectGates.map((g) => g.id),
+      )
       .execute();
     for (const r of rows) snapIndex.set(r.id, { version: r.version, hash: r.content_hash });
   }
@@ -292,7 +314,8 @@ export async function buildPackage(
         gateRequestId: g.id,
         gateCode: code,
         label: `${GATE_LABELS[code]} · ${g.display_key}${si ? ` · v${si.version}` : ''}`,
-        status: g.status === 'withdrawn' ? 'superseded' : displayStatus({ gate_code: code, status: g.status }),
+        status:
+          g.status === 'withdrawn' ? 'superseded' : displayStatus({ gate_code: code, status: g.status }),
         snapshotVersion: si?.version ?? null,
         fingerprint: si ? toFingerprint(si.hash) : null,
         rationale: null,

@@ -10,7 +10,14 @@ import { sql } from '@growth-os/db';
 import { gates, mandate, outcomeTargets, people } from '@growth-os/fixtures-aster';
 import { applyMateriality } from '../../../platform/materiality';
 import { systemTools } from '../../../platform/pipeline';
-import { call, createTestApp, login, seedTenant, type SeededTenant, type TestApp } from '../../../platform/testing';
+import {
+  call,
+  createTestApp,
+  login,
+  seedTenant,
+  type SeededTenant,
+  type TestApp,
+} from '../../../platform/testing';
 import {
   analyticsFor,
   assessmentCase,
@@ -24,12 +31,13 @@ import {
   inTenant,
   problem,
   setStage,
+  type Cookies,
 } from './testkit';
 
 let t: TestApp;
 let a: SeededTenant; // G2 stale → refresh → approve
 let b: SeededTenant; // other tenant (cross-tenant) and read-only checks
-const k: Record<string, string> = {};
+const k = {} as Cookies;
 
 beforeAll(async () => {
   t = await createTestApp();
@@ -69,7 +77,11 @@ async function changeBaseAdoption(s: SeededTenant, value: string) {
       })
       .returning('id')
       .executeTakeFirstOrThrow();
-    await tx.updateTable('platform.assumption').set({ current_version_id: nv.id }).where('id', '=', asm.id).execute();
+    await tx
+      .updateTable('platform.assumption')
+      .set({ current_version_id: nv.id })
+      .where('id', '=', asm.id)
+      .execute();
     const now = new Date();
     return applyMateriality(
       systemTools(tx, { tenantId: s.tenantId, correlationId: 'test-assumption', now, rule: 'test' }),
@@ -95,7 +107,10 @@ describe('G2 package (step 17) and reads', () => {
     expect(pkg.snapshot.fingerprint).toBe(toFingerprint(pkg.snapshot.contentHash));
     expect(pkg.gateRequest.buttonLabel).toBe('Approve pilot €120k · 90 days');
     expect(pkg.gateRequest.displayStatus).toBe('awaiting_decision');
-    expect(pkg.snapshot.content.conditionsProposed.map((c) => c.flag)).toEqual(['blocks_execution', 'monitor_only']);
+    expect(pkg.snapshot.content.conditionsProposed.map((c) => c.flag)).toEqual([
+      'blocks_execution',
+      'monitor_only',
+    ]);
     expect(pkg.dissent[0]!.statement).toBe(gates.g2.dissent.statement);
     expect(pkg.dissent[0]!.author.displayName).toBe('Daniel Weber');
     expect(pkg.panel.canDecide).toBe(true);
@@ -117,7 +132,10 @@ describe('G2 package (step 17) and reads', () => {
     const g = await call(t.app, API.gates.get, { params: { id: ids(a).g2 }, cookie: k.daniel });
     expect(g.statusCode).toBe(200);
     expect(API.gates.get.response.parse(g.json()).key).toBe('ME-104-G2');
-    const pre = await call(t.app, API.gates.rail, { params: { caseRef: 'ME-104', gateCode: 'G2' }, cookie: k.maya });
+    const pre = await call(t.app, API.gates.rail, {
+      params: { caseRef: 'ME-104', gateCode: 'G2' },
+      cookie: k.maya,
+    });
     expect(pre.statusCode).toBe(200);
     const view = API.gates.rail.response.parse(pre.json());
     expect(view.preconditions.every((p) => p.met)).toBe(true);
@@ -147,7 +165,9 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     expect(applied[0]!.outcome.staleSnapshotIds).toEqual([v3.snapshot.id]);
     const pkg = await currentPackage(t, k.elena, ids(a).g2);
     expect(pkg.snapshot.status).toBe('stale');
-    expect(pkg.staleBanner!.title).toMatch(/^This snapshot is out of date: adoption assumption changed on \d+ \w+\. Approval is disabled\.$/);
+    expect(pkg.staleBanner!.title).toMatch(
+      /^This snapshot is out of date: adoption assumption changed on \d+ \w+\. Approval is disabled\.$/,
+    );
     expect(pkg.panel.canDecide).toBe(false);
     const res = await call(t.app, API.gates.decide, {
       params: { id: ids(a).g2 },
@@ -161,16 +181,28 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
   });
 
   it('only the case owner refreshes (403), never across tenants (404)', async () => {
-    const elena = await call(t.app, API.gates.refresh, { params: { id: ids(a).g2 }, cookie: k.elena, idempotencyKey: true });
+    const elena = await call(t.app, API.gates.refresh, {
+      params: { id: ids(a).g2 },
+      cookie: k.elena,
+      idempotencyKey: true,
+    });
     expect(elena.statusCode).toBe(403);
-    const other = await call(t.app, API.gates.refresh, { params: { id: ids(a).g2 }, cookie: k.mayaB, idempotencyKey: true });
+    const other = await call(t.app, API.gates.refresh, {
+      params: { id: ids(a).g2 },
+      cookie: k.mayaB,
+      idempotencyKey: true,
+    });
     expect(other.statusCode).toBe(404);
   });
 
   it('step 19: refresh creates v4 current, v3 superseded; the diff shows the adoption change', async () => {
     const before = await currentPackage(t, k.maya, ids(a).g2);
     const key = randomUUID();
-    const res = await call(t.app, API.gates.refresh, { params: { id: ids(a).g2 }, cookie: k.maya, idempotencyKey: key });
+    const res = await call(t.app, API.gates.refresh, {
+      params: { id: ids(a).g2 },
+      cookie: k.maya,
+      idempotencyKey: key,
+    });
     expect(res.statusCode).toBe(200);
     const out = API.gates.refresh.response.parse(res.json());
     expect(out.snapshot.version).toBe(4);
@@ -178,13 +210,23 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     expect(out.gateRequest.status).toBe('awaiting_decision');
     expect(out.gateRequest.currentSnapshotId).toBe(out.snapshot.id);
     // Replay with the same key returns the same snapshot (no v5).
-    const replay = await call(t.app, API.gates.refresh, { params: { id: ids(a).g2 }, cookie: k.maya, idempotencyKey: key });
+    const replay = await call(t.app, API.gates.refresh, {
+      params: { id: ids(a).g2 },
+      cookie: k.maya,
+      idempotencyKey: key,
+    });
     expect(replay.json()).toEqual(res.json());
     const old = await currentPackage(t, k.elena, ids(a).g2);
     expect(old.snapshot.version).toBe(4);
-    const v3 = await call(t.app, API.gates.package, { params: { id: ids(a).g2 }, query: { version: 3 }, cookie: k.elena });
+    const v3 = await call(t.app, API.gates.package, {
+      params: { id: ids(a).g2 },
+      query: { version: 3 },
+      cookie: k.elena,
+    });
     expect(API.gates.package.response.parse(v3.json()).snapshot.status).toBe('superseded');
-    expect(old.changesSinceViewerLastSaw.some((l) => l.startsWith('Adoption 20% by year 3: 20% → 25%'))).toBe(true);
+    expect(old.changesSinceViewerLastSaw.some((l) => l.startsWith('Adoption 20% by year 3: 20% → 25%'))).toBe(
+      true,
+    );
 
     const diff = await call(t.app, API.gates.diff, {
       params: { id: before.snapshot.id },
@@ -198,13 +240,26 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     );
     // Positions and dissent recorded on v3 are carried, never lost.
     expect(out.snapshot.content.dissent[0]!.statement).toBe(gates.g2.dissent.statement);
-    expect(out.snapshot.content.signOffs.map((s) => s.area).sort()).toEqual(['finance', 'pilot_owner', 'product', 'specialist']);
+    expect(out.snapshot.content.signOffs.map((s) => s.area).sort()).toEqual([
+      'finance',
+      'pilot_owner',
+      'product',
+      'specialist',
+    ]);
     expect(await auditActions(t, a, ids(a).g2)).toContain('gate_request.refresh');
     const ev = await analyticsFor(t, a, 'gate_submitted');
     expect(ev.at(-1)!.props).toEqual({ gate: 'G2', snapshotVersion: 4 });
-    const cross = await call(t.app, API.gates.diff, { params: { id: before.snapshot.id }, query: { against: 'current_inputs' }, cookie: k.mayaB });
+    const cross = await call(t.app, API.gates.diff, {
+      params: { id: before.snapshot.id },
+      query: { against: 'current_inputs' },
+      cookie: k.mayaB,
+    });
     expect(cross.statusCode).toBe(404);
-    const vsInputs = await call(t.app, API.gates.diff, { params: { id: out.snapshot.id }, query: { against: 'current_inputs' }, cookie: k.maya });
+    const vsInputs = await call(t.app, API.gates.diff, {
+      params: { id: out.snapshot.id },
+      query: { against: 'current_inputs' },
+      cookie: k.maya,
+    });
     expect(API.gates.diff.response.parse(vsInputs.json()).changes).toEqual([]);
   });
 
@@ -224,10 +279,15 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     const pkg = API.gates.decide.response.parse(res.json());
     expect(pkg.gateRequest.status).toBe('approved_with_conditions');
     expect(pkg.gateRequest.expiresAt).not.toBeNull();
-    const days = (Date.parse(pkg.gateRequest.expiresAt!) - Date.parse(pkg.gateRequest.decidedAt!)) / 86_400_000;
+    const days =
+      (Date.parse(pkg.gateRequest.expiresAt!) - Date.parse(pkg.gateRequest.decidedAt!)) / 86_400_000;
     expect(days).toBe(14);
     expect(pkg.approvals).toHaveLength(1);
-    expect(pkg.approvals[0]).toMatchObject({ snapshotId: v4.snapshot.id, snapshotHash: v4.snapshot.contentHash, effective: true });
+    expect(pkg.approvals[0]).toMatchObject({
+      snapshotId: v4.snapshot.id,
+      snapshotHash: v4.snapshot.contentHash,
+      effective: true,
+    });
     // Coordinator note (WS8c): conditions repeated word for word are the proposed C1/C2, not duplicates.
     expect(pkg.gateRequest.conditions.map((c) => [c.key, c.flag])).toEqual([
       ['C1', 'blocks_execution'],
@@ -240,7 +300,11 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     expect(ga.at(-1)!.props).toMatchObject({ gate: 'G2', withConditions: true });
     expect(JSON.stringify(ga)).not.toContain('Thresholds met');
     const audits = await inTenant(t, a, (tx) =>
-      tx.selectFrom('platform.audit_event').select(['summary', 'details']).where('object_id', '=', ids(a).g2).execute(),
+      tx
+        .selectFrom('platform.audit_event')
+        .select(['summary', 'details'])
+        .where('object_id', '=', ids(a).g2)
+        .execute(),
     );
     expect(JSON.stringify(audits)).not.toContain(gates.g2.decision.rationale);
   });
@@ -248,9 +312,19 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
   it('marks C1 met only by its owner (Jonas) or the case owner; others 403; cross-tenant 404', async () => {
     const pkg = await currentPackage(t, k.jonas, ids(a).g2);
     const c1 = pkg.gateRequest.conditions.find((c) => c.key === 'C1')!;
-    const priya = await call(t.app, API.gates.markConditionMet, { params: { id: c1.id }, body: { evidence: 'Site list' }, cookie: k.priya, idempotencyKey: true });
+    const priya = await call(t.app, API.gates.markConditionMet, {
+      params: { id: c1.id },
+      body: { evidence: 'Site list' },
+      cookie: k.priya,
+      idempotencyKey: true,
+    });
     expect(priya.statusCode).toBe(403);
-    const other = await call(t.app, API.gates.markConditionMet, { params: { id: c1.id }, body: { evidence: 'Site list' }, cookie: k.mayaB, idempotencyKey: true });
+    const other = await call(t.app, API.gates.markConditionMet, {
+      params: { id: c1.id },
+      body: { evidence: 'Site list' },
+      cookie: k.mayaB,
+      idempotencyKey: true,
+    });
     expect(other.statusCode).toBe(404);
     const ok = await call(t.app, API.gates.markConditionMet, {
       params: { id: c1.id },
@@ -261,12 +335,20 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     expect(ok.statusCode).toBe(200);
     expect(API.gates.markConditionMet.response.parse(ok.json())).toMatchObject({ key: 'C1', status: 'met' });
     expect(await auditActions(t, a, c1.id)).toEqual(['condition.met']);
-    const again = await call(t.app, API.gates.markConditionMet, { params: { id: c1.id }, body: { evidence: 'x' }, cookie: k.jonas, idempotencyKey: true });
+    const again = await call(t.app, API.gates.markConditionMet, {
+      params: { id: c1.id },
+      body: { evidence: 'x' },
+      cookie: k.jonas,
+      idempotencyKey: true,
+    });
     expect(again.statusCode).toBe(409);
   });
 
   it('lists material changes with affected snapshots; resolving needs an uncertain change and the sponsor', async () => {
-    const res = await call(t.app, API.gates.materialChanges, { params: { caseRef: 'ME-104' }, cookie: k.maya });
+    const res = await call(t.app, API.gates.materialChanges, {
+      params: { caseRef: 'ME-104' },
+      cookie: k.maya,
+    });
     expect(res.statusCode).toBe(200);
     const items = API.gates.materialChanges.response.parse(res.json()).items;
     const mc = items.find((i) => i.changeType === 'decision_critical_assumption_changed')!;
@@ -317,7 +399,10 @@ describe('uncertain changes: escalation resolved by the sponsor', () => {
     });
     const res = await call(t.app, API.gates.resolveMateriality, {
       params: { id: mcId },
-      body: { classification: 'material', rationale: 'The census edition was replaced; validation must be re-authorized.' },
+      body: {
+        classification: 'material',
+        rationale: 'The census edition was replaced; validation must be re-authorized.',
+      },
       cookie: elena,
       idempotencyKey: true,
     });
@@ -342,7 +427,11 @@ describe('positions and dissent', () => {
     const ops = await login(t.app, b.user('opsLead'));
     const ok = await call(t.app, API.gates.recordPosition, {
       params: { id: pkg.snapshot.id },
-      body: { area: 'finance', position: 'supports_with_conditions', scopeText: 'Margin and opex scope checked' },
+      body: {
+        area: 'finance',
+        position: 'supports_with_conditions',
+        scopeText: 'Margin and opex scope checked',
+      },
       cookie: daniel,
       idempotencyKey: true,
     });
@@ -370,7 +459,10 @@ describe('positions and dissent', () => {
     const ops = await login(t.app, b.user('opsLead'));
     const res = await call(t.app, API.gates.recordDissent, {
       params: { caseRef: 'ME-104' },
-      body: { statement: 'Install effort is underestimated for older plants.', scopeText: 'Scope: deployment effort · v3' },
+      body: {
+        statement: 'Install effort is underestimated for older plants.',
+        scopeText: 'Scope: deployment effort · v3',
+      },
       cookie: priya,
       idempotencyKey: true,
     });
@@ -379,18 +471,40 @@ describe('positions and dissent', () => {
     expect(d.signedSnapshotVersion).toBe(3);
     const audit = await auditActions(t, b, d.id);
     expect(audit).toEqual(['dissent.recorded']);
-    const raw = await inTenant(t, b, (tx) => tx.selectFrom('platform.audit_event').select('summary').where('object_id', '=', d.id).execute());
+    const raw = await inTenant(t, b, (tx) =>
+      tx.selectFrom('platform.audit_event').select('summary').where('object_id', '=', d.id).execute(),
+    );
     expect(JSON.stringify(raw)).not.toContain('underestimated');
     const pkg = await currentPackage(t, k.elenaB, ids(b).g2);
-    expect(pkg.dissent.map((x) => x.statement)).toContain('Install effort is underestimated for older plants.');
-    expect((await call(t.app, API.gates.recordDissent, { params: { caseRef: 'ME-104' }, body: { statement: 'x', scopeText: 'y' }, cookie: ops, idempotencyKey: true })).statusCode).toBe(403);
-    expect((await call(t.app, API.gates.recordDissent, { params: { caseRef: ids(b).case }, body: { statement: 'x', scopeText: 'y' }, cookie: k.priya, idempotencyKey: true })).statusCode).toBe(404);
+    expect(pkg.dissent.map((x) => x.statement)).toContain(
+      'Install effort is underestimated for older plants.',
+    );
+    expect(
+      (
+        await call(t.app, API.gates.recordDissent, {
+          params: { caseRef: 'ME-104' },
+          body: { statement: 'x', scopeText: 'y' },
+          cookie: ops,
+          idempotencyKey: true,
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await call(t.app, API.gates.recordDissent, {
+          params: { caseRef: ids(b).case },
+          body: { statement: 'x', scopeText: 'y' },
+          cookie: k.priya,
+          idempotencyKey: true,
+        })
+      ).statusCode,
+    ).toBe(404);
   });
 });
 
 describe('G1 path (steps 10, 11)', () => {
   let s: SeededTenant;
-  const c: Record<string, string> = {};
+  const c = {} as Cookies;
   let gateId = '';
   beforeAll(async () => {
     s = await seedTenant(t.db, 'aster-demo');
@@ -401,16 +515,30 @@ describe('G1 path (steps 10, 11)', () => {
   });
 
   it('step 10: EXP-03-style plan + G1 request → submit freezes snapshot v1 (hashed); preconditions met', async () => {
-    const asm = await inTenant(t, s, (tx) => tx.selectFrom('platform.assumption').select('id').where('display_key', '=', 'ASM-90').executeTakeFirstOrThrow());
+    const asm = await inTenant(t, s, (tx) =>
+      tx
+        .selectFrom('platform.assumption')
+        .select('id')
+        .where('display_key', '=', 'ASM-90')
+        .executeTakeFirstOrThrow(),
+    );
     const exp = await call(t.app, API.experiments.create, {
       params: { caseRef: 'ME-110' },
-      body: { title: 'Validation outreach · 20 sites', assumptionIds: [asm.id], ownerId: s.user('maya'), fieldworkOwnerId: s.user('jonas'), plan: exp03Plan() },
+      body: {
+        title: 'Validation outreach · 20 sites',
+        assumptionIds: [asm.id],
+        ownerId: s.user('maya'),
+        fieldworkOwnerId: s.user('jonas'),
+        plan: exp03Plan(),
+      },
       cookie: c.maya,
       idempotencyKey: true,
     });
     expect(exp.statusCode).toBe(201);
     const pre = API.gates.rail.response.parse(
-      (await call(t.app, API.gates.rail, { params: { caseRef: 'ME-110', gateCode: 'G1' }, cookie: c.maya })).json(),
+      (
+        await call(t.app, API.gates.rail, { params: { caseRef: 'ME-110', gateCode: 'G1' }, cookie: c.maya })
+      ).json(),
     );
     expect(pre.preconditions.map((p) => [p.key, p.met])).toEqual([
       ['evidence_inventory', true],
@@ -436,11 +564,23 @@ describe('G1 path (steps 10, 11)', () => {
     const gr = API.gates.createRequest.response.parse(cr.json());
     expect(gr).toMatchObject({ key: 'ME-110-G1', status: 'draft', buttonLabel: 'Approve validation €15k' });
     gateId = gr.id;
-    const crossSubmit = await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: k.maya, idempotencyKey: true });
+    const crossSubmit = await call(t.app, API.gates.submit, {
+      params: { id: gateId },
+      cookie: k.maya,
+      idempotencyKey: true,
+    });
     expect(crossSubmit.statusCode).toBe(404);
-    const danielSubmit = await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: c.daniel, idempotencyKey: true });
+    const danielSubmit = await call(t.app, API.gates.submit, {
+      params: { id: gateId },
+      cookie: c.daniel,
+      idempotencyKey: true,
+    });
     expect(danielSubmit.statusCode).toBe(403);
-    const sub = await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: c.maya, idempotencyKey: true });
+    const sub = await call(t.app, API.gates.submit, {
+      params: { id: gateId },
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
     expect(sub.statusCode).toBe(200);
     const out = API.gates.submit.response.parse(sub.json());
     expect(out.snapshot.version).toBe(1);
@@ -450,7 +590,10 @@ describe('G1 path (steps 10, 11)', () => {
     expect(out.snapshot.content.outcomeTargets.map((x) => x.thresholdText)).toEqual(['≥ 8', '≥ 4']);
     expect(out.gateRequest.status).toBe('awaiting_decision');
     expect(await auditActions(t, s, gateId)).toEqual(['gate_request.created', 'gate_request.submit']);
-    expect((await analyticsFor(t, s, 'gate_submitted')).at(-1)!.props).toEqual({ gate: 'G1', snapshotVersion: 1 });
+    expect((await analyticsFor(t, s, 'gate_submitted')).at(-1)!.props).toEqual({
+      gate: 'G1',
+      snapshotVersion: 1,
+    });
   });
 
   it('step 11: Elena approves "Approve validation €15k" → stage Validation, plan locked, validation_authorized + gate_approved', async () => {
@@ -469,8 +612,27 @@ describe('G1 path (steps 10, 11)', () => {
     );
     expect(list.items[0]).toMatchObject({ lifecycle: 'locked', lockedByGateRequestId: gateId });
     expect(list.items[0]!.original!.isOriginal).toBe(true);
+    // The validation task set for WS6: owned by the experiment, authorized by this G1, destination set.
+    expect(list.items[0]!.taskSetId).not.toBeNull();
+    const set = await inTenant(t, s, (tx) =>
+      tx
+        .selectFrom('platform.task_set')
+        .selectAll()
+        .where('id', '=', list.items[0]!.taskSetId!)
+        .executeTakeFirstOrThrow(),
+    );
+    expect(set).toMatchObject({
+      owner_type: 'experiment',
+      owner_id: list.items[0]!.id,
+      authorizing_gate_request_id: gateId,
+    });
+    expect(set.connection_id).not.toBeNull();
+    expect(set.mapping_id).not.toBeNull();
     expect((await analyticsFor(t, s, 'validation_authorized')).length).toBe(1);
-    expect((await analyticsFor(t, s, 'gate_approved')).at(-1)!.props).toMatchObject({ gate: 'G1', withConditions: false });
+    expect((await analyticsFor(t, s, 'gate_approved')).at(-1)!.props).toMatchObject({
+      gate: 'G1',
+      withConditions: false,
+    });
   });
 });
 
@@ -510,7 +672,7 @@ function g2Scope(s: SeededTenant, amount = '120000.00') {
 
 describe('withdraw, new request, return → resubmit (coordinator note: current-snapshot decisions only)', () => {
   let s: SeededTenant;
-  const c: Record<string, string> = {};
+  const c = {} as Cookies;
   let newG2 = '';
   beforeAll(async () => {
     s = await seedTenant(t.db, 'aster-demo');
@@ -518,11 +680,26 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
   });
 
   it('withdraw is the author’s: Elena 403; Maya withdraws → case back to Validation', async () => {
-    const no = await call(t.app, API.gates.withdraw, { params: { id: ids(s).g2 }, body: { rationale: 'x' }, cookie: c.elena, idempotencyKey: true });
+    const no = await call(t.app, API.gates.withdraw, {
+      params: { id: ids(s).g2 },
+      body: { rationale: 'x' },
+      cookie: c.elena,
+      idempotencyKey: true,
+    });
     expect(no.statusCode).toBe(403);
-    const cross = await call(t.app, API.gates.withdraw, { params: { id: ids(s).g2 }, body: { rationale: 'x' }, cookie: k.maya, idempotencyKey: true });
+    const cross = await call(t.app, API.gates.withdraw, {
+      params: { id: ids(s).g2 },
+      body: { rationale: 'x' },
+      cookie: k.maya,
+      idempotencyKey: true,
+    });
     expect(cross.statusCode).toBe(404);
-    const ok = await call(t.app, API.gates.withdraw, { params: { id: ids(s).g2 }, body: { rationale: 'Rework the package' }, cookie: c.maya, idempotencyKey: true });
+    const ok = await call(t.app, API.gates.withdraw, {
+      params: { id: ids(s).g2 },
+      body: { rationale: 'Rework the package' },
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
     expect(ok.statusCode).toBe(200);
     expect(API.gates.withdraw.response.parse(ok.json()).status).toBe('withdrawn');
     expect(await caseStage(t, s)).toBe('validation');
@@ -532,7 +709,12 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
   it('a new G2 with proposed conditions is submitted → stage Pilot approval pending, gate_submitted', async () => {
     const cr = await call(t.app, API.gates.createRequest, {
       params: { caseRef: 'ME-104' },
-      body: { gateCode: 'G2', scope: g2Scope(s), parentGateRequestId: null, proposedConditions: g2Conditions(s) },
+      body: {
+        gateCode: 'G2',
+        scope: g2Scope(s),
+        parentGateRequestId: null,
+        proposedConditions: g2Conditions(s),
+      },
       cookie: c.maya,
       idempotencyKey: true,
     });
@@ -545,7 +727,11 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
       idempotencyKey: true,
     });
     expect(dup.statusCode).toBe(409);
-    const sub = await call(t.app, API.gates.submit, { params: { id: newG2 }, cookie: c.maya, idempotencyKey: true });
+    const sub = await call(t.app, API.gates.submit, {
+      params: { id: newG2 },
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
     expect(sub.statusCode).toBe(200);
     const out = API.gates.submit.response.parse(sub.json());
     expect(out.gateRequest.key).toBe('ME-104-G2-2');
@@ -553,7 +739,10 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
     expect(out.snapshot.content.conditionsProposed).toHaveLength(2);
     expect(out.snapshot.content.dissent[0]!.statement).toBe(gates.g2.dissent.statement);
     expect(await caseStage(t, s)).toBe('pilot_approval_pending');
-    expect((await analyticsFor(t, s, 'gate_submitted')).at(-1)!.props).toEqual({ gate: 'G2', snapshotVersion: 4 });
+    expect((await analyticsFor(t, s, 'gate_submitted')).at(-1)!.props).toEqual({
+      gate: 'G2',
+      snapshotVersion: 4,
+    });
   });
 
   it('Elena returns it; after resubmit the package lists only the new snapshot’s decisions and is approvable', async () => {
@@ -567,17 +756,37 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
     expect(ret.statusCode).toBe(201);
     expect(API.gates.decide.response.parse(ret.json()).gateRequest.status).toBe('returned_for_revision');
     expect(await caseStage(t, s)).toBe('validation');
-    expect((await analyticsFor(t, s, 'gate_returned')).at(-1)!.props).toMatchObject({ gate: 'G2', disposition: 'return_for_revision' });
-    const re = await call(t.app, API.gates.submit, { params: { id: newG2 }, cookie: c.maya, idempotencyKey: true });
+    expect((await analyticsFor(t, s, 'gate_returned')).at(-1)!.props).toMatchObject({
+      gate: 'G2',
+      disposition: 'return_for_revision',
+    });
+    const re = await call(t.app, API.gates.submit, {
+      params: { id: newG2 },
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
     expect(re.statusCode).toBe(200);
     expect(API.gates.submit.response.parse(re.json()).snapshot.version).toBe(5);
     const v5 = await currentPackage(t, c.elena, newG2);
     expect(v5.approvals).toEqual([]);
     expect(v5.panel.canDecide).toBe(true);
     expect(v5.panel.allowedDispositions).toContain('approve');
-    expect(v5.gateHistory.some((h) => h.gateRequestId === newG2 && h.status === 'returned_for_revision' && h.snapshotVersion === 4)).toBe(true);
+    expect(
+      v5.gateHistory.some(
+        (h) => h.gateRequestId === newG2 && h.status === 'returned_for_revision' && h.snapshotVersion === 4,
+      ),
+    ).toBe(true);
     // Approving with a proposed condition repeated plus one new one: C1 kept, new is C3 (C2 not adopted).
-    const conds = [g2Conditions(s)[0]!, { text: 'Weekly budget report', ownerId: s.user('jonas'), dueOn: null, dueRule: 'Weekly', flag: 'monitor_only' }];
+    const conds = [
+      g2Conditions(s)[0]!,
+      {
+        text: 'Weekly budget report',
+        ownerId: s.user('jonas'),
+        dueOn: null,
+        dueRule: 'Weekly',
+        flag: 'monitor_only',
+      },
+    ];
     const ok = await call(t.app, API.gates.decide, {
       params: { id: newG2 },
       body: decideBody(v5, { disposition: 'approve_with_conditions', conditions: [...conds, conds[0]] }),
@@ -595,25 +804,48 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
     const s2 = await seedTenant(t.db, 'aster-demo');
     const maya = await login(t.app, s2.user('maya'));
     const elena = await login(t.app, s2.user('elena'));
-    await call(t.app, API.gates.withdraw, { params: { id: ids(s2).g2 }, body: { rationale: 'Bigger pilot' }, cookie: maya, idempotencyKey: true });
+    await call(t.app, API.gates.withdraw, {
+      params: { id: ids(s2).g2 },
+      body: { rationale: 'Bigger pilot' },
+      cookie: maya,
+      idempotencyKey: true,
+    });
     const cr = await call(t.app, API.gates.createRequest, {
       params: { caseRef: 'ME-104' },
-      body: { gateCode: 'G2', scope: g2Scope(s2, '300000.00'), parentGateRequestId: null, proposedConditions: [] },
+      body: {
+        gateCode: 'G2',
+        scope: g2Scope(s2, '300000.00'),
+        parentGateRequestId: null,
+        proposedConditions: [],
+      },
       cookie: maya,
       idempotencyKey: true,
     });
     const id = API.gates.createRequest.response.parse(cr.json()).id;
-    expect((await call(t.app, API.gates.submit, { params: { id }, cookie: maya, idempotencyKey: true })).statusCode).toBe(200);
+    expect(
+      (await call(t.app, API.gates.submit, { params: { id }, cookie: maya, idempotencyKey: true }))
+        .statusCode,
+    ).toBe(200);
     const pkg = await currentPackage(t, elena, id);
     expect(pkg.panel.allowedDispositions).not.toContain('approve');
-    expect(pkg.panel.cannotDecideReason).toBe('This request is above your delegated authority (up to €[limit]).');
-    const res = await call(t.app, API.gates.decide, { params: { id }, body: decideBody(pkg), cookie: elena, idempotencyKey: true });
+    expect(pkg.panel.cannotDecideReason).toBe(
+      'This request is above your delegated authority (up to €[limit]).',
+    );
+    const res = await call(t.app, API.gates.decide, {
+      params: { id },
+      body: decideBody(pkg),
+      cookie: elena,
+      idempotencyKey: true,
+    });
     expect(res.statusCode).toBe(403);
     expect(problem(res.body).code).toBe('AUTHORITY_INSUFFICIENT');
     // Returning stays possible for the designated approver.
     const ret = await call(t.app, API.gates.decide, {
       params: { id },
-      body: decideBody(pkg, { disposition: 'return_for_revision', rationale: 'Above my authority; route to the committee.' }),
+      body: decideBody(pkg, {
+        disposition: 'return_for_revision',
+        rationale: 'Above my authority; route to the committee.',
+      }),
       cookie: elena,
       idempotencyKey: true,
     });
@@ -623,7 +855,7 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
 
 describe('G0 for MD-21 (coordinator note): history vs current-decision fields', () => {
   let s: SeededTenant;
-  const c: Record<string, string> = {};
+  const c = {} as Cookies;
   beforeAll(async () => {
     s = await seedTenant(t.db, 'aster-start');
     for (const p of ['maya', 'elena', 'daniel'] as const) c[p] = await login(t.app, s.user(p));
@@ -647,7 +879,15 @@ describe('G0 for MD-21 (coordinator note): history vs current-decision fields', 
       const vId = randomUUID();
       await tx
         .insertInto('me.mandate')
-        .values({ id: mId, tenant_id: s.tenantId, display_key: 'MD-90', business_unit_id: s.id(mandate.businessUnitId), title: 'Mandate · Austrian dairies', status: 'draft', created_by: s.user('maya') })
+        .values({
+          id: mId,
+          tenant_id: s.tenantId,
+          display_key: 'MD-90',
+          business_unit_id: s.id(mandate.businessUnitId),
+          title: 'Mandate · Austrian dairies',
+          status: 'draft',
+          created_by: s.user('maya'),
+        })
         .execute();
       await tx
         .insertInto('me.mandate_version')
@@ -673,6 +913,23 @@ describe('G0 for MD-21 (coordinator note): history vs current-decision fields', 
         })
         .execute();
       await tx.updateTable('me.mandate').set({ current_version_id: vId }).where('id', '=', mId).execute();
+      // A case created directly on this mandate (WS4a cases.createDirect) waits in Draft mandate.
+      await tx
+        .insertInto('platform.workflow_case')
+        .values({
+          tenant_id: s.tenantId,
+          app_type: 'market_expansion',
+          display_key: 'ME-120',
+          title: 'Austrian dairies (direct)',
+          business_unit_id: s.id(mandate.businessUnitId),
+          owner_user_id: s.user('maya'),
+          sponsor_user_id: s.user('elena'),
+          stage: 'draft_mandate',
+          origin_type: 'direct',
+          mandate_id: mId,
+          created_by: s.user('maya'),
+        })
+        .execute();
       const g = await tx
         .insertInto('platform.gate_request')
         .values({
@@ -683,8 +940,17 @@ describe('G0 for MD-21 (coordinator note): history vs current-decision fields', 
           business_unit_id: s.id(mandate.businessUnitId),
           gate_code: 'G0',
           scope: JSON.stringify({
-            amount: null, currency: 'EUR', durationDays: null, windowStart: null, windowEnd: null, countryCodes: ['AT'],
-            segmentLabel: 'Dairy', maxSites: null, milestones: [], ownerId: s.user('maya'), authorizes: ['Search and assessment within this scope'],
+            amount: null,
+            currency: 'EUR',
+            durationDays: null,
+            windowStart: null,
+            windowEnd: null,
+            countryCodes: ['AT'],
+            segmentLabel: 'Dairy',
+            maxSites: null,
+            milestones: [],
+            ownerId: s.user('maya'),
+            authorizes: ['Search and assessment within this scope'],
             doesNotAuthorize: ['No spend'],
           }),
           created_by: s.user('maya'),
@@ -693,32 +959,67 @@ describe('G0 for MD-21 (coordinator note): history vs current-decision fields', 
         .executeTakeFirstOrThrow();
       return g.id;
     });
-    expect((await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: c.maya, idempotencyKey: true })).statusCode).toBe(200);
+    expect(
+      (await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: c.maya, idempotencyKey: true }))
+        .statusCode,
+    ).toBe(200);
     const v1 = await currentPackage(t, c.elena, gateId);
     expect(v1.panel.canDecide).toBe(true);
     const ret = await call(t.app, API.gates.decide, {
       params: { id: gateId },
-      body: decideBody(v1, { disposition: 'return_for_revision', rationale: 'State the exclusions for Austria.' }),
+      body: decideBody(v1, {
+        disposition: 'return_for_revision',
+        rationale: 'State the exclusions for Austria.',
+      }),
       cookie: c.elena,
       idempotencyKey: true,
     });
     expect(ret.statusCode).toBe(201);
     const afterReturn = await currentPackage(t, c.elena, gateId);
     expect(afterReturn.panel.canDecide).toBe(false);
-    expect((await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: c.maya, idempotencyKey: true })).statusCode).toBe(200);
+    expect(
+      (await call(t.app, API.gates.submit, { params: { id: gateId }, cookie: c.maya, idempotencyKey: true }))
+        .statusCode,
+    ).toBe(200);
     const v2 = await currentPackage(t, c.elena, gateId);
     expect(v2.snapshot.version).toBe(2);
     expect(v2.approvals).toEqual([]);
     expect(v2.panel.canDecide).toBe(true);
     expect(v2.panel.allowedDispositions).toContain('approve');
-    const ok = await call(t.app, API.gates.decide, { params: { id: gateId }, body: decideBody(v2, { rationale: 'Bounded and owned.' }), cookie: c.elena, idempotencyKey: true });
+    const ok = await call(t.app, API.gates.decide, {
+      params: { id: gateId },
+      body: decideBody(v2, { rationale: 'Bounded and owned.' }),
+      cookie: c.elena,
+      idempotencyKey: true,
+    });
     expect(ok.statusCode).toBe(201);
     const done = API.gates.decide.response.parse(ok.json());
     expect(done.gateRequest.status).toBe('approved');
     expect(done.gateRequest.expiresAt).toBeNull();
     expect(done.approvals.map((x) => x.disposition)).toEqual(['approve']);
-    const m = await inTenant(t, s, (tx) => tx.selectFrom('me.mandate').select('status').where('display_key', '=', 'MD-90').executeTakeFirstOrThrow());
+    const m = await inTenant(t, s, (tx) =>
+      tx
+        .selectFrom('me.mandate')
+        .select('status')
+        .where('display_key', '=', 'MD-90')
+        .executeTakeFirstOrThrow(),
+    );
     expect(m.status).toBe('approved');
+    // The direct case moves Draft mandate → Discovery on the G0 approval; mandate_approved once.
+    expect(await caseStage(t, s, 'ME-120')).toBe('discovery');
+    const caseId = await inTenant(
+      t,
+      s,
+      async (tx) =>
+        (
+          await tx
+            .selectFrom('platform.workflow_case')
+            .select('id')
+            .where('display_key', '=', 'ME-120')
+            .executeTakeFirstOrThrow()
+        ).id,
+    );
+    expect(await auditActions(t, s, caseId)).toEqual(['case.stage_changed']);
     expect((await analyticsFor(t, s, 'mandate_approved')).length).toBe(1);
   });
 });
@@ -730,25 +1031,50 @@ describe('G3 blocked (step 28)', () => {
     const elena = await login(t.app, s.user('elena'));
     const pkg = await currentPackage(t, elena, ids(s).g2);
     expect(
-      (await call(t.app, API.gates.decide, {
-        params: { id: ids(s).g2 },
-        body: decideBody(pkg, { disposition: 'approve_with_conditions', conditions: g2Conditions(s) }),
-        cookie: elena,
-        idempotencyKey: true,
-      })).statusCode,
+      (
+        await call(t.app, API.gates.decide, {
+          params: { id: ids(s).g2 },
+          body: decideBody(pkg, { disposition: 'approve_with_conditions', conditions: g2Conditions(s) }),
+          cookie: elena,
+          idempotencyKey: true,
+        })
+      ).statusCode,
     ).toBe(201);
     // Actuals for the pre-registered targets (step 25 values) and the review-due stage.
     await inTenant(t, s, async (tx) => {
-      const target = await tx.selectFrom('platform.outcome_target').select(['id']).where('metric_key', '=', outcomeTargets[0].metricKey).where('snapshot_id', '=', pkg.snapshot.id).executeTakeFirstOrThrow();
+      const target = await tx
+        .selectFrom('platform.outcome_target')
+        .select(['id'])
+        .where('metric_key', '=', outcomeTargets[0].metricKey)
+        .where('snapshot_id', '=', pkg.snapshot.id)
+        .executeTakeFirstOrThrow();
       await tx
         .insertInto('platform.outcome_observation')
-        .values({ tenant_id: s.tenantId, case_id: ids(s).case, target_id: target.id, label: 'Paid use and continuation', value: '3', value_text: '3 of 4', unit: 'customers', period_start: '2026-12-01', period_end: '2027-02-28', source_text: 'Source: billing records', result: 'not_met', recorded_by: s.user('jonas') })
+        .values({
+          tenant_id: s.tenantId,
+          case_id: ids(s).case,
+          target_id: target.id,
+          label: 'Paid use and continuation',
+          value: '3',
+          value_text: '3 of 4',
+          unit: 'customers',
+          period_start: '2026-12-01',
+          period_end: '2027-02-28',
+          source_text: 'Source: billing records',
+          result: 'not_met',
+          recorded_by: s.user('jonas'),
+        })
         .execute();
     });
     await setStage(t, s, 'ME-104', 'review_due');
     const res = await call(t.app, API.gates.createRequest, {
       params: { caseRef: 'ME-104' },
-      body: { gateCode: 'G3', scope: { ...g2Scope(s), amount: null, currency: null, durationDays: null }, parentGateRequestId: null, proposedConditions: [] },
+      body: {
+        gateCode: 'G3',
+        scope: { ...g2Scope(s), amount: null, currency: null, durationDays: null },
+        parentGateRequestId: null,
+        proposedConditions: [],
+      },
       cookie: maya,
       idempotencyKey: true,
     });
@@ -765,7 +1091,11 @@ describe('G3 blocked (step 28)', () => {
       'approved_scale_budget',
     ]);
     expect(p.blockers!.slice(0, 2).map((x) => x.message)).toEqual(gates.g3.blockedBy.map((x) => x.message));
-    const rail = API.gates.rail.response.parse((await call(t.app, API.gates.rail, { params: { caseRef: 'ME-104', gateCode: 'G3' }, cookie: maya })).json());
+    const rail = API.gates.rail.response.parse(
+      (
+        await call(t.app, API.gates.rail, { params: { caseRef: 'ME-104', gateCode: 'G3' }, cookie: maya })
+      ).json(),
+    );
     expect(rail.status).toBe('blocked');
     expect(rail.canSubmit).toBe(false);
     expect(people.maya.displayName).toBe('Maya Rao');

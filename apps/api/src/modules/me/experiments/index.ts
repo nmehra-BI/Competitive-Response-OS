@@ -39,7 +39,11 @@ async function caseOr404(tx: Tx, ref: string): Promise<CaseLite> {
   return c;
 }
 
-function editAuth(subject: Parameters<typeof roleAllows>[0], c: CaseLite, action: 'experiment.edit' | 'experiment.record_result'): Authorization {
+function editAuth(
+  subject: Parameters<typeof roleAllows>[0],
+  c: CaseLite,
+  action: 'experiment.edit' | 'experiment.record_result',
+): Authorization {
   const v = caseVisible(subject, c);
   if (!v.allow) return v;
   return roleAllows(subject, action, { businessUnitId: c.businessUnitId, caseId: c.id });
@@ -140,7 +144,11 @@ function toPlanVersion(p: PlanRow, people: People): ExperimentPlanVersion {
   };
 }
 
-function displayResult(e: ExpRow, latest: { observations: unknown } | undefined, amended: boolean): Experiment['displayResult'] {
+function displayResult(
+  e: ExpRow,
+  latest: { observations: unknown } | undefined,
+  amended: boolean,
+): Experiment['displayResult'] {
   if (e.lifecycle === 'running') return 'running';
   if (e.lifecycle !== 'result_recorded' || !latest) return amended ? 'amended' : 'planned';
   const obs = (latest.observations as { result: ThresholdResult | null }[]) ?? [];
@@ -155,15 +163,29 @@ export async function experimentsView(tx: Tx, rows: ExpRow[]): Promise<Experimen
   if (ids.length === 0) return [];
   const [plans, amendments, results, decisions, links, sets] = await Promise.all([
     planRows(tx, ids),
-    tx.selectFrom('me.experiment_amendment').selectAll().where('experiment_id', 'in', ids).orderBy('number').execute(),
+    tx
+      .selectFrom('me.experiment_amendment')
+      .selectAll()
+      .where('experiment_id', 'in', ids)
+      .orderBy('number')
+      .execute(),
     tx
       .selectFrom('me.experiment_result_version')
       .selectAll()
       .where('experiment_id', 'in', ids)
       .orderBy('version')
       .execute(),
-    tx.selectFrom('me.experiment_decision').selectAll().where('experiment_id', 'in', ids).orderBy('decided_at').execute(),
-    tx.selectFrom('me.experiment_assumption').select(['experiment_id', 'assumption_id']).where('experiment_id', 'in', ids).execute(),
+    tx
+      .selectFrom('me.experiment_decision')
+      .selectAll()
+      .where('experiment_id', 'in', ids)
+      .orderBy('decided_at')
+      .execute(),
+    tx
+      .selectFrom('me.experiment_assumption')
+      .select(['experiment_id', 'assumption_id'])
+      .where('experiment_id', 'in', ids)
+      .execute(),
     tx
       .selectFrom('platform.task_set')
       .select(['id', 'owner_id'])
@@ -225,7 +247,9 @@ export async function experimentsView(tx: Tx, rows: ExpRow[]): Promise<Experimen
         recordedBy: people(r.recorded_by),
         recordedAt: isoDateTime(r.recorded_at),
       })),
-      decisionTaken: dec ? { text: dec.decision_text, by: people(dec.decided_by), at: isoDateTime(dec.decided_at) } : null,
+      decisionTaken: dec
+        ? { text: dec.decision_text, by: people(dec.decided_by), at: isoDateTime(dec.decided_at) }
+        : null,
       taskSetId: sets.find((s) => s.owner_id === e.id)?.id ?? null,
       illustrative: e.illustrative,
     };
@@ -295,10 +319,18 @@ function validatePlan(plan: ExperimentPlan, path = 'body.plan'): void {
   if (plan.windowEnd < plan.windowStart)
     errors.push({ path: `${path}.windowEnd`, code: 'custom', message: 'The window ends before it starts.' });
   if ((plan.budgetAmount === null) !== (plan.currency === null))
-    errors.push({ path: `${path}.currency`, code: 'custom', message: 'A budget needs a currency (and vice versa).' });
+    errors.push({
+      path: `${path}.currency`,
+      code: 'custom',
+      message: 'A budget needs a currency (and vice versa).',
+    });
   plan.metrics.forEach((m, i) => {
     if (m.operator !== 'qualitative' && m.thresholdValue === null)
-      errors.push({ path: `${path}.metrics.${i}.thresholdValue`, code: 'custom', message: 'A threshold needs a value.' });
+      errors.push({
+        path: `${path}.metrics.${i}.thresholdValue`,
+        code: 'custom',
+        message: 'A threshold needs a value.',
+      });
   });
   if (new Set(plan.metrics.map((m) => m.metricKey)).size !== plan.metrics.length)
     errors.push({ path: `${path}.metrics`, code: 'custom', message: 'Metric keys must be unique.' });
@@ -307,7 +339,12 @@ function validatePlan(plan: ExperimentPlan, path = 'body.plan'): void {
 
 async function linkAssumptions(tx: Tx, c: CaseLite, experimentId: string, ids: readonly string[]) {
   const found = ids.length
-    ? await tx.selectFrom('platform.assumption').select('id').where('case_id', '=', c.id).where('id', 'in', [...ids]).execute()
+    ? await tx
+        .selectFrom('platform.assumption')
+        .select('id')
+        .where('case_id', '=', c.id)
+        .where('id', 'in', [...ids])
+        .execute()
     : [];
   if (found.length !== new Set(ids).size)
     throw new ApiError('VALIDATION_FAILED', 'Link assumptions of this case only.', {
@@ -337,7 +374,11 @@ const PLAN_FIELDS: (keyof ExperimentPlan)[] = [
   'decisionRules',
 ];
 
-function thresholdResult(op: string, threshold: string | null, observed: string | null): ThresholdResult | null {
+function thresholdResult(
+  op: string,
+  threshold: string | null,
+  observed: string | null,
+): ThresholdResult | null {
   if (observed === null) return null; // too early to read
   if (op === 'qualitative' || threshold === null || !isDecimal(observed)) return 'inconclusive';
   const c = compareDecimal(observed, threshold);
@@ -345,7 +386,14 @@ function thresholdResult(op: string, threshold: string | null, observed: string 
   return met ? 'met' : 'not_met';
 }
 
-async function audit(t: Tools, e: ExpRow, action: string, summary: string, version?: number, details?: Record<string, string | number | boolean | null>) {
+async function audit(
+  t: Tools,
+  e: ExpRow,
+  action: string,
+  summary: string,
+  version?: number,
+  details?: Record<string, string | number | boolean | null>,
+) {
   await t.audit({
     action,
     objectType: 'experiment',
@@ -379,8 +427,16 @@ export const experimentHandlers: HandlerMap = {
     handle: async (ctx, t, c) => {
       const b = ctx.body;
       validatePlan(b.plan);
-      const key = await allocateDisplayKey(t.tx, ctx.tenantId, 'EXP', async (k) =>
-        !!(await t.tx.selectFrom('me.experiment').select('id').where('display_key', '=', k).executeTakeFirst()),
+      const key = await allocateDisplayKey(
+        t.tx,
+        ctx.tenantId,
+        'EXP',
+        async (k) =>
+          !!(await t.tx
+            .selectFrom('me.experiment')
+            .select('id')
+            .where('display_key', '=', k)
+            .executeTakeFirst()),
       );
       const row = await t.tx
         .insertInto('me.experiment')
@@ -401,7 +457,9 @@ export const experimentHandlers: HandlerMap = {
       await linkAssumptions(t.tx, c, row.id, b.assumptionIds);
       await insertPlan(t.tx, row.id, 1, b.plan, ctx.userId, ctx.now);
       const e = (await experimentById(t.tx, row.id))!;
-      await audit(t, e, 'experiment.created', `${key} drafted in ${c.key}`, 1, { metrics: b.plan.metrics.length });
+      await audit(t, e, 'experiment.created', `${key} drafted in ${c.key}`, 1, {
+        metrics: b.plan.metrics.length,
+      });
       return viewOne(t.tx, row.id);
     },
   }),
@@ -412,8 +470,13 @@ export const experimentHandlers: HandlerMap = {
     handle: async (ctx, t, { e, c }) => {
       assertIfMatch(ctx, e.row_version);
       if (e.lifecycle !== 'draft')
-        throw new ApiError('INVALID_TRANSITION', 'This plan is locked by G1. Use an amendment with a reason.');
-      const [p] = await planRows(t.tx, [e.id]).then((ps) => ps.filter((x) => x.version === e.current_plan_version));
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          'This plan is locked by G1. Use an amendment with a reason.',
+        );
+      const [p] = await planRows(t.tx, [e.id]).then((ps) =>
+        ps.filter((x) => x.version === e.current_plan_version),
+      );
       const merged: ExperimentPlan = { ...toPlan(p!), ...(ctx.body.plan ?? {}) };
       validatePlan(merged);
       await t.tx
@@ -446,7 +509,13 @@ export const experimentHandlers: HandlerMap = {
         .returning('row_version')
         .executeTakeFirstOrThrow();
       ctx.setETag(upd.row_version);
-      await audit(t, e, 'experiment.draft_saved', `${e.display_key} draft plan edited`, e.current_plan_version);
+      await audit(
+        t,
+        e,
+        'experiment.draft_saved',
+        `${e.display_key} draft plan edited`,
+        e.current_plan_version,
+      );
       return viewOne(t.tx, e.id);
     },
   }),
@@ -455,8 +524,16 @@ export const experimentHandlers: HandlerMap = {
     load: (ctx, tx) => loadExp(tx, ctx.params.id),
     authorize: (ctx, { c }) => editAuth(ctx.identity.subject, c, 'experiment.edit'),
     handle: async (ctx, t, { e }) => {
-      const r = experimentMachine.apply(e.lifecycle as never, 'amend', human(ctx.userId), { reason: ctx.body.reason });
-      if (!r.ok) refuse(r, e.lifecycle === 'draft' ? 'A draft plan is edited directly; amendments start after G1 locks it.' : undefined);
+      const r = experimentMachine.apply(e.lifecycle as never, 'amend', human(ctx.userId), {
+        reason: ctx.body.reason,
+      });
+      if (!r.ok)
+        refuse(
+          r,
+          e.lifecycle === 'draft'
+            ? 'A draft plan is edited directly; amendments start after G1 locks it.'
+            : undefined,
+        );
       const plans = await planRows(t.tx, [e.id]);
       const current = plans.find((p) => p.version === e.current_plan_version)!;
       const before = toPlan(current);
@@ -493,11 +570,22 @@ export const experimentHandlers: HandlerMap = {
           created_at: ctx.now,
         })
         .execute();
-      await t.tx.updateTable('me.experiment').set({ current_plan_version: toVersion }).where('id', '=', e.id).execute();
-      await audit(t, e, r.auditAction, `${e.display_key} amendment ${number}: ${changed.join(', ')}`, toVersion, {
-        amendment: number,
-        thresholdsChanged: changed.includes('metrics'),
-      });
+      await t.tx
+        .updateTable('me.experiment')
+        .set({ current_plan_version: toVersion })
+        .where('id', '=', e.id)
+        .execute();
+      await audit(
+        t,
+        e,
+        r.auditAction,
+        `${e.display_key} amendment ${number}: ${changed.join(', ')}`,
+        toVersion,
+        {
+          amendment: number,
+          thresholdsChanged: changed.includes('metrics'),
+        },
+      );
       // A pinned plan changed: the tenant policy decides (unlisted → uncertain → sponsor resolves).
       await applyMateriality(
         t,
@@ -521,7 +609,9 @@ export const experimentHandlers: HandlerMap = {
     authorize: (ctx, { c }) => editAuth(ctx.identity.subject, c, 'experiment.edit'),
     handle: async (ctx, t, { e }) => {
       const authorizingGate = await approvalEffectiveness(t.tx, e.locked_by_gate_request_id);
-      const r = experimentMachine.apply(e.lifecycle as never, 'start', human(ctx.userId), { authorizingGate });
+      const r = experimentMachine.apply(e.lifecycle as never, 'start', human(ctx.userId), {
+        authorizingGate,
+      });
       if (!r.ok) refuse(r);
       await t.tx.updateTable('me.experiment').set({ lifecycle: r.to }).where('id', '=', e.id).execute();
       await audit(t, e, r.auditAction, `${e.display_key} started`, e.current_plan_version);
@@ -544,7 +634,11 @@ export const experimentHandlers: HandlerMap = {
       const unknown = b.observations.filter((o) => !metrics.has(o.metricKey));
       if (unknown.length)
         throw new ApiError('VALIDATION_FAILED', 'Observations must use the pre-registered metrics.', {
-          errors: unknown.map((o) => ({ path: 'body.observations', code: 'custom', message: `Unknown metric ${o.metricKey}` })),
+          errors: unknown.map((o) => ({
+            path: 'body.observations',
+            code: 'custom',
+            message: `Unknown metric ${o.metricKey}`,
+          })),
         });
       const observations = current.metrics.map((m) => {
         const o = b.observations.find((x) => x.metricKey === m.metric_key);
@@ -561,7 +655,10 @@ export const experimentHandlers: HandlerMap = {
           periodStart: b.periodStart,
           periodEnd: b.periodEnd,
           source: b.sourceText,
-          metrics: observations.map((o) => ({ observed: o.observed !== null, tooEarly: o.observed === null })),
+          metrics: observations.map((o) => ({
+            observed: o.observed !== null,
+            tooEarly: o.observed === null,
+          })),
         },
       });
       if (!r.ok) refuse(r);
@@ -631,7 +728,10 @@ export const experimentHandlers: HandlerMap = {
     authorize: (ctx, { c }) => editAuth(ctx.identity.subject, c, 'experiment.record_result'),
     handle: async (ctx, t, { e }) => {
       if (e.lifecycle !== 'result_recorded')
-        throw new ApiError('INVALID_TRANSITION', 'Record the results before the decision taken under the rule.');
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          'Record the results before the decision taken under the rule.',
+        );
       const row = await t.tx
         .insertInto('me.experiment_decision')
         .values({
@@ -643,9 +743,16 @@ export const experimentHandlers: HandlerMap = {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
-      await audit(t, e, 'experiment.decision_recorded', `${e.display_key} decision under the pre-registered rule recorded`, undefined, {
-        decisionId: row.id,
-      });
+      await audit(
+        t,
+        e,
+        'experiment.decision_recorded',
+        `${e.display_key} decision under the pre-registered rule recorded`,
+        undefined,
+        {
+          decisionId: row.id,
+        },
+      );
       return viewOne(t.tx, e.id);
     },
   }),

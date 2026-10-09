@@ -8,7 +8,7 @@ import { API, ProblemDetails, type EndpointDef } from '@growth-os/contracts';
 import { sql, withTenant, type Db, type Tx } from '@growth-os/db';
 import { assumptions, cases, exp03, gates, sources } from '@growth-os/fixtures-aster';
 import { hashToken } from '../../../platform/session';
-import { call, type SeededTenant, type TestApp } from '../../../platform/testing';
+import { call, login, type SeededTenant, type TestApp } from '../../../platform/testing';
 
 export const problem = (body: string) => ProblemDetails.parse(JSON.parse(body));
 
@@ -31,7 +31,12 @@ export async function auditActions(t: TestApp, a: SeededTenant, objectId: string
 
 export async function analyticsFor(t: TestApp, a: SeededTenant, name: string) {
   return inTenant(t, a, (tx) =>
-    tx.selectFrom('platform.analytics_event').selectAll().where('name', '=', name).orderBy('occurred_at').execute(),
+    tx
+      .selectFrom('platform.analytics_event')
+      .selectAll()
+      .where('name', '=', name)
+      .orderBy('occurred_at')
+      .execute(),
   );
 }
 
@@ -64,20 +69,34 @@ export const ids = (a: SeededTenant) => ({
 });
 
 export async function caseStage(t: TestApp, a: SeededTenant, key = 'ME-104'): Promise<string> {
-  return inTenant(t, a, async (tx) =>
-    (await tx.selectFrom('platform.workflow_case').select('stage').where('display_key', '=', key).executeTakeFirstOrThrow()).stage,
+  return inTenant(
+    t,
+    a,
+    async (tx) =>
+      (
+        await tx
+          .selectFrom('platform.workflow_case')
+          .select('stage')
+          .where('display_key', '=', key)
+          .executeTakeFirstOrThrow()
+      ).stage,
   );
 }
 
 export async function setStage(t: TestApp, a: SeededTenant, key: string, stage: string): Promise<void> {
-  await inTenant(t, a, (tx) => tx.updateTable('platform.workflow_case').set({ stage }).where('display_key', '=', key).execute());
+  await inTenant(t, a, (tx) =>
+    tx.updateTable('platform.workflow_case').set({ stage }).where('display_key', '=', key).execute(),
+  );
 }
 
 /**
  * ME-110 in Assessment on an aster-demo tenant: one decision-critical assumption, one feasibility row,
  * a committed sizing version (the demo's unblocked engine result) citing SRC-014. G1 preconditions met.
  */
-export async function assessmentCase(t: TestApp, a: SeededTenant): Promise<{ caseId: string; asmId: string }> {
+export async function assessmentCase(
+  t: TestApp,
+  a: SeededTenant,
+): Promise<{ caseId: string; asmId: string }> {
   return inTenant(t, a, async (tx) => {
     const demo = await tx
       .selectFrom('platform.workflow_case')
@@ -136,7 +155,11 @@ export async function assessmentCase(t: TestApp, a: SeededTenant): Promise<{ cas
       })
       .returning('id')
       .executeTakeFirstOrThrow();
-    await tx.updateTable('platform.assumption').set({ current_version_id: v.id }).where('id', '=', asmId).execute();
+    await tx
+      .updateTable('platform.assumption')
+      .set({ current_version_id: v.id })
+      .where('id', '=', asmId)
+      .execute();
     await tx
       .insertInto('me.feasibility_assessment')
       .values({
@@ -185,7 +208,12 @@ export async function assessmentCase(t: TestApp, a: SeededTenant): Promise<{ cas
       .execute();
     await tx
       .updateTable('me.sizing_version')
-      .set({ state: 'committed', calculation_result_id: calc.id, committed_at: sql`now()`, committed_by: demo.owner_user_id })
+      .set({
+        state: 'committed',
+        calculation_result_id: calc.id,
+        committed_at: sql`now()`,
+        committed_by: demo.owner_user_id,
+      })
       .where('id', '=', sv)
       .execute();
     return { caseId, asmId };
@@ -240,4 +268,55 @@ export function g2Conditions(a: SeededTenant) {
 }
 
 export type Endpoint = EndpointDef;
+
+/** Session cookies by persona (tenant B personas end with B). */
+export type Cookies = Record<
+  | 'maya'
+  | 'elena'
+  | 'daniel'
+  | 'jonas'
+  | 'priya'
+  | 'lena'
+  | 'admin'
+  | 'opsLead'
+  | 'agent'
+  | 'mayaB'
+  | 'elenaB'
+  | 'jonasB'
+  | 'danielB',
+  string
+>;
 export type { Db };
+
+/** aster-demo: Elena approves G2 v3 with C1/C2 (API). */
+export async function approveG2(t: TestApp, s: SeededTenant): Promise<void> {
+  const elena = await login(t.app, s.user('elena'));
+  const pkg = await currentPackage(t, elena, ids(s).g2);
+  const res = await call(t.app, API.gates.decide, {
+    params: { id: ids(s).g2 },
+    body: decideBody(pkg, { disposition: 'approve_with_conditions', conditions: g2Conditions(s) }),
+    cookie: elena,
+    idempotencyKey: true,
+  });
+  if (res.statusCode !== 201) throw new Error(`approve ${res.statusCode} ${res.body}`);
+}
+
+/** aster-demo: G2 approved, C1 met by Jonas and the pilot activated (all through the API). */
+export async function activatePilot(t: TestApp, s: SeededTenant): Promise<void> {
+  await approveG2(t, s);
+  const jonas = await login(t.app, s.user('jonas'));
+  const pkg = await currentPackage(t, jonas, ids(s).g2);
+  const c1 = pkg.gateRequest.conditions.find((c) => c.key === 'C1')!;
+  await call(t.app, API.gates.markConditionMet, {
+    params: { id: c1.id },
+    body: { evidence: 'Signed site list (4 sites)' },
+    cookie: jonas,
+    idempotencyKey: true,
+  });
+  const res = await call(t.app, API.pilot.activate, {
+    params: { caseRef: 'ME-104' },
+    cookie: jonas,
+    idempotencyKey: true,
+  });
+  if (res.statusCode !== 200) throw new Error(`activate ${res.statusCode} ${res.body}`);
+}

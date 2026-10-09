@@ -36,7 +36,10 @@ export async function toReviewRequests(tx: Tx, rows: RRRow[]): Promise<ReviewReq
     .select(['id', 'display_key'])
     .where('id', 'in', [...new Set(rows.map((r) => r.case_id))])
     .execute();
-  const people = await peopleOf(tx, rows.flatMap((r) => [r.requested_by, r.reviewer_user_id]));
+  const people = await peopleOf(
+    tx,
+    rows.flatMap((r) => [r.requested_by, r.reviewer_user_id]),
+  );
   return rows.map((r) => ({
     id: r.id,
     caseId: r.case_id,
@@ -102,7 +105,11 @@ export const reviewHandlers: HandlerMap = {
 
   [API.work.respondToReview.id]: command(API.work.respondToReview, {
     load: async (ctx, tx) => {
-      const r = (await tx.selectFrom('platform.review_request').selectAll().where('id', '=', ctx.params.id).executeTakeFirst()) as RRRow | undefined;
+      const r = (await tx
+        .selectFrom('platform.review_request')
+        .selectAll()
+        .where('id', '=', ctx.params.id)
+        .executeTakeFirst()) as RRRow | undefined;
       if (!r) throw notFound();
       const c = await caseById(tx, r.case_id);
       if (!c) throw notFound();
@@ -113,13 +120,24 @@ export const reviewHandlers: HandlerMap = {
         return { allow: false, rule: 'case.read', code: 'NOT_FOUND', reason: 'Not found' };
       return r.reviewer_user_id === ctx.userId
         ? { allow: true, rule: 'review.named_reviewer', authorityGrantId: null }
-        : { allow: false, rule: 'review.named_reviewer', code: 'FORBIDDEN', reason: 'Only the named reviewer can respond.' };
+        : {
+            allow: false,
+            rule: 'review.named_reviewer',
+            code: 'FORBIDDEN',
+            reason: 'Only the named reviewer can respond.',
+          };
     },
     handle: async (ctx, t, { r, c }) => {
-      if (r.status !== 'open') throw new ApiError('INVALID_TRANSITION', 'This review request is already answered or cancelled.');
+      if (r.status !== 'open')
+        throw new ApiError('INVALID_TRANSITION', 'This review request is already answered or cancelled.');
       const row = (await t.tx
         .updateTable('platform.review_request')
-        .set({ status: 'responded', response: ctx.body.response, response_reason: ctx.body.reason, responded_at: ctx.now })
+        .set({
+          status: 'responded',
+          response: ctx.body.response,
+          response_reason: ctx.body.reason,
+          responded_at: ctx.now,
+        })
         .where('id', '=', r.id)
         .returningAll()
         .executeTakeFirstOrThrow()) as RRRow;

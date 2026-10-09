@@ -23,7 +23,11 @@ export interface AwaitingDecision {
   href: string;
 }
 
-export async function awaitingDecisions(tx: Tx, subject: PolicySubject, viewerId: string): Promise<AwaitingDecision[]> {
+export async function awaitingDecisions(
+  tx: Tx,
+  subject: PolicySubject,
+  viewerId: string,
+): Promise<AwaitingDecision[]> {
   if (subject.actor.kind !== 'human') return [];
   const rows = await tx
     .selectFrom('platform.gate_request')
@@ -48,7 +52,11 @@ export async function awaitingDecisions(tx: Tx, subject: PolicySubject, viewerId
     if (mine) continue;
     let key = g.caseRow?.key ?? null;
     if (!key) {
-      const m = await tx.selectFrom('me.mandate').select('display_key').where('id', '=', g.gate.subject_id).executeTakeFirst();
+      const m = await tx
+        .selectFrom('me.mandate')
+        .select('display_key')
+        .where('id', '=', g.gate.subject_id)
+        .executeTakeFirst();
       key = m?.display_key ?? g.gate.display_key;
     }
     const code = g.gate.gate_code as GateCode;
@@ -58,7 +66,9 @@ export async function awaitingDecisions(tx: Tx, subject: PolicySubject, viewerId
       caseKey: key,
       gateCode: code,
       buttonLabel: buttonLabel(code, scopeOf(g.gate)),
-      dueText: g.gate.submitted_at ? `Submitted ${shortDate(g.gate.submitted_at)} · snapshot v${snap.version}` : `Snapshot v${snap.version}`,
+      dueText: g.gate.submitted_at
+        ? `Submitted ${shortDate(g.gate.submitted_at)} · snapshot v${snap.version}`
+        : `Snapshot v${snap.version}`,
       href: g.caseRow
         ? `/me/cases/${key}/decisions?gate=${g.gate.id}`
         : `/me/mandates/${key}?gate=${g.gate.id}`,

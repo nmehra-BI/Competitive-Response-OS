@@ -57,7 +57,11 @@ async function caseOr404(tx: Tx, ref: string): Promise<CaseLite> {
   return c;
 }
 
-function scoped(subject: Parameters<typeof roleAllows>[0], c: CaseLite, action: Parameters<typeof roleAllows>[1]): Authorization {
+function scoped(
+  subject: Parameters<typeof roleAllows>[0],
+  c: CaseLite,
+  action: Parameters<typeof roleAllows>[1],
+): Authorization {
   const v = caseVisible(subject, c);
   if (!v.allow) return v;
   return roleAllows(subject, action, { businessUnitId: c.businessUnitId, caseId: c.id });
@@ -74,13 +78,23 @@ async function reviewOf(tx: Tx, caseId: string) {
 type ReviewRow = NonNullable<Awaited<ReturnType<typeof reviewOf>>>;
 
 async function targetsOf(tx: Tx, gateRequestId: string) {
-  const g = await tx.selectFrom('platform.gate_request').select('current_snapshot_id').where('id', '=', gateRequestId).executeTakeFirst();
+  const g = await tx
+    .selectFrom('platform.gate_request')
+    .select('current_snapshot_id')
+    .where('id', '=', gateRequestId)
+    .executeTakeFirst();
   if (!g?.current_snapshot_id) return [];
-  return tx.selectFrom('platform.outcome_target').selectAll().where('snapshot_id', '=', g.current_snapshot_id).orderBy('metric_key').execute();
+  return tx
+    .selectFrom('platform.outcome_target')
+    .selectAll()
+    .where('snapshot_id', '=', g.current_snapshot_id)
+    .orderBy('metric_key')
+    .execute();
 }
 type TargetRow = Awaited<ReturnType<typeof targetsOf>>[number];
 
-const trim = (v: string | null) => (v === null ? null : v.includes('.') ? v.replace(/0+$/, '').replace(/\.$/, '') : v);
+const trim = (v: string | null) =>
+  v === null ? null : v.includes('.') ? v.replace(/0+$/, '').replace(/\.$/, '') : v;
 
 function toTarget(t: TargetRow) {
   return {
@@ -138,7 +152,11 @@ function toObservation(o: ObsRow, people: People): OutcomeObservation {
  * thresholds ("Within [hours per site]") read the stated direction ("Above assumption …"); qualitative
  * targets are Inconclusive unless a later human judgement says otherwise (CR-WS4b-4).
  */
-export function resultFor(t: TargetRow | undefined, value: string | null, valueText: string): ThresholdResult | null {
+export function resultFor(
+  t: TargetRow | undefined,
+  value: string | null,
+  valueText: string,
+): ThresholdResult | null {
   if (!t) return null;
   if (t.operator === 'qualitative') return 'inconclusive';
   if (t.threshold_value !== null && value !== null) {
@@ -157,7 +175,11 @@ export function resultFor(t: TargetRow | undefined, value: string | null, valueT
 
 async function decisionRecord(tx: Tx, id: string | null): Promise<DecisionRecord | null> {
   if (!id) return null;
-  const d = await tx.selectFrom('platform.decision_record').selectAll().where('id', '=', id).executeTakeFirst();
+  const d = await tx
+    .selectFrom('platform.decision_record')
+    .selectAll()
+    .where('id', '=', id)
+    .executeTakeFirst();
   if (!d) return null;
   const people = await peopleOf(tx, [d.decided_by, d.on_recommendation_of]);
   return {
@@ -182,7 +204,12 @@ export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<Out
     .orderBy('recorded_at')
     .orderBy('version')
     .execute()) as ObsRow[];
-  const rec = r.recommendation as { outcome: DecisionOutcome; label: string; text: string; by: string } | null;
+  const rec = r.recommendation as {
+    outcome: DecisionOutcome;
+    label: string;
+    text: string;
+    by: string;
+  } | null;
   const people = await peopleOf(tx, [...obs.map((o) => o.recorded_by), rec?.by]);
   const superseded = new Set(obs.map((o) => o.supersedes_id).filter(Boolean));
   const latestOf = (list: ObsRow[]) => list.filter((o) => !superseded.has(o.id)).at(-1) ?? null;
@@ -268,7 +295,11 @@ export const outcomeHandlers: HandlerMap = {
       const target = b.targetId ? targets.find((x) => x.id === b.targetId) : undefined;
       if (b.targetId && !target) throw notFound();
       if (b.sourceId) {
-        const s = await t.tx.selectFrom('platform.source').select('id').where('id', '=', b.sourceId).executeTakeFirst();
+        const s = await t.tx
+          .selectFrom('platform.source')
+          .select('id')
+          .where('id', '=', b.sourceId)
+          .executeTakeFirst();
         if (!s) throw notFound();
       }
       let version = 1;
@@ -282,7 +313,11 @@ export const outcomeHandlers: HandlerMap = {
         if (!prev) throw notFound();
         if (prev.target_id !== (b.targetId ?? null))
           throw new ApiError('VALIDATION_FAILED', 'A new version must be for the same target.');
-        const newer = await t.tx.selectFrom('platform.outcome_observation').select('id').where('supersedes_id', '=', prev.id).executeTakeFirst();
+        const newer = await t.tx
+          .selectFrom('platform.outcome_observation')
+          .select('id')
+          .where('supersedes_id', '=', prev.id)
+          .executeTakeFirst();
         if (newer) throw new ApiError('INVALID_TRANSITION', 'That actual already has a newer version.');
         version = prev.version + 1;
       }
@@ -335,7 +370,8 @@ export const outcomeHandlers: HandlerMap = {
     handle: async (ctx, t, c) => {
       const r = await needReview(t.tx, c);
       assertIfMatch(ctx, r.row_version);
-      if (r.status === 'decided') throw new ApiError('INVALID_TRANSITION', 'This review is decided. Start a new review version.');
+      if (r.status === 'decided')
+        throw new ApiError('INVALID_TRANSITION', 'This review is decided. Start a new review version.');
       const b = ctx.body;
       const rec =
         b.recommendation === undefined
@@ -344,7 +380,9 @@ export const outcomeHandlers: HandlerMap = {
             ? null
             : JSON.stringify({
                 outcome: b.recommendation.outcome,
-                label: RECOMMENDATION_LABELS[b.recommendation.outcome] ?? DECISION_OUTCOME_LABELS[b.recommendation.outcome],
+                label:
+                  RECOMMENDATION_LABELS[b.recommendation.outcome] ??
+                  DECISION_OUTCOME_LABELS[b.recommendation.outcome],
                 text: b.recommendation.text,
                 by: ctx.userId,
               });
@@ -384,15 +422,22 @@ export const outcomeHandlers: HandlerMap = {
     },
     handle: async (ctx, t, c) => {
       const r = await needReview(t.tx, c);
-      if (r.decision_record_id) throw new ApiError('INVALID_TRANSITION', 'This review already has a decision.');
+      if (r.decision_record_id)
+        throw new ApiError('INVALID_TRANSITION', 'This review already has a decision.');
       const b = ctx.body;
-      const facts = { reviewAuthority: true, rationale: b.rationale, causalLimitations: r.causal_limitations };
+      const facts = {
+        reviewAuthority: true,
+        rationale: b.rationale,
+        causalLimitations: r.causal_limitations,
+      };
       const rec = r.recommendation as { outcome: DecisionOutcome; by: string } | null;
       let props = {};
       {
         if (!r.causal_limitations.some((x) => x.trim()))
           throw new ApiError('PRECONDITIONS_UNMET', 'State the causal limitations before deciding.', {
-            blockers: [{ key: 'causal_limitations_present', message: 'State the causal limitations before deciding.' }],
+            blockers: [
+              { key: 'causal_limitations_present', message: 'State the causal limitations before deciding.' },
+            ],
           });
       }
       const d = await t.tx

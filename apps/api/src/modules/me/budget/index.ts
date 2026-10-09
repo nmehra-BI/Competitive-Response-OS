@@ -9,7 +9,14 @@ import { caseVisible, roleAllows } from '../../../platform/authz';
 import { ApiError, notFound } from '../../../platform/errors';
 import { command, type HandlerMap } from '../../../platform/pipeline';
 import { isoDate } from '../../../platform/serialize';
-import { approvalEffectiveness, caseByRef, cents, fmtMoneyShort, peopleOf, tenantIdSql } from '../gates/lib/common';
+import {
+  approvalEffectiveness,
+  caseByRef,
+  cents,
+  fmtMoneyShort,
+  peopleOf,
+  tenantIdSql,
+} from '../gates/lib/common';
 
 export const budgetHandlers: HandlerMap = {
   [API.budget.recordEntry.id]: command(API.budget.recordEntry, {
@@ -21,7 +28,10 @@ export const budgetHandlers: HandlerMap = {
     authorize: (ctx, c) => {
       const v = caseVisible(ctx.identity.subject, c);
       if (!v.allow) return v;
-      return roleAllows(ctx.identity.subject, 'budget.record', { businessUnitId: c.businessUnitId, caseId: c.id });
+      return roleAllows(ctx.identity.subject, 'budget.record', {
+        businessUnitId: c.businessUnitId,
+        caseId: c.id,
+      });
     },
     handle: async (ctx, t, c) => {
       const b = ctx.body;
@@ -39,14 +49,29 @@ export const budgetHandlers: HandlerMap = {
       const effective = await approvalEffectiveness(t.tx, gate.id);
       if (effective !== 'effective' || !gate.requested_amount || !gate.currency)
         throw new ApiError(
-          effective === 'invalidated' ? 'APPROVAL_INVALIDATED' : effective === 'expired' ? 'APPROVAL_EXPIRED' : 'PRECONDITIONS_UNMET',
+          effective === 'invalidated'
+            ? 'APPROVAL_INVALIDATED'
+            : effective === 'expired'
+              ? 'APPROVAL_EXPIRED'
+              : 'PRECONDITIONS_UNMET',
           `${gate.display_key} has no effective approved budget.`,
-          { blockers: [{ key: 'approval_effective', message: `${gate.display_key} is not an effective approval with an amount` }] },
+          {
+            blockers: [
+              {
+                key: 'approval_effective',
+                message: `${gate.display_key} is not an effective approval with an amount`,
+              },
+            ],
+          },
         );
       if (b.currency !== gate.currency)
-        throw new ApiError('VALIDATION_FAILED', `Record entries in ${gate.currency}, the currency of the approved budget.`, {
-          errors: [{ path: 'body.currency', code: 'custom', message: `Use ${gate.currency}` }],
-        });
+        throw new ApiError(
+          'VALIDATION_FAILED',
+          `Record entries in ${gate.currency}, the currency of the approved budget.`,
+          {
+            errors: [{ path: 'body.currency', code: 'custom', message: `Use ${gate.currency}` }],
+          },
+        );
       const entries = await t.tx
         .selectFrom('me.budget_entry')
         .select(['amount'])
@@ -55,9 +80,19 @@ export const budgetHandlers: HandlerMap = {
         .execute();
       const total = entries.reduce((a, e) => a + cents(e.amount), 0n) + cents(b.amount);
       if (total > cents(gate.requested_amount))
-        throw new ApiError('PRECONDITIONS_UNMET', `This would exceed the approved ${fmtMoneyShort(gate.requested_amount, gate.currency)}. Request a scope change.`, {
-          blockers: [{ key: 'budget_ceiling', message: `${b.kind === 'spent' ? 'Spend' : 'Commitments'} above the approved budget need a scope-change request`, gate: gate.gate_code as 'G2' }],
-        });
+        throw new ApiError(
+          'PRECONDITIONS_UNMET',
+          `This would exceed the approved ${fmtMoneyShort(gate.requested_amount, gate.currency)}. Request a scope change.`,
+          {
+            blockers: [
+              {
+                key: 'budget_ceiling',
+                message: `${b.kind === 'spent' ? 'Spend' : 'Commitments'} above the approved budget need a scope-change request`,
+                gate: gate.gate_code as 'G2',
+              },
+            ],
+          },
+        );
       const row = await t.tx
         .insertInto('me.budget_entry')
         .values({

@@ -3,7 +3,13 @@
  * task brief (what authorizes it, sync status, scope to stay inside, what it is measured against).
  * Task ownership never grants approval; the notice says so to people who approve nothing.
  */
-import { API, GATE_STATUS_LABELS, SYNC_STATUS_LABELS, type GateStatus, type WorkItem } from '@growth-os/contracts';
+import {
+  API,
+  GATE_STATUS_LABELS,
+  SYNC_STATUS_LABELS,
+  type GateStatus,
+  type WorkItem,
+} from '@growth-os/contracts';
 import { canReadCase, matchingRole, signedIn } from '../../../platform/authz';
 import { query, type HandlerMap } from '../../../platform/pipeline';
 import { caseById, shortDate, subjectOf, type CaseLite } from '../../me/gates/lib/common';
@@ -11,7 +17,8 @@ import { awaitingDecisions } from '../../me/gates/lib/inbox';
 import { scopeOf, gateById } from '../../me/gates/lib/serialize';
 import { myReviewRequests } from '../reviews';
 
-const NOTICE = 'You approve nothing in this workspace. Gate decisions belong to the sponsor and the investment committee.';
+const NOTICE =
+  'You approve nothing in this workspace. Gate decisions belong to the sponsor and the investment committee.';
 
 export const workHandlers: HandlerMap = {
   [API.work.myWork.id]: query(API.work.myWork, {
@@ -63,7 +70,11 @@ export const workHandlers: HandlerMap = {
         const scope = gate ? scopeOf(gate) : null;
         const plan =
           t.owner_type === 'pilot_plan_version'
-            ? await tx.selectFrom('me.pilot_plan_version').select('thresholds_text').where('id', '=', t.owner_id).executeTakeFirst()
+            ? await tx
+                .selectFrom('me.pilot_plan_version')
+                .select('thresholds_text')
+                .where('id', '=', t.owner_id)
+                .executeTakeFirst()
             : undefined;
         const fn = t.function.charAt(0).toUpperCase() + t.function.slice(1);
         const item: WorkItem = {
@@ -120,7 +131,17 @@ export const workHandlers: HandlerMap = {
       const conds = await tx
         .selectFrom('platform.condition as k')
         .innerJoin('platform.gate_request as g', 'g.id', 'k.gate_request_id')
-        .select(['k.id', 'k.key', 'k.text', 'k.status', 'k.due_on', 'k.due_rule', 'k.blocks_execution', 'g.case_id', 'g.display_key'])
+        .select([
+          'k.id',
+          'k.key',
+          'k.text',
+          'k.status',
+          'k.due_on',
+          'k.due_rule',
+          'k.blocks_execution',
+          'g.case_id',
+          'g.display_key',
+        ])
         .where('k.owner_user_id', '=', uid)
         .execute();
       for (const k of conds) {
@@ -186,7 +207,10 @@ export const workHandlers: HandlerMap = {
           { key: 'done', label: 'Done', count: doneTab.length },
         ],
         items: tab === 'reviews' ? reviewsTab : tab === 'done' ? doneTab : tasksTab,
-        approvalsNotice: decides || matchingRole(subject, 'gate.decide', { businessUnitId: null, caseId: null }) ? null : NOTICE,
+        approvalsNotice:
+          decides || matchingRole(subject, 'gate.decide', { businessUnitId: null, caseId: null })
+            ? null
+            : NOTICE,
       };
     },
   }),

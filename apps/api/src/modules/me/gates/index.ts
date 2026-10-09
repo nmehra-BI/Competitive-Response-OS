@@ -40,30 +40,28 @@ import {
 import { gateAction, gateVisible, holdsAdmin, loadGateCtx, type GateCtx } from './lib/access';
 import { evaluate } from './lib/facts';
 import { applyInvalidations, moveCase, pinsForSnapshots, SYSTEM_GATE } from './lib/moves';
-import { buildPackage, changeLine, diffChanges, gateResource } from './lib/package';
+import { buildPackage, diffChanges, gateResource } from './lib/package';
 import {
   contentOf,
   displayStatus,
   dissentOfCase,
   gateById,
   GATE_COLUMNS,
-  proposedConditionsOf,
   snapshotById,
   toCondition,
   toGateRequest,
   toSnapshot,
   conditionRows,
   type GateRow,
-  type SnapshotRow,
 } from './lib/serialize';
 import { buildInput, freezeAndInsert } from './lib/snapshot';
 
 const policy = createPolicyEngine();
-const HIDDEN = { allow: false as const, rule: 'case.read', code: 'NOT_FOUND' as const, reason: 'Not found' };
 const OPEN: GateRequestStatus[] = ['draft', 'awaiting_decision', 'stale', 'returned_for_revision'];
 
 const humanActor = (userId: string): Actor => ({ kind: 'human', userId, interactive: true });
-const waitMs = (from: Date | null, now: Date) => (from ? Math.max(0, now.getTime() - new Date(from).getTime()) : 0);
+const waitMs = (from: Date | null, now: Date) =>
+  from ? Math.max(0, now.getTime() - new Date(from).getTime()) : 0;
 
 async function caseOr404(tx: Tx, ref: string): Promise<CaseLite> {
   const c = await caseByRef(tx, ref);
@@ -82,7 +80,11 @@ export async function nextGateKey(tx: Tx, caseRow: CaseLite, code: GateCode): Pr
   const taken = new Set(rows.map((r) => r.display_key));
   for (let n = 1; n < 1000; n++) {
     const key =
-      code === 'X' ? `${caseRow.key}-X${n}` : n === 1 ? `${caseRow.key}-${code}` : `${caseRow.key}-${code}-${n}`;
+      code === 'X'
+        ? `${caseRow.key}-X${n}`
+        : n === 1
+          ? `${caseRow.key}-${code}`
+          : `${caseRow.key}-${code}-${n}`;
     if (!taken.has(key)) return key;
   }
   throw new ApiError('INTERNAL', 'Unexpected error');
@@ -172,9 +174,12 @@ export async function submitGate(
   // The previous snapshot is superseded by the new version (never edited, never deleted).
   if (gate.current_snapshot_id) {
     const prev = await snapshotById(t.tx, gate.current_snapshot_id);
-    if (prev && snapshotMachine.apply(prev.status as 'current' | 'stale' | 'superseded', 'supersede', SYSTEM_GATE, {
-      newerSnapshotCreated: true,
-    }).ok)
+    if (
+      prev &&
+      snapshotMachine.apply(prev.status as 'current' | 'stale' | 'superseded', 'supersede', SYSTEM_GATE, {
+        newerSnapshotCreated: true,
+      }).ok
+    )
       await t.tx
         .updateTable('platform.decision_snapshot')
         .set({ status: 'superseded', superseded_by_snapshot_id: snap.id })
@@ -222,9 +227,16 @@ const APPROVE = new Set(['approve', 'approve_with_conditions']);
 const TRANSITIONS = new Set(['approve', 'approve_with_conditions', 'return_for_revision', 'not_approved']);
 const EXPIRING: GateCode[] = ['G1', 'G2', 'X'];
 
-function signOffPresent(content: ReturnType<typeof contentOf>, positions: { area: string; position: string }[], area: string) {
+function signOffPresent(
+  content: ReturnType<typeof contentOf>,
+  positions: { area: string; position: string }[],
+  area: string,
+) {
   const ok = (p: string) => p !== 'dissents' && p !== 'not_yet_reviewed' && p !== 'abstains';
-  return content.signOffs.some((s) => s.area === area && ok(s.position)) || positions.some((p) => p.area === area && ok(p.position));
+  return (
+    content.signOffs.some((s) => s.area === area && ok(s.position)) ||
+    positions.some((p) => p.area === area && ok(p.position))
+  );
 }
 
 /**
@@ -300,6 +312,27 @@ async function lockExperiments(t: Tools, gate: GateRow, snapshotId: string, now:
       .set({ lifecycle: r.to, locked_by_gate_request_id: gate.id, locked_at: now })
       .where('id', '=', p.experiment_id)
       .execute();
+    // The validation task set for WS6: owned by the experiment, authorized by this G1, with the
+    // validation-task destination. WS4b never sends tasks (WAVE3 §7).
+    const mapping = await t.tx
+      .selectFrom('platform.connector_mapping')
+      .select(['id', 'connection_id'])
+      .where('purpose', '=', 'validation_tasks')
+      .executeTakeFirst();
+    await t.tx
+      .insertInto('platform.task_set')
+      .values({
+        tenant_id: tenantIdSql,
+        case_id: gate.case_id!,
+        owner_type: 'experiment',
+        owner_id: p.experiment_id,
+        authorizing_gate_request_id: gate.id,
+        connection_id: mapping?.connection_id ?? null,
+        mapping_id: mapping?.id ?? null,
+        created_at: now,
+      })
+      .onConflict((oc) => oc.columns(['owner_type', 'owner_id']).doNothing())
+      .execute();
     await t.audit({
       action: r.auditAction,
       objectType: 'experiment',
@@ -353,7 +386,10 @@ export const gateHandlers: HandlerMap = {
     authorize: (ctx, c) => {
       const v = caseVisible(ctx.identity.subject, c);
       if (!v.allow) return v;
-      return roleAllows(ctx.identity.subject, 'gate.submit', { businessUnitId: c.businessUnitId, caseId: c.id });
+      return roleAllows(ctx.identity.subject, 'gate.submit', {
+        businessUnitId: c.businessUnitId,
+        caseId: c.id,
+      });
     },
     handle: async (ctx, t, c) => {
       const { gateCode: code, scope, parentGateRequestId, proposedConditions } = ctx.body;
@@ -369,7 +405,10 @@ export const gateHandlers: HandlerMap = {
         .where('status', 'in', OPEN)
         .executeTakeFirst();
       if (open && code !== 'X')
-        throw new ApiError('INVALID_TRANSITION', `${open.display_key} is still open. Withdraw or decide it first.`);
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          `${open.display_key} is still open. Withdraw or decide it first.`,
+        );
       if (code === 'X') {
         if (!parentGateRequestId)
           throw new ApiError('VALIDATION_FAILED', 'An extension needs the gate it extends.', {
@@ -382,9 +421,16 @@ export const gateHandlers: HandlerMap = {
       }
       if (code === 'G3') {
         // Scale is never requested while its preconditions are unmet (PRD §4, D-039).
-        const ev = await evaluate(t.tx, { gateCode: 'G3', caseRow: c, gate: null, scopeOverride: { ...scope } });
+        const ev = await evaluate(t.tx, {
+          gateCode: 'G3',
+          caseRow: c,
+          gate: null,
+          scopeOverride: { ...scope },
+        });
         if (!ev.allMet)
-          throw new ApiError('PRECONDITIONS_UNMET', ev.summary ?? 'G3 preconditions unmet', { blockers: ev.blockers });
+          throw new ApiError('PRECONDITIONS_UNMET', ev.summary ?? 'G3 preconditions unmet', {
+            blockers: ev.blockers,
+          });
       }
       const key = await nextGateKey(t.tx, c, code);
       const amount = scope.amount;
@@ -435,19 +481,24 @@ export const gateHandlers: HandlerMap = {
 
   [API.gates.submit.id]: command(API.gates.submit, {
     load: (ctx, tx) => loadGateCtx(tx, ctx.params.id),
-    authorize: (ctx, g) => gateAction(ctx.identity.subject, g, g.gate.gate_code === 'G0' ? 'mandate.submit' : 'gate.submit'),
+    authorize: (ctx, g) =>
+      gateAction(ctx.identity.subject, g, g.gate.gate_code === 'G0' ? 'mandate.submit' : 'gate.submit'),
     handle: async (ctx, t, g) => {
       const cmd =
         g.gate.status === 'draft' ? 'submit' : g.gate.status === 'returned_for_revision' ? 'resubmit' : null;
       if (!cmd)
-        throw new ApiError('INVALID_TRANSITION', `${g.gate.display_key} is ${g.gate.status.replace(/_/g, ' ')}.`);
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          `${g.gate.display_key} is ${g.gate.status.replace(/_/g, ' ')}.`,
+        );
       return submitGate(ctx, t, g, cmd);
     },
   }),
 
   [API.gates.refresh.id]: command(API.gates.refresh, {
     load: (ctx, tx) => loadGateCtx(tx, ctx.params.id),
-    authorize: (ctx, g) => gateAction(ctx.identity.subject, g, g.gate.gate_code === 'G0' ? 'mandate.submit' : 'gate.submit'),
+    authorize: (ctx, g) =>
+      gateAction(ctx.identity.subject, g, g.gate.gate_code === 'G0' ? 'mandate.submit' : 'gate.submit'),
     handle: async (ctx, t, g) => {
       if (g.gate.status !== 'stale')
         throw new ApiError('INVALID_TRANSITION', 'Only a stale snapshot can be refreshed.');
@@ -457,7 +508,8 @@ export const gateHandlers: HandlerMap = {
 
   [API.gates.withdraw.id]: command(API.gates.withdraw, {
     load: (ctx, tx) => loadGateCtx(tx, ctx.params.id),
-    authorize: (ctx, g) => gateAction(ctx.identity.subject, g, g.gate.gate_code === 'G0' ? 'mandate.submit' : 'gate.withdraw'),
+    authorize: (ctx, g) =>
+      gateAction(ctx.identity.subject, g, g.gate.gate_code === 'G0' ? 'mandate.submit' : 'gate.withdraw'),
     handle: async (ctx, t, g) => {
       const { gate } = g;
       const from = gate.status as GateRequestStatus;
@@ -465,7 +517,11 @@ export const gateHandlers: HandlerMap = {
         packageAuthorId: gate.submitted_by ?? gate.created_by,
       });
       if (!r.ok) refuse(r);
-      await t.tx.updateTable('platform.gate_request').set({ status: r.to }).where('id', '=', gate.id).execute();
+      await t.tx
+        .updateTable('platform.gate_request')
+        .set({ status: r.to })
+        .where('id', '=', gate.id)
+        .execute();
       await t.audit({
         action: r.auditAction,
         objectType: 'gate_request',
@@ -511,7 +567,11 @@ export const gateHandlers: HandlerMap = {
       if (against === 'current_inputs') {
         const built = await buildInput(tx, { ...g.gate, current_snapshot_id: snap.id }, g.caseRow);
         const { components, ...rest } = built.input;
-        to = { ...rest, schemaVersion: 1 as const, components: components.map(({ type, id, version }) => ({ type, id, version })) };
+        to = {
+          ...rest,
+          schemaVersion: 1 as const,
+          components: components.map(({ type, id, version }) => ({ type, id, version })),
+        };
       } else {
         const other = await snapshotById(tx, against);
         if (!other || other.subject_id !== snap.subject_id) throw notFound();
@@ -530,7 +590,12 @@ export const gateHandlers: HandlerMap = {
     // Administrators pass visibility here only to be refused with FORBIDDEN by the policy below.
     authorize: (ctx, g) =>
       holdsAdmin(ctx.identity.subject)
-        ? { allow: true, rule: 'gate.decide:admin_checked_in_policy', authorityGrantId: null, role: 'tenant_admin' }
+        ? {
+            allow: true,
+            rule: 'gate.decide:admin_checked_in_policy',
+            authorityGrantId: null,
+            role: 'tenant_admin',
+          }
         : gateVisible(ctx.identity.subject, g),
     handle: async (ctx, t, g) => {
       const { gate, caseRow } = g;
@@ -546,27 +611,42 @@ export const gateHandlers: HandlerMap = {
         throw new ApiError(
           'SNAPSHOT_STALE',
           reason ? staleBanner(reason).title : 'You decided on a snapshot that is no longer the current one.',
-          { blockers: [{ key: 'snapshot_current', message: `Refresh snapshot (creates v${(snap?.version ?? 0) + 1})` }] },
+          {
+            blockers: [
+              { key: 'snapshot_current', message: `Refresh snapshot (creates v${(snap?.version ?? 0) + 1})` },
+            ],
+          },
         );
       }
       if (body.snapshotHash !== snap.content_hash)
-        throw new ApiError('SNAPSHOT_HASH_MISMATCH', 'The package you read differs from the current snapshot. Reload before deciding.', {
-          blockers: [{ key: 'hash_matches', message: 'Reload the package before deciding.' }],
-        });
+        throw new ApiError(
+          'SNAPSHOT_HASH_MISMATCH',
+          'The package you read differs from the current snapshot. Reload before deciding.',
+          {
+            blockers: [{ key: 'hash_matches', message: 'Reload the package before deciding.' }],
+          },
+        );
       // 3. policy: admin → self → conflict → deciding role → authority (on the tenant-local date).
       const subject = subjectOf(ctx);
       const resource = gateResource(gate, caseRow, snap);
       if (APPROVE.has(body.disposition)) {
         const d = policy.check(subject, 'gate.decide', resource);
-        if (!d.allow) throw new ApiError(d.code === 'NOT_FOUND' ? 'NOT_FOUND' : d.code, d.code === 'NOT_FOUND' ? 'Not found' : d.reason);
+        if (!d.allow)
+          throw new ApiError(
+            d.code === 'NOT_FOUND' ? 'NOT_FOUND' : d.code,
+            d.code === 'NOT_FOUND' ? 'Not found' : d.reason,
+          );
       } else {
         const c = policy.gateDecisionChecks(subject, resource);
         if (!c.designatedApprover.ok)
           throw new ApiError(
-            c.designatedApprover.code === 'NOT_FOUND' ? 'NOT_FOUND' : (c.designatedApprover.code ?? 'FORBIDDEN'),
+            c.designatedApprover.code === 'NOT_FOUND'
+              ? 'NOT_FOUND'
+              : (c.designatedApprover.code ?? 'FORBIDDEN'),
             c.designatedApprover.reason ?? 'Your role does not decide gates.',
           );
-        if (!c.notConflicted.ok) throw new ApiError('CONFLICT_OF_INTEREST', c.notConflicted.reason ?? 'Conflicted');
+        if (!c.notConflicted.ok)
+          throw new ApiError('CONFLICT_OF_INTEREST', c.notConflicted.reason ?? 'Conflicted');
       }
       if (body.disposition !== 'approve_with_conditions' && body.conditions.length > 0)
         throw new ApiError('VALIDATION_FAILED', 'Conditions are added only with "Approve with conditions".', {
@@ -582,7 +662,8 @@ export const gateHandlers: HandlerMap = {
         .where('snapshot_id', '=', snap.id)
         .where('approver_user_id', '=', ctx.userId)
         .executeTakeFirst();
-      if (already) throw new ApiError('INVALID_TRANSITION', 'You have already recorded a decision on this snapshot.');
+      if (already)
+        throw new ApiError('INVALID_TRANSITION', 'You have already recorded a decision on this snapshot.');
 
       // 4. the machine re-checks everything and adds required sign-offs and condition owners.
       const content = contentOf(snap);
@@ -596,27 +677,34 @@ export const gateHandlers: HandlerMap = {
       let to: GateRequestStatus = gate.status as GateRequestStatus;
       let auditAction = `gate_request.${body.disposition}`;
       if (TRANSITIONS.has(body.disposition)) {
-        const r = gateRequestMachine.apply('awaiting_decision', body.disposition as GateCommand, ctx.identity.actor, {
-          snapshot: { id: snap.id, hash: snap.content_hash, status: 'current' },
-          decision: {
-            snapshotId: body.snapshotId,
-            snapshotHash: body.snapshotHash,
-            conditions: body.conditions.map((c) => ({ ownerId: c.ownerId })),
+        const r = gateRequestMachine.apply(
+          'awaiting_decision',
+          body.disposition as GateCommand,
+          ctx.identity.actor,
+          {
+            snapshot: { id: snap.id, hash: snap.content_hash, status: 'current' },
+            decision: {
+              snapshotId: body.snapshotId,
+              snapshotHash: body.snapshotHash,
+              conditions: body.conditions.map((c) => ({ ownerId: c.ownerId })),
+            },
+            decisionChecks: checks,
+            requiredSignOffs: gp.requiredSignOffAreas.map((area) => ({
+              area,
+              present: signOffPresent(content, positions, area),
+            })),
+            rationale: body.rationale,
           },
-          decisionChecks: checks,
-          requiredSignOffs: gp.requiredSignOffAreas.map((area) => ({
-            area,
-            present: signOffPresent(content, positions, area),
-          })),
-          rationale: body.rationale,
-        });
+        );
         if (!r.ok) refuse(r);
         to = r.to;
         auditAction = r.auditAction;
       }
       const role =
-        matchingRole(subject, 'gate.decide', { businessUnitId: gate.business_unit_id, caseId: gate.case_id }) ??
-        'sponsor';
+        matchingRole(subject, 'gate.decide', {
+          businessUnitId: gate.business_unit_id,
+          caseId: gate.case_id,
+        }) ?? 'sponsor';
       const approval = await t.tx
         .insertInto('platform.approval')
         .values({
@@ -650,7 +738,15 @@ export const gateHandlers: HandlerMap = {
           .execute();
       }
       if (body.disposition === 'approve_with_conditions')
-        await writeConditions(t, gate, content.conditionsProposed, body.conditions, approval.id, ctx.userId, ctx.now);
+        await writeConditions(
+          t,
+          gate,
+          content.conditionsProposed,
+          body.conditions,
+          approval.id,
+          ctx.userId,
+          ctx.now,
+        );
       await t.audit({
         action: auditAction,
         objectType: 'gate_request',
@@ -666,7 +762,12 @@ export const gateHandlers: HandlerMap = {
           conditions: body.conditions.length,
         },
       });
-      const target = { objectType: 'gate_request', objectId: gate.id, objectVersion: snap.version, caseId: gate.case_id };
+      const target = {
+        objectType: 'gate_request',
+        objectId: gate.id,
+        objectVersion: snap.version,
+        caseId: gate.case_id,
+      };
       if (APPROVE.has(body.disposition))
         await t.analytics('gate_approved', target, {
           gate: code,
@@ -674,7 +775,11 @@ export const gateHandlers: HandlerMap = {
           waitMs: wait,
         });
       else if (body.disposition === 'return_for_revision' || body.disposition === 'not_approved')
-        await t.analytics('gate_returned', target, { gate: code, disposition: body.disposition, waitMs: wait });
+        await t.analytics('gate_returned', target, {
+          gate: code,
+          disposition: body.disposition,
+          waitMs: wait,
+        });
 
       // 5. follow-ons: case stage, mandate, experiment locks (system actor).
       if (TRANSITIONS.has(body.disposition)) {
@@ -694,7 +799,9 @@ export const gateHandlers: HandlerMap = {
                 .updateTable('me.mandate')
                 .set({
                   status: r.to,
-                  ...(r.to === 'approved' ? { g0_gate_request_id: gate.id, ...(pinned ? { current_version_id: pinned.id } : {}) } : {}),
+                  ...(r.to === 'approved'
+                    ? { g0_gate_request_id: gate.id, ...(pinned ? { current_version_id: pinned.id } : {}) }
+                    : {}),
                 })
                 .where('id', '=', gate.subject_id)
                 .execute();
@@ -705,6 +812,18 @@ export const gateHandlers: HandlerMap = {
                   { gate: 'G0', waitMs: wait },
                 );
             }
+          }
+          // Cases created directly on this mandate (cases.createDirect) wait in Draft mandate:
+          // the G0 approval moves them to Discovery (mandate_approved is emitted once, above).
+          if (follow.case) {
+            const waiting = await t.tx
+              .selectFrom('platform.workflow_case')
+              .select('id')
+              .where('mandate_id', '=', gate.subject_id)
+              .where('stage', '=', 'draft_mandate')
+              .execute();
+            for (const w of waiting)
+              await moveCase(t, w.id, follow.case, { reason: `G0 approved for ${gate.display_key}` });
           }
         }
         if (follow.lockExperiments) await lockExperiments(t, gate, snap.id, ctx.now);
@@ -779,7 +898,10 @@ export const gateHandlers: HandlerMap = {
     authorize: (ctx, c) => {
       const v = caseVisible(ctx.identity.subject, c);
       if (!v.allow) return v;
-      return roleAllows(ctx.identity.subject, 'gate.record_position', { businessUnitId: c.businessUnitId, caseId: c.id });
+      return roleAllows(ctx.identity.subject, 'gate.record_position', {
+        businessUnitId: c.businessUnitId,
+        caseId: c.id,
+      });
     },
     handle: async (ctx, t, c) => {
       const open = await t.tx
@@ -830,7 +952,12 @@ export const gateHandlers: HandlerMap = {
       if (!v.allow) return v;
       return ctx.userId === c.owner_user_id || ctx.userId === g.ownerId
         ? { ...v, rule: 'condition.owner_or_case_owner' }
-        : { allow: false, rule: 'condition.owner', code: 'FORBIDDEN', reason: 'Only the condition owner or the case owner can mark it met.' };
+        : {
+            allow: false,
+            rule: 'condition.owner',
+            code: 'FORBIDDEN',
+            reason: 'Only the condition owner or the case owner can mark it met.',
+          };
     },
     handle: async (ctx, t, { c, g }) => {
       if (c.status !== 'open') throw new ApiError('INVALID_TRANSITION', `${c.key} is already ${c.status}.`);
@@ -861,7 +988,11 @@ export const gateHandlers: HandlerMap = {
 
   [API.gates.resolveMateriality.id]: command(API.gates.resolveMateriality, {
     load: async (ctx, tx) => {
-      const mc = await tx.selectFrom('platform.material_change').selectAll().where('id', '=', ctx.params.id).executeTakeFirst();
+      const mc = await tx
+        .selectFrom('platform.material_change')
+        .selectAll()
+        .where('id', '=', ctx.params.id)
+        .executeTakeFirst();
       if (!mc) throw notFound();
       const c = await caseById(tx, mc.case_id);
       if (!c) throw notFound();
@@ -954,7 +1085,10 @@ async function materialChangesOf(tx: Tx, caseId: string) {
         .where('disposition', 'in', ['approve', 'approve_with_conditions'])
         .execute()
     : [];
-  const people = await peopleOf(tx, rows.flatMap((r) => [r.actor_user_id, r.resolved_by]));
+  const people = await peopleOf(
+    tx,
+    rows.flatMap((r) => [r.actor_user_id, r.resolved_by]),
+  );
   return rows.map((r) => {
     const im = impacts.filter((i) => i.material_change_id === r.id);
     const approvals = new Set([
@@ -982,4 +1116,3 @@ async function materialChangesOf(tx: Tx, caseId: string) {
     };
   });
 }
-

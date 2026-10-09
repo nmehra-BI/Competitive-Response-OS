@@ -194,16 +194,30 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
   const sizingRow = await latestCommittedSizing(tx, caseId);
   let sizing: Content['sizing'] = null;
   if (sizingRow?.input_hash) {
-    components.push({ type: 'sizing_version', id: sizingRow.id, version: sizingRow.version, state: 'committed' });
+    components.push({
+      type: 'sizing_version',
+      id: sizingRow.id,
+      version: sizingRow.version,
+      state: 'committed',
+    });
     sizing =
       prev?.sizing && prev.sizing.sizingVersionId === sizingRow.id
         ? prev.sizing
-        : { sizingVersionId: sizingRow.id, inputHash: sizingRow.input_hash, summary: sizingSummary(sizingRow) };
+        : {
+            sizingVersionId: sizingRow.id,
+            inputHash: sizingRow.input_hash,
+            summary: sizingSummary(sizingRow),
+          };
   }
   const econRow = await latestCommittedEconomics(tx, caseId);
   let economics: Content['economics'] = null;
   if (econRow?.input_hash) {
-    components.push({ type: 'economics_version', id: econRow.id, version: econRow.version, state: 'committed' });
+    components.push({
+      type: 'economics_version',
+      id: econRow.id,
+      version: econRow.version,
+      state: 'committed',
+    });
     economics =
       prev?.economics && prev.economics.economicsVersionId === econRow.id
         ? prev.economics
@@ -249,7 +263,12 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
         .executeTakeFirst();
       if (!plan) continue;
       // The plan is frozen by the G1 decision (lock); pinning it is what pre-registration means.
-      components.push({ type: 'experiment_plan_version', id: plan.id, version: plan.version, state: 'committed' });
+      components.push({
+        type: 'experiment_plan_version',
+        id: plan.id,
+        version: plan.version,
+        state: 'committed',
+      });
       const metrics = await tx
         .selectFrom('me.experiment_metric')
         .selectAll()
@@ -275,7 +294,12 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
         .orderBy('version', 'desc')
         .executeTakeFirst();
       if (!res) continue;
-      components.push({ type: 'experiment_result_version', id: res.id, version: res.version, state: 'committed' });
+      components.push({
+        type: 'experiment_result_version',
+        id: res.id,
+        version: res.version,
+        state: 'committed',
+      });
       const carried = prev?.validationResults.find((r) => r.resultVersionId === res.id);
       validationResults.push(
         carried ?? {
@@ -310,7 +334,8 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
     gateCode: code,
     ask: prev?.ask ?? defaultAsk(code, scope.amount, scope.currency, scope.durationDays),
     scope,
-    recommendation: prev?.recommendation ?? `Decide on ${ME_GATES[code].name.toLowerCase()} within the stated scope.`,
+    recommendation:
+      prev?.recommendation ?? `Decide on ${ME_GATES[code].name.toLowerCase()} within the stated scope.`,
     alternatives: prev?.alternatives ?? [
       { name: 'No entry.', meaning: 'Stop here and keep the requested budget.', isNoEntry: true },
     ],
@@ -336,7 +361,12 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
   return { input: { ...content, components }, subjectId: caseId, prevSnapshotId: prevRow?.id ?? null };
 }
 
-function defaultAsk(code: string, amount: string | null, currency: string | null, days: number | null): string {
+function defaultAsk(
+  code: string,
+  amount: string | null,
+  currency: string | null,
+  days: number | null,
+): string {
   const money = amount && currency ? `${fmtCompact(amount, currency)}` : '€[amount]';
   switch (code) {
     case 'G1':
@@ -362,7 +392,8 @@ function sizingSummary(r: { version: number; output: unknown }): string {
   } | null;
   const l = o?.ladder;
   if (!l?.tam) return `Sizing v${r.version}`;
-  const sam = l.sam?.available === false ? 'Not available' : `${grouped(String(l.sam?.population ?? ''))} sites`;
+  const sam =
+    l.sam?.available === false ? 'Not available' : `${grouped(String(l.sam?.population ?? ''))} sites`;
   return `Sizing v${r.version}: TAM ${grouped(String(l.tam.population))} sites · SAM ${sam} · Reachable ${grouped(String(l.reachablePool?.population ?? ''))} sites`;
 }
 
@@ -377,10 +408,10 @@ function economicsBlock(id: string, inputHash: string, output: unknown): NonNull
     oneTimeInvestment?: { amount?: string; currency?: string; unavailable?: true };
   } | null;
   const sc = o?.scenarios ?? [];
-  const row = (label: string, k: 'annualRevenue' | 'grossContribution' | 'annualIncrementalOpex' | 'contributionAfterOpex') => [
-    label,
-    ...sc.map((s) => fmtCompact(s[k].amount, s[k].currency)),
-  ];
+  const row = (
+    label: string,
+    k: 'annualRevenue' | 'grossContribution' | 'annualIncrementalOpex' | 'contributionAfterOpex',
+  ) => [label, ...sc.map((s) => fmtCompact(s[k].amount, s[k].currency))];
   const one = o?.oneTimeInvestment;
   return {
     economicsVersionId: id,
@@ -468,7 +499,10 @@ async function freshSignOffs(tx: Tx, caseId: string): Promise<SignOff[]> {
     .where('signed_at', 'is not', null)
     .orderBy('signed_at', 'desc')
     .execute();
-  const people = await peopleOf(tx, [...reviews.map((r) => r.signed_by), ...fin.map((f) => f.reviewer_user_id)]);
+  const people = await peopleOf(tx, [
+    ...reviews.map((r) => r.signed_by),
+    ...fin.map((f) => f.reviewer_user_id),
+  ]);
   const out: SignOff[] = reviews.map((r) => ({
     reviewer: people(r.signed_by),
     area: DIMENSION_AREA[r.dimension] ?? 'specialist',

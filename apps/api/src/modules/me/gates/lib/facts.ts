@@ -143,7 +143,9 @@ export async function latestObservation(tx: Tx, targetId: string) {
     .where(({ not, exists, selectFrom }) =>
       not(
         exists(
-          selectFrom('platform.outcome_observation as n').select('n.id').whereRef('n.supersedes_id', '=', 'o.id'),
+          selectFrom('platform.outcome_observation as n')
+            .select('n.id')
+            .whereRef('n.supersedes_id', '=', 'o.id'),
         ),
       ),
     )
@@ -185,7 +187,13 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         maxSites: scope.maxSites,
         ownerId: scope.ownerId,
       }
-    : (f.scopeOverride ?? { amount: null, currency: null, durationDays: null, maxSites: null, ownerId: null });
+    : (f.scopeOverride ?? {
+        amount: null,
+        currency: null,
+        durationDays: null,
+        maxSites: null,
+        ownerId: null,
+      });
   const caseId = f.caseRow?.id ?? '';
   switch (f.gateCode) {
     case 'G0': {
@@ -194,9 +202,7 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         ? await tx
             .selectFrom('me.mandate as m')
             .innerJoin('me.mandate_version as v', (j) =>
-              j.on((eb) =>
-                eb('v.id', '=', eb.fn.coalesce('m.draft_version_id', 'm.current_version_id')),
-              ),
+              j.on((eb) => eb('v.id', '=', eb.fn.coalesce('m.draft_version_id', 'm.current_version_id'))),
             )
             .select([
               'v.sponsor_user_id',
@@ -282,8 +288,7 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         .where('case_id', '=', caseId)
         .executeTakeFirst();
       const econ = await latestCommittedEconomics(tx, caseId);
-      const updated =
-        !!plan?.activated_at && !!econ?.committed_at && econ.committed_at > plan.activated_at;
+      const updated = !!plan?.activated_at && !!econ?.committed_at && econ.committed_at > plan.activated_at;
       return {
         gateCode: 'G3',
         pilotTargets: targets,

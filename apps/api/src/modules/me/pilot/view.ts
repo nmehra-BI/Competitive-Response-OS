@@ -88,11 +88,19 @@ export async function toTasks(tx: Tx, rows: TaskRow[], people?: People): Promise
       .where('task_set_id', 'in', [...new Set(rows.map((r) => r.task_set_id))])
       .execute(),
   ]);
-  const p = people ?? (await peopleOf(tx, rows.map((r) => r.owner_user_id)));
+  const p =
+    people ??
+    (await peopleOf(
+      tx,
+      rows.map((r) => r.owner_user_id),
+    ));
   const ordinal = new Map(rows.map((r) => [r.id, r.ordinal]));
   return rows.map((t) => {
     const d = deps.filter((x) => x.task_id === t.id).map((x) => x.depends_on_task_id);
-    const nums = d.map((x) => ordinal.get(x)).filter((x): x is number => x !== undefined).sort((a, b) => a - b);
+    const nums = d
+      .map((x) => ordinal.get(x))
+      .filter((x): x is number => x !== undefined)
+      .sort((a, b) => a - b);
     const link = links.find((l) => l.task_id === t.id);
     const m = ms.find((x) => x.id === t.milestone_id);
     return {
@@ -106,7 +114,8 @@ export async function toTasks(tx: Tx, rows: TaskRow[], people?: People): Promise
       function: t.function as Task['function'],
       owner: t.owner_user_id ? p(t.owner_user_id) : null,
       dependsOnTaskIds: d,
-      dependsOnLabel: nums.length === 0 ? '—' : nums.length === 1 ? `Task ${nums[0]}` : `Tasks ${nums.join(', ')}`,
+      dependsOnLabel:
+        nums.length === 0 ? '—' : nums.length === 1 ? `Task ${nums[0]}` : `Tasks ${nums.join(', ')}`,
       dueOn: isoDateOrNull(t.due_on as unknown as string | null),
       dueRule: t.due_rule,
       deliverable: t.deliverable,
@@ -141,14 +150,26 @@ export async function toTasks(tx: Tx, rows: TaskRow[], people?: People): Promise
 }
 
 export async function taskSetView(tx: Tx, taskSetId: string): Promise<TaskSet | null> {
-  const s = await tx.selectFrom('platform.task_set').selectAll().where('id', '=', taskSetId).executeTakeFirst();
+  const s = await tx
+    .selectFrom('platform.task_set')
+    .selectAll()
+    .where('id', '=', taskSetId)
+    .executeTakeFirst();
   if (!s) return null;
   const tasks = await toTasks(tx, await taskRows(tx, s.id));
   const conn = s.connection_id
-    ? await tx.selectFrom('platform.connection').select(['name', 'provider']).where('id', '=', s.connection_id).executeTakeFirst()
+    ? await tx
+        .selectFrom('platform.connection')
+        .select(['name', 'provider'])
+        .where('id', '=', s.connection_id)
+        .executeTakeFirst()
     : undefined;
   const mapping = s.mapping_id
-    ? await tx.selectFrom('platform.connector_mapping').select('destination_project').where('id', '=', s.mapping_id).executeTakeFirst()
+    ? await tx
+        .selectFrom('platform.connector_mapping')
+        .select('destination_project')
+        .where('id', '=', s.mapping_id)
+        .executeTakeFirst()
     : undefined;
   const count = (f: (x: Task) => boolean) => tasks.filter(f).length;
   const confirmed = count((x) => x.sync.status === 'confirmed');
@@ -187,7 +208,10 @@ export async function budgetMeter(tx: Tx, gateRequestId: string, asOf: string): 
     .where('gate_request_id', '=', gateRequestId)
     .execute();
   const sum = (k: string) => entries.filter((e) => e.kind === k).reduce((a, e) => a + cents(e.amount), 0n);
-  const money = (amount: string, measure: 'approved_budget' | 'committed_spend' | 'spent_to_date' | 'remaining_budget') => ({
+  const money = (
+    amount: string,
+    measure: 'approved_budget' | 'committed_spend' | 'spent_to_date' | 'remaining_budget',
+  ) => ({
     amount,
     currency: g.currency!,
     measure,
@@ -213,7 +237,11 @@ export interface ActivationFacts {
 }
 
 /** Activation facts and the "Why?" list: missing owners and open blocking conditions together. */
-export async function activationFacts(tx: Tx, plan: PilotPlanRow, draft: VersionRow | undefined): Promise<ActivationFacts> {
+export async function activationFacts(
+  tx: Tx,
+  plan: PilotPlanRow,
+  draft: VersionRow | undefined,
+): Promise<ActivationFacts> {
   const approval = await approvalEffectiveness(tx, plan.gate_request_id);
   const conds = plan.gate_request_id ? await conditionRows(tx, [plan.gate_request_id]) : [];
   const open = conds.filter((c) => c.blocks_execution && c.status === 'open');
@@ -234,17 +262,37 @@ export async function activationFacts(tx: Tx, plan: PilotPlanRow, draft: Version
   for (const t of unowned)
     blockers.push({ key: 'all_tasks_owned', message: `Task ${t.ordinal} · ${t.title} has no owner` });
   for (const c of open)
-    blockers.push({ key: 'blocking_conditions_met', message: `${c.key} · ${c.text} · open`, ownerId: c.owner_user_id });
+    blockers.push({
+      key: 'blocking_conditions_met',
+      message: `${c.key} · ${c.text} · open`,
+      ownerId: c.owner_user_id,
+    });
   if (!draft) blockers.push({ key: 'plan_draft', message: 'There is no plan draft to activate' });
-  return { approval, blockingConditionsMet: open.length === 0, allTasksOwned: tasks.length > 0 && unowned.length === 0, blockers };
+  return {
+    approval,
+    blockingConditionsMet: open.length === 0,
+    allTasksOwned: tasks.length > 0 && unowned.length === 0,
+    blockers,
+  };
 }
 
 export async function messageDrafts(tx: Tx, caseId: string): Promise<MessageDraft[]> {
-  const rows = await tx.selectFrom('me.message_draft').selectAll().where('case_id', '=', caseId).orderBy('created_at').execute();
+  const rows = await tx
+    .selectFrom('me.message_draft')
+    .selectAll()
+    .where('case_id', '=', caseId)
+    .orderBy('created_at')
+    .execute();
   return rows.map(toMessageDraft);
 }
 
-export function toMessageDraft(r: { id: string; case_id: string; title: string; body: string; origin: string }): MessageDraft {
+export function toMessageDraft(r: {
+  id: string;
+  case_id: string;
+  title: string;
+  body: string;
+  origin: string;
+}): MessageDraft {
   return {
     id: r.id,
     caseId: r.case_id,
@@ -256,8 +304,16 @@ export function toMessageDraft(r: { id: string; case_id: string; title: string; 
   };
 }
 
-export async function pilotView(tx: Tx, c: CaseLite, plan: PilotPlanRow, asOf: string): Promise<PilotPlanView> {
-  const [current, draft] = await Promise.all([versionById(tx, plan.current_version_id), versionById(tx, plan.draft_version_id)]);
+export async function pilotView(
+  tx: Tx,
+  c: CaseLite,
+  plan: PilotPlanRow,
+  asOf: string,
+): Promise<PilotPlanView> {
+  const [current, draft] = await Promise.all([
+    versionById(tx, plan.current_version_id),
+    versionById(tx, plan.draft_version_id),
+  ]);
   const gate = plan.gate_request_id
     ? await tx
         .selectFrom('platform.gate_request')
@@ -265,7 +321,8 @@ export async function pilotView(tx: Tx, c: CaseLite, plan: PilotPlanRow, asOf: s
         .where('id', '=', plan.gate_request_id)
         .executeTakeFirst()
     : undefined;
-  const decided = gate && ['approved', 'approved_with_conditions', 'invalidated', 'expired'].includes(gate.status);
+  const decided =
+    gate && ['approved', 'approved_with_conditions', 'invalidated', 'expired'].includes(gate.status);
   const snap =
     decided && gate.current_snapshot_id
       ? await tx
@@ -275,12 +332,19 @@ export async function pilotView(tx: Tx, c: CaseLite, plan: PilotPlanRow, asOf: s
           .executeTakeFirst()
       : undefined;
   const conds = gate ? await conditionRows(tx, [gate.id]) : [];
-  const people = await peopleOf(tx, conds.flatMap((x) => [x.owner_user_id, x.added_by]));
+  const people = await peopleOf(
+    tx,
+    conds.flatMap((x) => [x.owner_user_id, x.added_by]),
+  );
   const setId = (current ?? draft)?.task_set_id ?? null;
   const taskSet = setId ? await taskSetView(tx, setId) : null;
   const act = await activationFacts(tx, plan, draft);
   const conn = taskSet?.connectionId
-    ? await tx.selectFrom('platform.connection').select(['status', 'name']).where('id', '=', taskSet.connectionId).executeTakeFirst()
+    ? await tx
+        .selectFrom('platform.connection')
+        .select(['status', 'name'])
+        .where('id', '=', taskSet.connectionId)
+        .executeTakeFirst()
     : undefined;
   const stageAllows = caseMachine.commandsFrom(c.stage as never).includes('pilot_activated');
   return {
@@ -303,7 +367,17 @@ export async function pilotView(tx: Tx, c: CaseLite, plan: PilotPlanRow, asOf: s
     budget: decided && gate ? await budgetMeter(tx, gate.id, asOf) : null,
     taskSet,
     activationBlockers:
-      plan.status === 'active' ? [] : stageAllows ? act.blockers : [{ key: 'case_stage', message: `Activation needs Pilot approved (stage is ${c.stage.replace(/_/g, ' ')})` }, ...act.blockers],
+      plan.status === 'active'
+        ? []
+        : stageAllows
+          ? act.blockers
+          : [
+              {
+                key: 'case_stage',
+                message: `Activation needs Pilot approved (stage is ${c.stage.replace(/_/g, ' ')})`,
+              },
+              ...act.blockers,
+            ],
     messageDrafts: await messageDrafts(tx, c.id),
     connectorBanner:
       conn && conn.status !== 'connected'
@@ -315,4 +389,3 @@ export async function pilotView(tx: Tx, c: CaseLite, plan: PilotPlanRow, asOf: s
         : null,
   };
 }
-
