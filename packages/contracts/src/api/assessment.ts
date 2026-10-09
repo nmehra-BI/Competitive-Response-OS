@@ -3,7 +3,7 @@
  * economics (S08), assumptions and disputes (S09 register), lineage drawer.
  */
 import { z } from 'zod';
-import { FeasibilityDimension, ReviewArea, ReviewerPosition, Sensitivity } from '../enums';
+import { FeasibilityDimension, ReviewArea, ReviewerPosition, RoleCode, Sensitivity } from '../enums';
 import { Assumption, AssumptionVersion, ThesisFields, ThesisView, ValueUnit } from '../entities/assumption';
 import { CaseHeader, MandateFields, WorkflowCase } from '../entities/case';
 import { Challenge, Claim } from '../entities/evidence';
@@ -19,13 +19,25 @@ import { ActivityItem, AuditEvent } from '../entities/audit';
 import { ReviewRequest } from '../entities/gate';
 import { EconomicsOutput, LineageNode, SizingOutput } from '../engines';
 import { Page, PageQuery } from '../http';
-import { CurrencyCode, DecimalString, Id, IsoDate, PriceYear } from '../primitives';
+import { CurrencyCode, DecimalString, Id, IsoDate, PersonRef, PriceYear } from '../primitives';
 import { CaseParams, endpoint, IdParams, Rationale } from './endpoint';
 
 // ----- Case envelope -----
 
 export const CaseCommand = z.enum(['start_assessment', 'hold', 'resume', 'stop', 'close']);
 export type CaseCommand = z.infer<typeof CaseCommand>;
+
+/**
+ * A person who works on a case (D-037, additive after the freeze): owner-picker candidates for
+ * conditions, tasks and reviews. Roles are the person's roles that reach this case (case- or
+ * business-unit-scoped); participantRoles are their case_participant rows. Tenant admins are not
+ * members unless they also hold a case role. Never includes agents or service principals.
+ */
+export const CaseMember = PersonRef.extend({
+  roles: z.array(RoleCode),
+  participantRoles: z.array(z.string()),
+});
+export type CaseMember = z.infer<typeof CaseMember>;
 
 export const caseEndpoints = {
   createDirect: endpoint({
@@ -63,6 +75,17 @@ export const caseEndpoints = {
     body: Rationale.extend({ command: CaseCommand }),
     response: CaseHeader,
     successStatus: 200,
+  }),
+  members: endpoint({
+    id: 'cases.members',
+    method: 'GET',
+    path: '/me/cases/:caseRef/members',
+    summary:
+      'People who work on the case (owner-picker candidates): human principals with a role that reaches the case, and case participants. Added by D-037.',
+    screens: ['S10', 'S11', 'S12'],
+    prd: ['ME-11', 'ME-12'],
+    params: CaseParams,
+    response: z.object({ items: z.array(CaseMember) }),
   }),
   activity: endpoint({
     id: 'cases.activity',

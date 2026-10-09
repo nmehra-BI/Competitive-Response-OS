@@ -276,6 +276,7 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 | `cases.createDirect` | `POST /me/cases` | Create a case with a new inline mandate. Stage Draft mandate until G0. → 201 | S01, S02 | ME-01 | Idempotency-Key |
 | `cases.header` | `GET /me/cases/:caseRef` | Persistent case header: owner, stage, next decision, freshness, gate rail, tab counts. → 200 | S05, S06, S07, S08, S09, S10, S11, S12, BRIEF | §7, ME-11 | — |
 | `cases.transition` | `POST /me/cases/:caseRef/transitions` | Owner/sponsor commands outside gates: start assessment, hold, resume, stop (decision), close. Stop needs authority and rationale. → 200 | S05, S12 | §4, ME-17 | Idempotency-Key, human session |
+| `cases.members` | `GET /me/cases/:caseRef/members` | People who work on the case (owner-picker candidates): human principals with a role that reaches the case, and case participants. Added by D-037. → 200 | S10, S11, S12 | ME-11, ME-12 | — |
 | `cases.activity` | `GET /me/cases/:caseRef/activity` | Activity timeline (shared component); key decisions pinned. → 200 | S05, S12, S01 | ME-17 | — |
 | `cases.history` | `GET /me/cases/:caseRef/history` | History tab: audit events for this case, filterable by object. → 200 | S13 | ME-17 | — |
 | `cases.requestReview` | `POST /me/cases/:caseRef/review-requests` | Assign a reviewer with a focused question and "what to check" list. → 201 | S05, S07, S08 | ME-06 | Idempotency-Key |
