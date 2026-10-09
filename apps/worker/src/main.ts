@@ -1,22 +1,18 @@
 /**
  * Worker entry point: graphile-worker over Postgres as the worker role (me_worker, NOBYPASSRLS).
- * Each task sets tenant context before touching data. Streams add their task maps here as they land
- * (WS3 timers, WS5 analysis, WS6 outbox). Crontab entries run only for registered tasks.
+ * Each task sets tenant context before touching data. Streams add their task maps in `tasks.ts`
+ * (WS5 analysis and WS6 outbox still to come). Crontab entries run only for registered tasks.
  */
-import { parseCronItems, run, type TaskList } from 'graphile-worker';
+import { parseCronItems, run } from 'graphile-worker';
 import { createDb, createObjectStore, DB_URLS } from '@growth-os/db';
 import { CRONTAB } from './jobs/catalog';
-import { analyticsTasks } from './jobs/analytics';
-import { evidenceTasks } from './jobs/evidence';
 import { cronItemsFrom } from './schedule';
+import { createTaskList } from './tasks';
 
 const db = createDb('worker', 5);
 const objects = createObjectStore();
 
-const taskList: TaskList = {
-  ...evidenceTasks({ db, objects }),
-  ...analyticsTasks({ db }),
-};
+const taskList = createTaskList({ db, objects });
 
 const runner = await run({
   connectionString: DB_URLS.worker,
