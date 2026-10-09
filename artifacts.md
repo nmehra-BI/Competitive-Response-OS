@@ -25,6 +25,30 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
 
 
+### Build status overview (end-to-end, 2026-10-09)
+
+Every workflow now runs end to end on the **real stack**: the API, the worker and Vite with MSW off, against a
+dedicated database reset and seeded per spec file (Playwright project `real`, decisions.md D-092). The Aster journey
+(`apps/web/e2e/aster-journey.spec.ts`, all 30 BUILD_PLAN §8 steps) runs twice: once with analysis enabled and once
+in the `real-ai-down` project with `ANALYSIS_ENABLED=false`. "Simulated" means the boundary is a stand-in that
+honours the production interface: the Jira simulator and the fixture analysis provider.
+
+| ID | End-to-end status | Journey steps | Proving specs (real stack) | Still simulated or open |
+|---|---|---|---|---|
+| WF-01 | Done end to end | 1, 5 (G0 on the rail), 29 | `aster-journey` (steps 1, 5, 29), `real/a11y` (S02), `real/cross-tenant` | PQ-14 (no committee persona) |
+| WF-02 | Done end to end | 2–5 | `aster-journey` (steps 1–5), `real/missing-data` (Unknown cells, never 0) | Discovery runs on the fixture provider |
+| WF-03 | Done end to end | 6–8 | `aster-journey` (steps 6–8), `real/duplicate-cohort`, `real/restricted-evidence` (site list aggregates) | PQ-17 (first models entered through the API, D-095), PQ-18 |
+| WF-04 | Done end to end | 9, 16 | `aster-journey` (steps 9, 16), `real/missing-data` ("Not available —") | xlsx export (CR-WS4a-5) |
+| WF-05 | Done end to end | 9–15 | `aster-journey` (steps 9–15), `real/stale-approval` (a value change on S09) | PQ-13 interim: tasks drafted from the locked plan (D-090) |
+| WF-06 | Done end to end | 10–11, 17–20, 29 | `aster-journey` (steps 10–11, 17–20, 29), `real/stale-approval` (v3 stale → refresh v4), `real/pilot-sync` (invalidated after activation) | PQ-1 (G3 wording), PQ-19 |
+| WF-07 | Done end to end (simulated Jira) | 12, 21–24 | `aster-journey` (steps 12, 21–24), `real/pilot-sync` (partial sync and zero-duplicate retries; invalidation pauses unsent; expired connector with CSV export) | Real Jira adapter; PQ-15 interim (next free `PIL-n`) |
+| WF-08 | Done end to end | 25–28 | `aster-journey` (steps 25–28; step 28 with all four blockers per D-039) | PQ-1, PQ-2 (€[cap] placeholders), PQ-20 |
+| WF-09 | Done end to end (fixture provider) | 2 (discovery output) | `aster-journey` (with analysis), `real/ai-down` and the `real-ai-down` project (whole journey by hand) | Live provider behind signed data terms |
+| WF-10 | Done end to end | 2, 8 (lineage sources) | `real/restricted-evidence` (SRC-030: no excerpt anywhere; Jonas aggregates only), `real/a11y` (S13) | CR-WS5-1 |
+
+Cross-cutting proofs: `real/cross-tenant` (404 for every persona, read or write), `real/a11y` (axe-clean on every
+screen), `real/performance` (p95 ≤ 2 s on every seeded read) and the DB suites listed in decisions.md D-106.
+
 ### Build status overview (Wave 3 integrated, 2026-10-09)
 
 Wave 3 delivered the back end: WS4a (discover and assess API), WS4b (decide, execute, review API), WS6 (simulated
@@ -1012,3 +1036,48 @@ is CR-WS5-1, deferred with a parity test to write). Tests: the evidence DB suite
 | Challenge; mark stale (materiality runs on the server); replace | Maya | S13 actions | `/evidence/SRC-014` |
 | Inspect impacted cases (inaccessible ones not counted) | Maya | S13 impact | same |
 | Connections and authority gaps (admins cannot approve) | Admin | S14 | `/admin/connections`, `/admin/authority` |
+
+## End-to-end journey map (2026-10-09)
+
+The 30 acceptance steps of BUILD_PLAN §8, with the workflow each exercises, the screen route, the main API endpoints
+(all under `/api/v1`) and the spec that proves it. `aster-journey` is `apps/web/e2e/aster-journey.spec.ts` on the
+real stack; `real/*` are the alternate-path specs under `apps/web/e2e/real/`. Case routes are
+`/me/cases/ME-104/…`; analytics and audit rows are asserted through the e2e database helpers.
+
+| # | Step | WF | Screen route | API endpoints | Proving spec |
+|---|---|---|---|---|---|
+| 1 | Maya logs in through the persona picker | WF-01 | `/login` → `/me/overview` | `POST /auth/dev-login`, `GET /me/overview` | `aster-journey` steps 1–5 |
+| 2 | Opportunities for MD-21: discovery partial, OPP-07 proposed, OPP-12 likely duplicate | WF-02, WF-09 | `/me/opportunities` | `GET /me/opportunities`, `GET /me/mandates/:ref` | `aster-journey` steps 1–5 |
+| 3 | Merge OPP-12 into OPP-07; shortlist OPP-07 | WF-02 | `/me/opportunities` | `POST /me/opportunities/:ref/merge`, `POST /me/opportunities/:ref/shortlist` | `aster-journey` steps 1–5 |
+| 4 | Compare four; exclude Austrian breweries; Unknown never 0 | WF-02 | `/me/opportunities/compare` | `POST /me/comparisons`, `PUT /me/comparisons/:id/exclusions/:opportunityId`, `GET /me/comparisons/:id/ranking-preview` | `aster-journey` steps 1–5, `real/missing-data` |
+| 5 | Convert OPP-07 to ME-104; G0 Approved on the rail | WF-02, WF-01 | `/me/cases/ME-104/thesis` | `POST /me/opportunities/:ref/convert`, `GET /me/cases/:caseRef` | `aster-journey` steps 1–5 |
+| 6 | Start assessment; sizing ladder and SOM formula | WF-03 | `/me/cases/ME-104/sizing` | `POST /me/cases/:caseRef/transitions`, `PATCH /me/cases/:caseRef/sizing/draft`, `POST …/sizing/draft/calculate` | `aster-journey` steps 6–8 |
+| 7 | Variant: TAM 500 blocks with SAM > TAM; undo | WF-03 | `/me/cases/ME-104/sizing` | `POST …/sizing/draft/calculate` | `aster-journey` steps 6–8 |
+| 8 | Commit sizing v2; lineage on SAM | WF-03, WF-10 | `/me/cases/ME-104/sizing` (lineage drawer) | `POST …/sizing/commit`, `GET /me/cases/:caseRef/lineage` | `aster-journey` steps 6–8 |
+| 9 | Daniel disputes 20% adoption; scenario table and money cards | WF-04, WF-05 | `/me/cases/ME-104/economics` | `GET /me/cases/:caseRef/economics`, `POST /me/assumptions/:id/disputes`, `POST /me/cases/:caseRef/dissent` | `aster-journey` step 9 |
+| 10 | Create EXP-03; submit G1 (v1 hashed) | WF-05, WF-06 | `/me/cases/ME-104/validation` | `POST /me/cases/:caseRef/experiments`, `POST /me/cases/:caseRef/gate-requests`, `POST /me/gate-requests/:id/submit` | `aster-journey` steps 10–12 |
+| 11 | Elena approves validation €15k; EXP-03 locked; tasks drafted | WF-06, WF-05 | `/reviews` → `/me/cases/ME-104/decisions?gate=G1` | `GET /reviews`, `POST /me/gate-requests/:id/decisions` | `aster-journey` steps 10–12 |
+| 12 | Preview and create VAL-1…VAL-5 | WF-07 | `/me/cases/ME-104/validation` | `POST /me/task-sets/:id/previews`, `POST /me/task-sets/:id/sync` | `aster-journey` steps 10–12 |
+| 13 | Amend the window to 20 Nov | WF-05 | `/me/cases/ME-104/validation` | `POST /me/experiments/:id/amendments` | `aster-journey` steps 13–16 |
+| 14 | Record 9 interviews / 4 commitments | WF-05 | `/me/cases/ME-104/validation` | `POST /me/experiments/:id/start`, `POST /me/experiments/:id/results` | `aster-journey` steps 13–16 |
+| 15 | Lena signs the specialist review (pilot scope) | WF-05 | `/me/cases/ME-104/feasibility` | `POST /me/cases/:caseRef/feasibility/:dimension/reviews` | `aster-journey` steps 13–16 |
+| 16 | Daniel signs the finance review | WF-04 | `/me/cases/ME-104/economics` | `POST /me/cases/:caseRef/economics/finance-reviews`, `POST /me/model-reviews/:id/sign` | `aster-journey` steps 13–16 |
+| 17 | Prepare and submit G2; dissent in the package | WF-06 | `/me/cases/ME-104/decisions?gate=G2` | `POST /me/cases/:caseRef/gate-requests`, `POST /me/gate-requests/:id/submit`, `GET /me/gate-requests/:id/package` | `aster-journey` steps 17–18 |
+| 18 | Maya cannot approve her own package | WF-06 | `/me/cases/ME-104/decisions?gate=G2` | `POST /me/gate-requests/:id/decisions` → `SELF_APPROVAL_PROHIBITED` | `aster-journey` steps 17–18 |
+| 19 | Base adoption change makes v2 stale; refresh creates v3 (v4 on aster-demo) | WF-06, WF-05 | `/me/cases/ME-104/validation` → `…/decisions?gate=G2` | `PATCH /me/assumptions/:id` (new version), `POST /me/gate-requests/:id/refresh` | `aster-journey` steps 19–20, `real/stale-approval` |
+| 20 | Elena approves the pilot with C1 and C2; expiry shown | WF-06 | `/me/cases/ME-104/decisions?gate=G2` | `POST /me/gate-requests/:id/decisions` | `aster-journey` steps 19–20 |
+| 21 | Activation blocked: missing owner, then open C1 | WF-07 | `/me/cases/ME-104/pilot` | `POST /me/cases/:caseRef/pilot-plan/activate` → `PRECONDITIONS_UNMET` | `aster-journey` steps 21–24 |
+| 22 | Owner set, C1 met, activate; 5 of 6 confirmed, 1 failed (permission) | WF-07 | `/me/cases/ME-104/pilot` | `PATCH /me/tasks/:id`, `POST /me/conditions/:id/met`, `POST …/pilot-plan/activate`, `POST /me/task-sets/:id/previews`, `POST /me/task-sets/:id/sync`, `PUT /dev/simulator/faults` | `aster-journey` steps 21–24, `real/pilot-sync` |
+| 23 | Fix the mapping; retry 1 failed task; exactly 6 issues | WF-07 | `/me/cases/ME-104/pilot` | `PUT /admin/connector-mappings/:id`, `POST /me/task-sets/:id/retry`, `GET /dev/simulator/issues` | `aster-journey` steps 21–24, `real/pilot-sync` |
+| 24 | Timeout after success: Checking → Confirmed, no duplicate | WF-07 | `/me/cases/ME-104/pilot` | `PUT /dev/simulator/faults`, worker `outbox.reconcile` | `aster-journey` steps 21–24 |
+| 25 | Jonas records actuals: Not met · Not met · Inconclusive | WF-08 | `/me/cases/ME-104/outcomes` | `POST /me/cases/:caseRef/outcome-observations` | `aster-journey` steps 25–28 |
+| 26 | Maya's recommendation (not a decision) with causal limitations | WF-08 | `/me/cases/ME-104/outcomes` | `PATCH /me/cases/:caseRef/outcome-review` | `aster-journey` steps 25–28 |
+| 27 | Elena decides Revise and extend; Maya requests the extension (€[cap]) | WF-08, WF-06 | `/me/cases/ME-104/outcomes` | `POST /me/cases/:caseRef/outcome-decisions`, `POST /me/cases/:caseRef/extension-requests` | `aster-journey` steps 25–28 |
+| 28 | "Request scale approval" disabled with all four G3 blockers (D-039) | WF-08 | `/me/cases/ME-104/outcomes` | `GET /me/cases/:caseRef/gates/:gateCode/preconditions`, `POST …/gate-requests` → `PRECONDITIONS_UNMET` (four blockers) | `aster-journey` steps 25–28 |
+| 29 | Admin: authority gap, tool-only diagnostics, cannot approve | WF-01, WF-06, WF-09 | `/admin/health` (authority and diagnostics sections) | `GET /admin/authority-grants`, `GET /admin/diagnostics/runs/:id`, `POST /me/gate-requests/:id/decisions` → `FORBIDDEN` | `aster-journey` steps 29–30 |
+| 30 | History: every step once, in audit order, with actor and version | all | `/me/cases/ME-104/history` | `GET /me/cases/:caseRef/history` | `aster-journey` steps 29–30 |
+
+Alternate paths (BUILD_PLAN §8): missing data → `real/missing-data`; restricted evidence → `real/restricted-evidence`;
+expired connector, partial sync and approval invalidated after activation → `real/pilot-sync`; duplicate cohort →
+`real/duplicate-cohort`; stale approval → `real/stale-approval`; AI down → `real/ai-down` and the `real-ai-down`
+project (whole journey); cross-tenant → `real/cross-tenant`; accessibility → `real/a11y`; p95 → `real/performance`.
