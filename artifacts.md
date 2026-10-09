@@ -25,25 +25,27 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
 
 
-### Build status overview (Wave 1 integrated, 2026-10-09)
+### Build status overview (Wave 2 integrated, 2026-10-09)
 
 Wave 1 delivered the domain (WS2 engines, WS3 machines/policy/materiality/timers), the platform runtime
-(WS1 pipeline, sessions, evidence, seed) and the web shell (WS7). The `me` API modules (WS4), analysis
-(WS5) and connector/outbox (WS6) are Wave 3 (`docs/market-expansion/build/WAVE3.md`). 26 of 144 endpoints
-have handlers.
+(WS1 pipeline, sessions, evidence, seed) and the web shell (WS7). Wave 2 delivered every screen (WS8a–d) against
+contract-validated MSW mocks (D-060, D-061): each workflow below can be walked end to end in `pnpm dev:mock` and is
+covered by Playwright + axe (36 e2e tests). The `me` API modules (WS4), analysis (WS5) and connector/outbox (WS6)
+are Wave 3 (`docs/market-expansion/build/WAVE3.md`); the screens switch to them endpoint by endpoint with the same
+client. 26 of 146 endpoints have handlers (two directory reads were added by D-068).
 
-| ID | Status | Done in Wave 1 | Still to build |
-|---|---|---|---|
-| WF-01 | Partial | mandate + gate machines, G0 preconditions, policy, snapshot builder, seeded G0 history | mandate/gate API (WS4a/WS4b), S02 (WS8a) |
-| WF-02 | Partial | opportunity machine, ranking engine, opportunity MSW mocks | opportunity/comparison API (WS4a), discovery runs (WS5), S03/S04 |
-| WF-03 | Partial | sizing engine, lineage builder, seeded sizing v2 from the real engine | sizing/lineage API (WS4a), S06 |
-| WF-04 | Partial | economics engine, materiality evaluator | economics API (WS4a), S08 |
-| WF-05 | Partial | experiment machine (lock, amend, record), seeded EXP-03 | assumption/experiment API (WS4a/WS4b), S09 |
-| WF-06 | Partial | gate/snapshot machines, policy, preconditions, snapshot builder, materiality applied end to end, expiry timer, approval panel | gates/snapshots/decisions API (WS4b), S10 |
-| WF-07 | Partial | sync machine, activation guards, pause-on-invalidation/expiry, outbox claim fix (0002) | connector simulator, dispatcher, task-sync API (WS6), pilot API (WS4b), S11 |
-| WF-08 | Partial | G3/X preconditions, pilot-window timer, case follow-ons | outcomes/reviews API (WS4b), S12 |
-| WF-09 | Not started | run machine only | harness, providers, gateway, analysis API (WS5) |
-| WF-10 | Implemented (API) | evidence API, entitlements, ingestion, freshness, materiality on stale/replace | S13 screen (WS8d), multipart client path |
+| ID | Status | Domain / API done | UI (Wave 2, against MSW) | Still to build |
+|---|---|---|---|---|
+| WF-01 | UI done · API partial | mandate + gate machines, G0 preconditions, policy, snapshot builder, seeded G0 history | S02 list, new, mandate + G0 panel (`screens/mandate/`) | mandate/gate API (WS4a/WS4b), `people.list` + `catalogue.scopeOptions` (WS4a) |
+| WF-02 | UI done · API partial | opportunity machine, ranking engine (with `rank`) | S01, case list, S03, S04 (`screens/overview/`, `opportunities/`, `compare/`) | opportunity/comparison API (WS4a), discovery runs (WS5) |
+| WF-03 | UI done · API partial | sizing engine, lineage builder, seeded sizing v2 | S06 + lineage drawer (`screens/sizing/`), domain engine in the browser (D-063) | sizing/lineage API (WS4a) |
+| WF-04 | UI done · API partial | economics engine, materiality evaluator | S08 with live preview recompute (`screens/economics/`) | economics API (WS4a) |
+| WF-05 | UI done · API partial | experiment machine (lock, amend, record), seeded EXP-03 | S05 claims and disputes, S09 register, dispute, EXP-03 (`screens/thesis/`, `validation/`) | assumption/experiment API (WS4a/WS4b) |
+| WF-06 | UI done · API partial | gate/snapshot machines, policy, preconditions, snapshot builder, materiality, expiry timer | S10 package + panel, brief, variants (`screens/decisions/`, `brief/`), Reviews inbox | gates/snapshots/decisions API (WS4b) |
+| WF-07 | UI done · API partial | sync machine, activation guards, pause on invalidation/expiry, outbox claim fix | S11 activation, preview, sync, retry, CSV (`screens/pilot/`), S09 validation tasks, My Work | connector simulator, dispatcher, task-sync API (WS6), pilot API (WS4b) |
+| WF-08 | UI done · API partial | G3/X preconditions, pilot-window timer, case follow-ons | S12 actuals, recommendation, decision, extension, scale blocked (`screens/outcomes/`), History | outcomes/reviews API (WS4b) |
+| WF-09 | UI partial · not started | run machine only | S05 analysis strip (run status, never a %), S14 Diagnostics trace from `?run=` | harness, providers, gateway, analysis API (WS5) |
+| WF-10 | Implemented (API) · UI done | evidence API, entitlements, ingestion, freshness, materiality on stale/replace | S13 list and viewer (`screens/evidence/`), multipart client path (D-065) | S13 upload form; WS8d's evidence mocks switch to the API |
 
 ---
 
@@ -118,6 +120,28 @@ guard (`packages/db/src/seed/start.ts`). G0 snapshots now name the mandate as `s
 started: mandate and gate endpoints (WS4a/WS4b), S02. New failure path: submitting MD-21 with a missing
 owner lists `owner_set` and `currency_set` together (every failed guard is listed, D-046).
 
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8a). Code: `apps/web/src/screens/mandate/`
+(`MandatesScreen`, `MandateNewScreen`, `MandateScreen`, `mocks.ts`, `mock-kit.ts`), the connected panel
+`apps/web/src/app/connected/ApprovalPanel.tsx` (D-059, D-064). States: missing owner/currency and incompatible
+horizon (summary links focus the field, Submit disabled with the reason), returned with the sponsor's comment,
+awaiting, approved stamp ("No spend is authorized by G0"), sponsor without G0 authority (lock banner). Drafts
+autosave with If-Match and handle `VERSION_CONFLICT`. Tests: `MandateScreen.test.tsx`, `e2e/mandate.spec.ts`.
+Interim: owner pickers use the dev persona list and scope fields are read-only until `people.list` and
+`catalogue.scopeOptions` land (D-068).
+
+#### UI walkthrough (WF-01)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Open mandates | Maya | Mandate list | `/me/mandates` |
+| Start a mandate from MD-21's scope | Maya | New mandate | `/me/mandates/new` |
+| Edit the draft (autosave, inline errors, G0 checklist) | Maya | S02 Mandate | `/me/mandates/MD-22` |
+| Submit for G0 (snapshot v1 + fingerprint) | Maya | S02 Mandate | `/me/mandates/MD-22` |
+| Find the decision | Elena | Reviews inbox | `/reviews?tab=awaiting` |
+| Return for revision with a comment, or approve | Elena | S02 approval panel | `/me/mandates/MD-22` |
+| Resubmit v2 (the v1 decision stays history, D-064) | Maya | S02 Mandate | `/me/mandates/MD-22?version=2` |
+| Approved → Go to opportunities | Maya | S03 Opportunities | `/me/opportunities?mandate=MD-21` |
+
 ---
 
 ### WF-02 — Opportunity discovery → shortlist → convert
@@ -171,6 +195,27 @@ restore, convert) and the ranking engine (`packages/domain/src/me/comparison/ran
 for `opportunities.list/get/shortlist/dismiss`. Not started: opportunity, comparison and conversion
 endpoints (WS4a), discovery runs (WS5), S03/S04. Ranking semantics fixed: one non-excluded incomparable row
 blocks the whole set ("Not ranked — boundary conflict in set") until excluded.
+
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8a). Code: `apps/web/src/screens/opportunities/`,
+`screens/compare/`, `screens/overview/` (S01, case list). Discovery partial (trade registry unavailable), likely
+duplicate (merge keeps both), "n of m candidates · not an exhaustive search", AI candidates "Proposed · AI",
+keyboard `s` / `d` / `m` (never while typing), dismiss with a required reason, convert with a required owner
+(blocked with "Mandate G0 approval is required" under an unapproved mandate). S04 blocks the ranking on an
+incomparable boundary until excluded, previews weights ("Total 110% — must be 100%"), applies weights vN+1 and
+shows "Rank 1 of 2 · Score 2.70 of 3" (D-067). Tests: `OpportunitiesScreen.test.tsx`, `CompareScreen.test.tsx`,
+`compare-mocks.test.ts`, `e2e/discovery-journey.spec.ts` (steps 1–5).
+
+#### UI walkthrough (WF-02)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Sign in and land | Maya | Login → S01 Overview | `/login` → `/me/overview` |
+| Review candidates (partial discovery noted) | Maya | S03 Opportunities | `/me/opportunities?mandate=MD-21` |
+| Shortlist, dismiss with a reason, merge a duplicate | Maya | S03 detail | `/me/opportunities?mandate=MD-21&selected=OPP-07` |
+| Compare up to 4 candidates | Maya | S04 Compare | `/me/opportunities/compare?ids=OPP-07,OPP-16,OPP-14,OPP-09` |
+| Exclude the incomparable boundary, apply weights | Maya | S04 Compare | `/me/opportunities/compare?ids=…&comparison=…&weights=2` |
+| Select OPP-07 for assessment | Maya | S04 Compare | same |
+| Convert OPP-07 to a case with an owner | Maya | S03 convert dialog → case | `/me/cases/ME-104/thesis` |
 
 ---
 
@@ -226,6 +271,25 @@ or site IDs), `ANNUALIZATION_METHOD_MISSING`, `REACHABLE_EXCEEDS_SAM`, cross-che
 When SAM cannot be computed `ladder.sam.available` is false and the UI shows "Not available" (D-033).
 "Used by" from SAM reaches SOM and economics through the reachable pool (D-056).
 
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8b). Code: `apps/web/src/screens/sizing/`
+(`SizingScreen.tsx`, `view.ts`, `mocks.ts`, `mock-state.ts`), engine adapter `screens/sizing/engine/adapter.ts`
+re-exporting `@growth-os/domain` (D-063), connected `LineageDrawer`. Measure ladder without a total row, signed
+overlap `−500`, formula from the engine, input ledger with lineage, cross-check chart + table (never averaged),
+draft edits with undo, duplicate-cohort resolution, restricted site list, compare versions, commit. Blocked
+sizing hides ladder values (D-066). Tests: `SizingScreen.test.tsx`, `sizing/mocks.test.ts`, `engine.test.ts`
+(fixture hashes), `e2e/assessment.spec.ts` (step 8 and variants).
+
+#### UI walkthrough (WF-03)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Open sizing (draft v2) | Maya | S06 Sizing | `/me/cases/ME-104/sizing` |
+| Edit a draft input; undo | Maya | S06 ledger | `/me/cases/ME-104/sizing?input=input.annual_spend_per_site` |
+| Blocking check: SAM > TAM or duplicate cohort (ladder hidden; keep one cohort) | Maya | S06 | `/me/cases/ME-104/sizing` |
+| Commit sizing v2 | Maya | S06 | same |
+| Lineage on SAM: exact value, inputs, used by | Daniel | S06 lineage drawer | `/me/cases/ME-104/sizing?input=sizing.sam.value&view=lineage` |
+| Compare versions (dialog) | Maya | S06 | `/me/cases/ME-104/sizing` |
+
 ---
 
 ### WF-04 — Economics scenario recompute (draft vs snapshot)
@@ -261,6 +325,25 @@ with the PRD scenario table, separate one-time investment, Unavailable cash flow
 materiality evaluator for the commit step. Not started: economics draft/commit endpoints (WS4a), S08. New
 failure path: a missing one-time investment blocks the run ("Recommendation incomplete") while per-year
 scenarios still show (D-058).
+
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8b). Code: `apps/web/src/screens/economics/`
+(`EconomicsScreen.tsx`, `view.ts`, `mocks.ts`, `mock-builders.ts`, `engine/adapter.ts` over `@growth-os/domain`).
+Driver edits recompute locally as a preview and the server's draft result replaces it (D-063); ▼●▲ scenario table
+with "Recalculated" cells; recurring and one-time cards with "Do not add" between them; cash flow and payback
+"Not available" with the missing inputs; capped upside; finance review; dispute form and thread (one register
+with S09, D-061); Draft / Snapshot toggle (snapshots never recompute). Tests: `EconomicsScreen.test.tsx`,
+`adapter.test.ts`, `e2e/assessment.spec.ts` (step 9).
+
+#### UI walkthrough (WF-04)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Open economics (draft v3 over snapshot v2) | Maya | S08 Economics | `/me/cases/ME-104/economics` |
+| Edit a driver; see the recalculated cells | Maya | S08 | `/me/cases/ME-104/economics?input=adoption_rate.base` |
+| Switch scenario | Maya | S08 | `/me/cases/ME-104/economics?scenario=downside` |
+| Read the committed snapshot | Elena | S08 snapshot view | `/me/cases/ME-104/economics?version=2` |
+| Dispute 20% adoption (the owner cannot) | Daniel | S08 dispute form | `/me/cases/ME-104/economics` |
+| Request finance review; commit | Maya | S08 | same |
 
 ---
 
@@ -315,6 +398,28 @@ early to read".
 an unchanged transition with a required reason, result recording; "Too early to read" counts as recorded);
 EXP-03 seeded with the original plan, amendment 1, results and VAL-1…5 confirmed. Not started: assumption,
 dispute and experiment endpoints (WS4a/WS4b), S09.
+
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8b S05, WS8c S09). Code: `apps/web/src/screens/thesis/`
+(claims accept / discard / challenge, signed disagreements, blockers with status, D-068),
+`apps/web/src/screens/validation/` (`AssumptionRegister`, `DisputePanel`, `ExperimentCard`, `NewExperimentForm`,
+`G1Request`, `ValidationTasks`, `register.ts`, `mocks.ts`), shared journey state `screens/decisions/mock-state.ts`.
+Register (table and 2×2, no combined score), dispute thread with "Resolve with reason" (disputer or sponsor only),
+EXP-03 with pre-registered thresholds, "Plan locked at G1", Amendment 1 with the original struck through,
+append-only results ("Met · 9 of 8"), decision taken. Tests: `ValidationScreen.test.tsx`, `register.test.ts`,
+`ThesisScreen.test.tsx`, `e2e/validate-decide.spec.ts` (steps 10–11, 13–14), `e2e/assessment.spec.ts` (S05).
+
+#### UI walkthrough (WF-05)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Review claims and disagreements | Maya | S05 Thesis | `/me/cases/ME-104/thesis` |
+| Open the disputed adoption assumption | Maya | S09 register → dispute | `/me/cases/ME-104/validation?assumption=ASM-01` |
+| Reply; resolve with a reason (Daniel or Elena) | Daniel | S09 dispute | same |
+| Create EXP-03 with pre-registered thresholds | Maya | S09 new experiment | `/me/cases/ME-104/validation` |
+| Submit G1 · Approve validation €15k (see WF-06) | Maya | S09 G1 card | same |
+| Amend the window with a reason (original struck through) | Maya | S09 EXP-03 | `/me/cases/ME-104/validation?experiment=EXP-03` |
+| Record results and the decision taken | Jonas, Maya | S09 EXP-03 | `/me/cases/ME-104/validation?experiment=EXP-03` |
+| See the register as a 2×2 | anyone | S09 | `/me/cases/ME-104/validation?view=2x2` |
 
 ---
 
@@ -384,6 +489,30 @@ failure paths:
   sponsor resolves it; resolving as not material leaves stale snapshots stale;
 - the invalidation follow-on moves the case only when the case machine allows it (G1 invalidation while the
   case is already past Validation moves nothing).
+
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8c, WS8a). Code: `apps/web/src/screens/decisions/`
+(`DecisionsScreen`, `PackageArticle`, `DecisionPanel`, `PrepareRequest`, `mocks.ts`, `mock-data.ts`,
+`mock-state.ts`), `screens/brief/BriefScreen.tsx`, `screens/reviews/`. Read-only versioned package from the frozen
+snapshot content; the panel sends the id + hash of the version rendered; approving a package approves its
+proposed conditions (D-067). Variants: stale (refresh creates v4, "See what changed"), self-approval,
+unauthorized reviewer, G1 history, superseded v3, invalidated, expired, withdrawn; printable decision brief.
+Tests: `DecisionsScreen.test.tsx`, `decisions/mocks.test.ts`, `app/shell.test.tsx` (connected panel, D-064),
+`e2e/validate-decide.spec.ts` (steps 17–20 and variants).
+
+#### UI walkthrough (WF-06)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Prepare the G2 request (budget, window, scope, conditions) | Maya | S10 prepare | `/me/cases/ME-104/decisions?gate=G2` |
+| Submit for decision (freezes snapshot v3) | Maya | S10 | same |
+| Find the decision | Elena | Reviews inbox | `/reviews?tab=awaiting` |
+| Read the package | Elena | S10 package | `/me/cases/ME-104/decisions?gate=G2&version=3` |
+| A material change makes v3 stale (approval disabled; "See what changed") | Maya → Elena | S09 → S10 | `/me/cases/ME-104/validation` → `/me/cases/ME-104/decisions?gate=G2&version=3` |
+| Compare a version with an earlier one | anyone | S10 | `/me/cases/ME-104/decisions?gate=G2&version=3&compare=2` |
+| Refresh to v4 (v3 superseded) | Maya | S10 | `/me/cases/ME-104/decisions?gate=G2` |
+| Approve pilot €120k · 90 days with C1 + C2 | Elena | S10 panel | `/me/cases/ME-104/decisions?gate=G2&version=4` |
+| Print the decision brief | anyone | Decision brief | `/me/cases/ME-104/brief?gate=G2&version=4` |
+| G1 history | anyone | S10 | `/me/cases/ME-104/decisions?gate=G1` |
 
 Update (2026-10-09) — material change and expiry as built:
 
@@ -471,6 +600,30 @@ FORCE RLS (D-043). Not started: simulator over `sim`, outbox dispatch/reconcile/
 fault suite (WS6), pilot plan endpoints (WS4b), S11. Convention fixed for WS6: outbox rows carry
 `authorization_ref.gateRequestId`, `aggregate_type = 'external_task_link'`, `aggregate_id` = link id.
 
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8d S11, WS8c validation tasks, WS8a My Work). Code:
+`apps/web/src/screens/pilot/` (`PilotScreen.tsx`, `mocks.ts`), `screens/validation/ValidationTasks.tsx`,
+`screens/my-work/`, journey state `screens/history/journey.ts`. Pinned baseline (G2 v3 + fingerprint), budget
+meter, internal status and external sync in separate columns, activation blockers in server order (owner, then
+C1), dry-run preview (destination, assignees, permissions), the server's honest summary ("5 of 6 tasks confirmed
+in Jira · 1 failed (permission)"), "Retry 1 failed task" (failed ids only), "Checking" → "Confirmed" after
+reconcile, expired connector with CSV export, approval invalidated (sent kept, unsent paused), message drafts
+"not authorized to send". Never "Synced" (D-066). My Work changes internal status with `tasks.update` (never the
+sync status, never a gate). Tests: `pilot/mocks.test.ts`, `PilotScreen.test.tsx`, `MyWorkScreen.test.tsx`,
+`mocks/precedence.test.ts`, `e2e/ws8d-execute-review.spec.ts` (steps 21–24, variants),
+`e2e/validate-decide.spec.ts` (VAL tasks), `e2e/work-and-reviews.spec.ts`.
+
+#### UI walkthrough (WF-07)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Validation tasks: preview, then "Create 5 tasks in Jira" → Confirmed · VAL-n | Maya | S09 tasks | `/me/cases/ME-104/validation` |
+| Open the approved plan (activation blocked: owner, then C1) | Jonas | S11 Pilot | `/me/cases/ME-104/pilot` |
+| Assign the owner; mark C1 met; activate | Jonas | S11 | same |
+| Preview external tasks (dry run) | Jonas | S11 preview | `/me/cases/ME-104/pilot?view=preview` |
+| Create 6 tasks → partial failure → retry the failed one | Jonas | S11 | `/me/cases/ME-104/pilot` |
+| Open one task | Jonas | S11 task | `/me/cases/ME-104/pilot?task=PIL-11` |
+| Work from the task brief; mark in progress / done; report a blocker | Jonas | My Work | `/my-work?tab=tasks` |
+
 ---
 
 ### WF-08 — Outcome review → revise/extend, scale gate blocked
@@ -521,6 +674,24 @@ timer (`pilot_running → review_due` after the tenant-local window end), case f
 outcome, review and decision endpoints (WS4b), S12. Flow change (D-039, interim pending PQ-1): G3 lists
 every unmet precondition — four on the honest step-28 facts, not two. X1 can be requested with the `€[cap]`
 placeholder but cannot be approved until a real cap is set (D-040).
+
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8d). Code: `apps/web/src/screens/outcomes/`
+(`OutcomesScreen.tsx`, `mocks.ts`), `screens/history/HistoryScreen.tsx`. Actuals with period and source and the
+neutral result glyph (never red, D-066), recommendation marked "RECOMMENDATION · NOT A DECISION", the sponsor's
+decision, "Request extension €[cap]" with its own cap (the placeholder is allowed, D-068), the X request after a
+reload (`extensionRequest`), "Request scale approval" disabled with the unmet G3 preconditions. Tests:
+`OutcomesScreen.test.tsx`, `AdminScreen.test.tsx` (History), `e2e/ws8d-execute-review.spec.ts` (steps 25–28, 30).
+
+#### UI walkthrough (WF-08)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Record actuals (period + source) | Jonas | S12 Outcomes | `/me/cases/ME-104/outcomes?metric=paid_use_continuation` |
+| Recommend "Revise and extend validation" (not a decision) | Maya | S12 | `/me/cases/ME-104/outcomes` |
+| Record the decision | Elena | S12 decision dialog | same |
+| Request extension X1 with its own cap and scope | Maya | S12 extension form | same |
+| Scale stays blocked (G3 preconditions listed) | anyone | S12 G3 card | same |
+| Audit trail of the journey | anyone | History | `/me/cases/ME-104/history?object=gate_request` |
 
 Update (2026-10-09) — scale gate as built:
 
@@ -587,6 +758,20 @@ manually; the agent can never sign a review or decide a gate (database refuses a
 (WS3) and the job catalogue entry; the worker task list (`apps/worker/src/tasks.ts`) is where WS5 registers
 its run job.
 
+**UI status (Wave 2, 2026-10-09):** Partial against MSW (WS8b, WS8d). Code: `apps/web/src/screens/thesis/`
+(analysis strip: `RunStatusTag`, polls while in flight, never a percentage; request analysis),
+`screens/admin/AdminScreen.tsx` (Diagnostics: the only place with agent / tool / token terms; run trace from
+`?run=`). The run itself, its checkpoints and proposals wait for WS5. Tests: `ThesisScreen.test.tsx`,
+`AdminScreen.test.tsx`.
+
+#### UI walkthrough (WF-09)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Request analysis; watch the strip (Working → Partial → Done) | Maya | S05 Thesis | `/me/cases/ME-104/thesis?run=…` |
+| Accept, discard or challenge an AI claim | Maya | S05 claims | `/me/cases/ME-104/thesis?claim=…` |
+| Inspect the run trace (business copy everywhere else) | Admin | S14 Diagnostics | `/admin/diagnostics?run=…` |
+
 ---
 
 ### WF-10 — Evidence challenge and restricted-source handling
@@ -643,3 +828,23 @@ the existing source; admins get 404 on source detail. New failure paths: upload 
 licence from another tenant → 400; mark stale on a superseded source → 409 `INVALID_TRANSITION` ("mark its
 replacement instead"); replacing a source with itself → 400; superseded or deleted replacement → 409;
 ingestion `failed` on a missing object or hash mismatch and `partial` for binary files.
+
+**UI status (Wave 2, 2026-10-09):** Done against MSW (WS8d); the web multipart path for uploads is done (D-065),
+the upload form is not. Code: `apps/web/src/screens/evidence/` (`EvidenceScreen.tsx`, `mocks.ts`),
+`apps/web/src/lib/api-client.ts` (`MULTIPART_ENDPOINT_IDS`). Permitted excerpt in Source Serif with the licence
+boundary; restricted ("Restricted source · no excerpt shown", Request access, nothing leaks); aggregate-only;
+deleted with provenance and fingerprint; superseded with "Open SRC-014"; stale; fact / inference / assumption
+panel; Challenge, Mark stale, Replace, Inspect impacted cases ("Cases you cannot access are not listed or
+counted."). Tests: `EvidenceScreen.test.tsx`, `lib/api-client.test.ts`, `e2e/ws8d-execute-review.spec.ts` (S13).
+
+#### UI walkthrough (WF-10)
+
+| Step | Who | Screen | Route |
+|---|---|---|---|
+| Browse sources for the case | Maya | S13 list | `/evidence?case=ME-104` |
+| Read a permitted excerpt with its licence boundary | Maya | S13 viewer | `/evidence/SRC-014?case=ME-104` |
+| Restricted source: no excerpt; request access | Maya | S13 viewer | `/evidence/SRC-030` |
+| Deleted by the provider: provenance and fingerprint kept | Maya | S13 viewer | `/evidence/SRC-011` |
+| Challenge; mark stale (materiality runs on the server); replace | Maya | S13 actions | `/evidence/SRC-014` |
+| Inspect impacted cases (inaccessible ones not counted) | Maya | S13 impact | same |
+| Connections and authority gaps (admins cannot approve) | Admin | S14 | `/admin/connections`, `/admin/authority` |
