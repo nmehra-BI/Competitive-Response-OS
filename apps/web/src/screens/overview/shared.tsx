@@ -3,7 +3,7 @@
  * my-work, reviews): page header, loading and error states, dates, the case table and the
  * people list. Everything renders with packages/ui components and tokens only.
  */
-import { API, type CaseListRow, type PersonRef } from '@growth-os/contracts';
+import type { CaseListRow } from '@growth-os/contracts';
 import {
   DataTable,
   Freshness,
@@ -17,7 +17,6 @@ import {
 } from '@growth-os/ui';
 import { useEffect, type ReactNode } from 'react';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
-import { useApiQuery } from '../../lib/query';
 import './screens.css';
 
 // ---------------------------------------------------------------------------
@@ -123,17 +122,10 @@ export function ErrorPage({ title, error }: { title: string; error: unknown }) {
 }
 
 // ---------------------------------------------------------------------------
-// People (dev persona directory until a people endpoint exists — see WS8a notes, CR-1)
+// People: the tenant directory (`people.list`, D-079), shared with the app shell in lib/people.
 // ---------------------------------------------------------------------------
 
-export function usePeople(): {
-  people: PersonRef[];
-  byId: (id: string | null | undefined) => PersonRef | null;
-} {
-  const q = useApiQuery(API.auth.listDevPersonas, {}, { staleTime: 10 * 60_000, retry: false });
-  const people = q.data?.personas.map((p) => p.person) ?? [];
-  return { people, byId: (id) => (id ? (people.find((p) => p.id === id) ?? null) : null) };
-}
+export { usePeople } from '../../lib/people';
 
 // ---------------------------------------------------------------------------
 // Case table (S01 and the case list)

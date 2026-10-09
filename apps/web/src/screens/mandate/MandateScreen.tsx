@@ -80,6 +80,92 @@ function parseAmount(text: string): string | null | undefined {
 const amountText = (v: string | null | undefined) =>
   v ? Number(v).toLocaleString('en-GB', { maximumFractionDigits: 2 }) : '';
 
+/**
+ * Scope pickers (D-094): geography, product and segments from `catalogue.scopeOptions` for the
+ * mandate's business unit. Countries offered are those the tenant works in plus any already chosen.
+ */
+function ScopeFields({
+  fields: f,
+  businessUnitId,
+  error,
+  onChange,
+}: {
+  fields: Fields;
+  businessUnitId: string;
+  error: string | null;
+  onChange: (patch: Partial<Fields>) => void;
+}) {
+  const q = useApiQuery(
+    API.directory.scopeOptions,
+    { query: { businessUnitId } },
+    { staleTime: 10 * 60_000 },
+  );
+  const opts = q.data;
+  const countries = [...new Set([...(opts?.countries ?? []), ...(f.geographyCodes ?? [])])].sort((a, b) =>
+    (regionNames.of(a) ?? a).localeCompare(regionNames.of(b) ?? b),
+  );
+  const segments = opts?.segments ?? [];
+  const toggle = (list: readonly string[] | undefined, v: string, on: boolean) =>
+    on ? [...(list ?? []).filter((x) => x !== v), v] : (list ?? []).filter((x) => x !== v);
+  return (
+    <>
+      <fieldset className="dx-fieldset" style={{ border: 0, padding: 0 }} id="m-scope" tabIndex={-1}>
+        <legend className="dx-label" style={{ padding: 0 }}>
+          Geography
+        </legend>
+        <div className="dx-row" style={{ gap: '8px 18px' }}>
+          {countries.length === 0 ? <span className="dx-help">Loading countries…</span> : null}
+          {countries.map((c) => (
+            <label key={c} className="dx-check">
+              <input
+                type="checkbox"
+                checked={(f.geographyCodes ?? []).includes(c)}
+                onChange={(e) => onChange({ geographyCodes: toggle(f.geographyCodes, c, e.target.checked) })}
+              />
+              {regionNames.of(c) ?? c}
+            </label>
+          ))}
+        </div>
+        {error ? <div className="dx-fielderr">{error}</div> : null}
+      </fieldset>
+      <div className="dx-grid">
+        <Field label="Product" htmlFor="m-scope-ps">
+          <select
+            id="m-scope-ps"
+            className="gos-select"
+            value={f.productId ?? ''}
+            onChange={(e) => onChange({ productId: e.target.value || undefined })}
+          >
+            <option value="">Not set</option>
+            {(opts?.products ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <fieldset className="dx-fieldset" style={{ border: 0, padding: 0 }}>
+          <legend className="dx-label" style={{ padding: 0 }}>
+            Segments
+          </legend>
+          <div className="dx-row" style={{ gap: '8px 18px' }}>
+            {segments.map((sg) => (
+              <label key={sg.id} className="dx-check">
+                <input
+                  type="checkbox"
+                  checked={(f.segmentIds ?? []).includes(sg.id)}
+                  onChange={(e) => onChange({ segmentIds: toggle(f.segmentIds, sg.id, e.target.checked) })}
+                />
+                {sg.name}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+    </>
+  );
+}
+
 function Field({
   label,
   htmlFor,
@@ -352,29 +438,14 @@ function MandateView({ m }: { m: Mandate }) {
                 />
               </Field>
 
-              <div className="dx-grid">
-                <Field
-                  label="Geography"
-                  htmlFor="m-scope"
-                  help="Set when the mandate was created."
-                  error={errFor('scope')}
-                >
-                  <output id="m-scope" className="dx-readonly" tabIndex={-1}>
-                    {f.geographyCodes?.length
-                      ? f.geographyCodes.map((c) => regionNames.of(c) ?? c).join(', ')
-                      : 'Not set'}
-                  </output>
-                </Field>
-                <Field
-                  label="Product and segment"
-                  htmlFor="m-scope-ps"
-                  help="Set when the mandate was created."
-                >
-                  <output id="m-scope-ps" className="dx-readonly">
-                    {f.productId ? 'Existing product · see the scope preview' : 'Not set'}
-                  </output>
-                </Field>
-              </div>
+              <ScopeFields
+                fields={f}
+                businessUnitId={m.businessUnitId}
+                error={errFor('scope')}
+                onChange={(patch) => {
+                  for (const [k, v] of Object.entries(patch)) set(k as keyof Fields, v as never);
+                }}
+              />
 
               <Field
                 label="Exclusions"

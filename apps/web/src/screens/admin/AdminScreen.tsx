@@ -126,16 +126,20 @@ export default function AdminScreen() {
 }
 
 function useNames() {
-  // The frozen admin contracts return user ids only (change request in the WS8d notes). Names come
-  // from the dev persona list when the workspace runs with dev login; otherwise ids are shown.
-  const personas = useApiQuery(API.auth.listDevPersonas, {}, { retry: false, staleTime: Infinity });
-  const overview = useApiQuery(API.overview.portfolio, { query: {} }, { retry: false });
+  // The admin contracts return ids only; names come from the tenant directory (`people.list`) and the
+  // business units from `catalogue.scopeOptions` (D-079). Unknown ids still render as short ids.
+  const people = useApiQuery(API.directory.people, { query: {} }, { retry: false, staleTime: 10 * 60_000 });
+  const scope = useApiQuery(
+    API.directory.scopeOptions,
+    { query: {} },
+    { retry: false, staleTime: 10 * 60_000 },
+  );
   return useMemo(() => {
-    const people = new Map((personas.data?.personas ?? []).map((p) => [p.userId, p.person]));
-    const bus = new Map((overview.data?.businessUnits ?? []).map((b) => [b.id, b.name]));
+    const byId = new Map((people.data?.items ?? []).map((p) => [p.id, p]));
+    const bus = new Map((scope.data?.businessUnits ?? []).map((b) => [b.id, b.name]));
     return {
       person: (id: string, subtitle?: string): ReactNode => {
-        const p = people.get(id);
+        const p = byId.get(id);
         return p ? (
           <Person name={p.displayName} initials={p.initials} subtitle={subtitle} />
         ) : (
@@ -147,7 +151,7 @@ function useNames() {
       },
       bu: (id: string | null) => (id === null ? 'All business units' : (bus.get(id) ?? id.slice(0, 8))),
     };
-  }, [personas.data, overview.data]);
+  }, [people.data, scope.data]);
 }
 
 function AdminBody({ illustrative }: { illustrative: boolean }) {
