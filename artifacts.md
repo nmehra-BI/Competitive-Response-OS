@@ -181,6 +181,8 @@ a return supersedes the old snapshot), `apps/api/src/modules/me/gates/` (decidin
 `me/mandates/mandates.db.test.ts`, `me/gates/gates.db.test.ts` (G0 for MD-90 / ME-120, return → resubmit),
 `platform/directory/directory.db.test.ts`, `apps/api/test/db/security/tenancy.test.ts`.
 
+**Product decision (2026-10-09, D-109):** G0 stays a single sponsor approval with no expiry. Aster gains two synthetic investment-committee members (PQ-14); no G3 grant is seeded, so step 29 still shows the authority gap.
+
 #### UI walkthrough (WF-01)
 
 | Step | Who | Screen | Route |
@@ -346,6 +348,8 @@ level, "Used by" through the measure chain). Tests: `me/sizing/sizing.db.test.ts
 v3 commit staling G2 v3), `me/lineage/lineage.db.test.ts` (step 8). Gap: `sizing.population` reads `platform.site`,
 which Aster does not seed.
 
+**Product decision (2026-10-09, D-112, D-117):** A new case's sizing model is entered in a minimal S06 draft editor (boundary, cohorts, overlap, reachable pool; blanks stay Unknown), replacing the API entry of D-095. The reachable pool stays an entered number; a new check keeps it at or below SAM sites, and SAM's "Used by" shows that check.
+
 #### UI walkthrough (WF-03)
 
 | Step | Who | Screen | Route |
@@ -406,6 +410,8 @@ results, what-must-be-true, commit with materiality, finance review request/sign
 CSV export with per-year and one-time sections apart; the scenario table uses the frozen display rules, D-072),
 `apps/api/src/modules/me/assumptions/` (versions, disputes, replies, resolution). Tests: `me/economics/economics.db.test.ts` (steps 9,
 16), `me/assumptions/assumptions.db.test.ts` (steps 9, 19). Deferred: xlsx export (CR-WS4a-5).
+
+**Product decision (2026-10-09, D-112):** Economics drivers are entered in a minimal S08 driver editor, with one-time investment in its own block. Cash flow and payback stay "Not available".
 
 #### UI walkthrough (WF-04)
 
@@ -487,6 +493,8 @@ a person, blocker status, D-081), `apps/api/src/modules/me/experiments/` (create
 versions with a reason, append-only results with period and source, materiality on amendments and results, D-086).
 Tests: `me/assumptions/assumptions.db.test.ts`, `me/thesis/thesis.db.test.ts`, `me/experiments/experiments.db.test.ts`
 (steps 10, 13, 14). Open: who authors validation tasks (PQ-13).
+
+**Product decision (2026-10-09, D-112, D-113):** Assumptions are registered on S09 ("Add assumption"). After G1, a new step sits between "tasks drafted" and "Preview tasks": the experiment owner or case owner edits the draft validation tasks on S09 (title, owner, due date inside the window, deliverable; add or remove unsent tasks). Thresholds, sample and budget still change only by amendment.
 
 #### UI walkthrough (WF-05)
 
@@ -587,6 +595,8 @@ met; material changes and resolution), `apps/api/src/platform/materiality.ts` (t
 11, 17, 19, 20, 28), `apps/api/test/db/security/approval.test.ts` (steps 18, 29), `me/gates/agreement.db.test.ts`,
 `me/gates/package-views.db.test.ts`, `platform/materiality.db.test.ts`,
 `apps/api/test/db/joint/assumption-pauses-writes.test.ts`.
+
+**Product decision (2026-10-09, D-109, D-112, D-115):** Approval ceilings come from a Finance-signed delegation of authority (sponsor G1 €50k, G2 €150k, X €50k by default; editable per tenant). Unused G1 and G2 approvals expire after 30 days, X after 14. G3 (and any request above the sponsor's ceiling) needs 2 of 3 committee approvals on the same snapshot hash, including the finance seat; approvals already given lapse if the snapshot goes stale. The G2 request also pre-registers stop rules and typed measures (Demand, Delivery effort, Buyer fit, Spend, Other).
 
 #### UI walkthrough (WF-06)
 
@@ -743,6 +753,8 @@ sequenceDiagram
   Worker->>Sim: createTask(same key) → next free key (PIL-n)
 ```
 
+**Product decision (2026-10-09, D-112, D-114, D-121):** Pilot tasks and milestones are written in an S11 pilot plan editor. Step 23's mapping fix moves to an S14 "Task mapping" editor (a project or issue-type change on an approved, unsent set is material and warns first). S11 gains "Record spend". The first real connector is Jira Cloud with OAuth 2.0 (3LO) as a dedicated integration account; the idempotency key is stored on the issue and reconcile searches for it before any retry.
+
 #### UI walkthrough (WF-07)
 
 | Step | Who | Screen | Route |
@@ -821,6 +833,8 @@ review draft with If-Match on `rowVersion`; decision via the case machine; `outc
 (task `rowVersion`), `apps/api/src/modules/me/budget/`. Tests: `me/outcomes/outcomes.db.test.ts` (steps 25–27), `me/gates/gates.db.test.ts`
 (step 28), `platform/reviews/reviews.db.test.ts`, `platform/work/work.db.test.ts`, `me/budget/budget.db.test.ts`.
 Gap: `readiness` is always empty (no table).
+
+**Product decision (2026-10-09, D-110, D-111):** The extension is capped at 25% of the parent pilot budget and 50% of its window, one per pilot, with the same or narrower scope. Aster X1 is €30k · 45 days (1 Mar – 14 Apr 2027) and is approvable by Elena ("Approve extension €30k · 45 days"). G3 keeps all four blockers; the scale-budget blocker names the €400k one-time scale-entry investment and never puts it beside a /year figure.
 
 #### UI walkthrough (WF-08)
 
@@ -947,6 +961,8 @@ sequenceDiagram
   API->>DB: claim accepted by Maya (a fact only now)
 ```
 
+**Product decision (2026-10-09, D-116, D-120):** Live analysis stays off per tenant until a signed provider addendum is recorded and a manual eval run passes. An unedited, fully cited claim proposal can be accepted as fact in one human action; otherwise it is added as a draft first.
+
 #### UI walkthrough (WF-09)
 
 | Step | Who | Screen | Route |
@@ -1024,6 +1040,8 @@ counted."). Tests: `EvidenceScreen.test.tsx`, `lib/api-client.test.ts`, `e2e/ws8
 gateway now applies the same entitlement rules in the worker (`apps/worker/src/jobs/analysis/access.ts`; a shared module
 is CR-WS5-1, deferred with a parity test to write). Tests: the evidence DB suites,
 `apps/worker/src/jobs/analysis/gateway.db.test.ts`.
+
+**Product decision (2026-10-09, D-120):** A licence without written confirmation fails closed: metadata only, no excerpt, model context, embeddings or export. Each licence gets a term end and an on-expiry action that removes excerpts and embeddings but keeps provenance.
 
 #### UI walkthrough (WF-10)
 

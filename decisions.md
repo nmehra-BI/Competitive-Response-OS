@@ -1611,3 +1611,380 @@ residency, SSO/SCIM, backups and a pen test (PRD §13).
 | — | Approval ceilings, committees, expiry days | Policy placeholders (€[limit], 14 days) editable in S14 | Finance |
 | — | Licensed intelligence rights, model provider data terms | Uploads + licence table; fixture provider | Legal |
 | — | Real Jira edition and auth | Simulated connector | Eng |
+
+**Status of these questions (2026-10-09, Head of PM).** Every PQ above and the three policy and contract items are
+now decided in the stage "Product decisions — open questions resolved" below. PQ-1 → D-111 · PQ-2 → D-110 ·
+PQ-3 → D-118 · PQ-4 → D-118 · PQ-5 → D-118 · PQ-6 → D-119 · PQ-7 → D-119 · PQ-8 → D-119 · PQ-9 → D-119 ·
+PQ-10 → D-111 · PQ-11 → D-114 · PQ-12 → D-112 · PQ-13 → D-113 · PQ-14 → D-109 · PQ-15 → D-118 · PQ-16 → D-116 ·
+PQ-17 → D-112 · PQ-18 → D-117 · PQ-19 → D-118 · PQ-20 → D-115 · Approval ceilings, committees, expiry → D-109 ·
+Licensed intelligence rights and model-provider terms → D-120 · Real Jira edition and auth → D-121. The interim
+behaviour in the table stays in force until each follow-up ticket lands.
+
+---
+
+## Stage: Product decisions — open questions resolved (2026-10-09)
+
+The Head of Product Management decided every open product question (PQ-1 to PQ-20) and the three policy and
+contract items from the release readiness summary. Each entry names the decision, why, what we rejected, the impact,
+the owner and the timing. Where a real value needs a customer, Finance or Legal, the entry sets a **pilot default**
+and the **exact question** to ask. None of these decisions relaxes a never-rule in `CLAUDE.md`. Contract, fixture
+and policy-schema changes still go through the D-031 change-request process; the change requests these decisions
+open are listed after the summary table. The stakeholder brief is `docs/market-expansion/PRODUCT_DECISIONS.md`.
+
+### D-109 — Approval policy defaults: ceilings, the G3 committee and expiry (policy item; PQ-14)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: PRD §2 says the sponsor "approves investment within delegated limits"; PRD §4 gives G3 to an "authorized
+  investment committee / sponsor". The PRD sets no amounts, so the fixture uses `€[limit]` (D-025) with a 250k
+  placeholder grant. Every gate policy has `requiredApprovals: 1`, so a committee is not enforced. Approvals expire
+  after 14 days (D-013, D-085), which is short for an enterprise pilot to assign owners, meet blocking conditions and
+  set up Jira. Aster has no committee member, and tests grant Priya the role (PQ-14). UX research §4.8 and §9 S14 ask
+  for a delegated-authority matrix (gate × BU × ceiling).
+- Decision:
+  1. **Default delegated-authority template.** Every new tenant starts with this matrix. Tenant administrators edit it
+     in S14 › Authority; each edit is a new policy version with an audit event. Amounts are one-time EUR per request,
+     excluding VAT. A ceiling is compared only with the one-time amount the gate requests. Recurring money is never
+     added to it.
+
+     | Gate | Sponsor (BU leader) | Investment committee | Above the committee |
+     |---|---|---|---|
+     | G0 Scope | Approves (no spend) | — | — |
+     | G1 Validation | up to €50k | up to €250k | Authority gap |
+     | G2 Pilot | up to €150k | up to €1m | Authority gap |
+     | X Extension | up to €50k per request, and the parent G2 plus all its extensions ≤ the sponsor's G2 ceiling | up to €250k | Authority gap |
+     | G3 Scale | none | up to €2m one-time scale budget, with the quorum below | Authority gap (board decision, outside the product) |
+
+     The X cumulative rule stops a pilot being split into small asks. It adds one-time pilot money to one-time
+     extension money of the same pilot only (never-rule 3 is about recurring and one-time money; it is not touched).
+  2. **Grants come from Finance.** An administrator records each grant from a Finance-signed delegation-of-authority
+     (DoA) document. A grant stores the DoA reference, the validity (12 months by default) and who entered it. An
+     administrator never holds approval authority (never-rule 6). An expired grant fails closed (D-045).
+  3. **G3 committee.** Three named seats: **chair** (the BU sponsor or the CSO), **finance** (the CFO or a delegated
+     finance director), **operations** (the COO or the head of operations who owns delivery capacity). A G3 approval
+     needs **2 of 3 approvals on the same snapshot hash, and one of them must be the finance seat**. The request ends as
+     "Not approved" when quorum can no longer be reached (the finance seat records Not approved, or two seats do).
+     Abstain does not count toward quorum. Excluded from any seat on that case: the package author, the case owner, the
+     finance reviewer who signed this case's economics review (four eyes), and anyone with a recorded conflict. If the
+     snapshot goes stale between approvals, the approvals already given lapse, and the refreshed snapshot needs fresh
+     approvals (never-rule 2). The same quorum applies when a G1, G2 or X request is above the sponsor's ceiling and
+     routes to the committee. The panel shows "Waiting on second approver · finance seat" (UX research §9 S10).
+  4. **Expiry of unused approvals** ("used" as in D-075): G0 none; **G1 30 days**; **G2 30 days**; **X 14 days**; G3 none
+     in the MVP (D-085). Thirty days fits a monthly operating cadence and still makes a cold approval go back to the
+     approver. An extension continues a running pilot, so it must start quickly or be asked again.
+  5. **Aster (illustrative).** Elena Fischer holds G0, G1 €50k, G2 €150k and X €50k grants (they cover €15k, €120k and
+     the €30k extension of D-110). **PQ-14:** the fixture adds two synthetic committee members, Katrin Vogel (CFO,
+     finance seat) and Thomas Berger (COO, operations seat), with Elena as chair. No G3 grant is seeded, so step 29
+     still shows the S14 "Authority gap" honestly ("Committee named · G3 authority not granted"). Tests stop granting
+     Priya the committee role.
+- Alternatives considered: one approver for every gate (PRD §4 asks for a committee at G3); unanimous committee (one
+  absence blocks a decision for weeks); simple majority with no required finance seat (scale money without Finance);
+  per-gate ceilings with no cumulative rule (pilot splitting); keep 14 days (forces re-approval of sound pilots and
+  trains users to rubber-stamp).
+- Consequences: **Policy/legal action:** the customer CFO office confirms the values (question below). **Engineering
+  (M):** enforce `requiredApprovals` with a required seat, lapse approvals on stale snapshots, the X cumulative check,
+  per-gate expiry defaults, the DoA reference on grants. Affected: `gates.decide`, `approvalPanel()`,
+  `security/approval.test.ts`, `gates.db.test.ts`, the S10 panel ("Your authority: up to €150k · BU Water"), S14
+  Authority, the step-20 expiry date assertion. **Fixture CR (S):** grants, gate policies and the two personas.
+  Owner: Head of PM with the customer Finance lead; Eng for the build. Timing: values, expiry and grants **before the
+  pilot**; G3 quorum **during the pilot**, before the first G3 request (day 90 at the earliest).
+- Pilot default and question for the customer CFO office: use the table above. Ask: "Does your delegation of
+  authority let the BU leader approve up to €50k for validation, €150k for a pilot and €50k for an extension, with a
+  three-seat committee (chair, finance, operations; 2 of 3 including finance) for scale up to €2m? Who sits on each
+  seat for the pilot BU, and is 30 days the right life for an unused pilot approval?"
+
+### D-110 — Extension cap, duration and the extension rule (PQ-2; placeholders)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: PRD §6: "Sponsor authorizes a scoped extension with its own spend cap". The PRD sets no amount or duration,
+  so X1 carries `€[cap]` / `[duration] days`: submittable, never approvable (D-040, D-071). The deployment-effort
+  threshold also carries `[hours per site]` (D-025).
+- Decision:
+  1. **Rule for every case.** An extension asks for **at most 25% of the parent G2 approved budget** and **at most 50% of
+     the parent pilot window** (at least 14 days). There is **one extension per parent G2**. Its scope is a subset of the
+     parent scope: the same or fewer sites, the same geography, segment and product, no new sites and no prospect
+     outreach. It names the unmet or inconclusive thresholds it will re-test, and those thresholds are pre-registered
+     with the request. A bigger ask or a second extension is a new G2 with a full package and finance review. The
+     sponsor approves within the X ceiling and the cumulative rule of D-109.
+  2. **Aster X1 (illustrative): €30k · 45 days**, 1 Mar – 14 Apr 2027, owner Jonas Klein, scope "the 4 pilot sites
+     only". It re-tests paid use and continuation (4 of 4) and deployment effort per site, and gives time to complete
+     the specialist scale-readiness review. The button reads "Approve extension €30k · 45 days". Elena can approve it
+     (€120k + €30k = €150k, her G2 ceiling).
+  3. **Placeholders.** In an illustrative tenant a null cap stays a submittable, never-approvable placeholder (training
+     use). In a real tenant a null cap or duration is refused at request ("State the extension cap and duration"). Zero
+     is never a placeholder (D-071).
+  4. **`[hours per site]` (Aster, illustrative):** assumed 16 installation and support hours per site; actual 22 hours
+     per site → Not met. In real cases the deployment-effort threshold needs a number and a unit.
+- Rationale: discovery-driven planning releases money in tranches as assumptions are tested (UX research §1, item 1). An
+  extension buys answers to named open questions on existing sites; it is not a smaller scale decision. A quarter of
+  the pilot budget covers continued support and the extra deployment effort on four installed sites with no new
+  hardware rollout. It stays visibly smaller than a new pilot. Forty-five days covers one monthly billing cycle and the
+  fourth customer's continuation decision, and it sets a hard date so the case cannot drift (PRD §1 "bounded period").
+  Both sides of the share are one-time pilot money (never-rule 3 holds).
+- Alternatives considered: a fixed euro cap for every tenant (does not scale with pilot size); 50% of budget (reads as a
+  second pilot); no duration cap (open-ended pilots); let the sponsor choose freely (no guard against splitting).
+- Consequences: **Engineering (M):** X preconditions check share, duration, one per parent and scope subset; a null
+  cap is refused in real tenants; the S12 form shows the limits ("Up to €30k (25% of €120k) · up to 45 days"). **Fixture
+  CR (S):** X1 values and the hours. The e2e step 27 assertion changes from `€[cap]` to €30k · 45 days; X1 stays
+  "Awaiting decision" in the journey and is now approvable. Owner: Head of PM; Finance confirms the 25% share; Eng.
+  Timing: **before the pilot**.
+- Question for the customer Finance lead: "Can the BU sponsor approve one extension of up to 25% of an approved pilot
+  budget and up to half its duration, inside the sponsor's pilot ceiling, or must every extension go back to the
+  committee?"
+
+### D-111 — The G3 message lists all four blockers and names the one-time scale investment (PQ-1, PQ-10)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: The fixture and prototype show two G3 blockers; with honest step-28 facts four are unmet (D-039). The
+  prototype's G3 note mentions the "€400k one-time scale-entry investment", but no view carries it (PQ-10).
+- Decision: Keep all four unmet preconditions, in the D-039 order (demand, specialist, economics and capacity, scale
+  budget). D-039 is final. The fourth blocker names the committed one-time figure: "No scale budget requested ·
+  economics v2 carries €400k one-time scale-entry investment". It is labelled one-time, never next to a /year figure
+  in the same sentence, and it is omitted when the viewer cannot read the committed economics. UX research §6.14
+  ("2 preconditions unmet") is superseded for the product; the frozen fixture keeps its two `blockedBy` entries as the
+  first two blockers.
+- Rationale: hiding two blockers would tell the sponsor the case is closer to scale than it is (PRD §3 honest no-go;
+  UX research §6.14). Naming the investment answers the approver's first question, "how much would scale cost?",
+  without inviting a sum with recurring contribution.
+- Alternatives considered: two blockers with a seeded scale budget and refreshed economics (dishonest data); a total
+  "cost to scale" figure (would mix time bases).
+- Consequences: PQ-1 keeps the current interim. PQ-10 is an **engineering change (S)**: the G3 precondition summary
+  reads the committed economics' one-time investment; `OutcomeReviewView.scaleGate.summary`, S12, `gates.db.test.ts`
+  step 28 and the journey step-28 text change. Owner: Eng. Timing: **during the pilot**, before day 90.
+
+### D-112 — Data entry for a new case, and where milestones and stop rules live (PQ-17, PQ-12)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: An operator cannot start a case alone: there is no screen to register assumptions, build the sizing model,
+  set economics drivers, add feasibility dimensions or write pilot tasks. The journey enters them through the API
+  (D-095). The S10 prepare form does not collect stop rules or milestones (PQ-12).
+- Decision: Build **five minimal editors** on the existing endpoints before the pilot. There is no assisted import:
+  data written for a customer by someone else would carry the wrong author in audit. Each editor autosaves a draft
+  with If-Match and commits an immutable version (CLAUDE.md "Versions").
+  1. **S09 Add assumption:** statement; value and unit; owner; confidence basis (Evidence link or "Assumption — no
+     evidence"); decision sensitivity (High · Medium · Low); decision-critical yes/no; validation method; due date.
+  2. **S06 Sizing draft editor:** market unit, currency, reference year, product boundary text, what the spend
+     includes (hardware · software · services · replacement); TAM site count and annual spend per site; cohort rows
+     (name, site count, rule, source); overlap row (count, dedup rule); reachable pool (site count, channel
+     definition, source); adoption, horizon and capacity as links to assumptions. Each input is Evidence or
+     Assumption; a blank stays Unknown, never 0.
+  3. **S08 Economics driver editor:** price per year, gross margin %, annual incremental opex with a scope note,
+     capacity, adoption per scenario; and, in a separate block, one-time investment. Currency and base year once in the
+     header. Cash flow and payback stay "Not available" (D-030).
+  4. **S07 Add dimension / Request review:** dimension (fixed list from PRD S07), named reviewer, due date, the
+     question and the scope of review. AI may draft the question, never the answer.
+  5. **S11 Pilot plan editor:** tasks (title, owner, dependency, due date, deliverable, optional budget line) and
+     milestones (name, date, evidence expected). Milestones live in the pilot plan version and reach G2 through it.
+  - **PQ-12 stop rules:** the S10 G2 prepare form gets a structured "Stop rules · pre-registered" list next to
+    "Pilot thresholds · pre-registered" (D-102). Fields: trigger (a measure and threshold, or an event), consequence
+    ("Pause tasks and request a sponsor review" or "Recommend stop"), owner. They are stored with the request,
+    inserted into the first G2 snapshot and copied forward like thresholds; they never move silently (never-rule 12).
+    `budget_and_stop_rules` needs at least one. A tripped stop rule creates a review item for the sponsor; it never
+    stops a case or passes a gate by itself (never-rule 7).
+- Alternatives considered: assisted import by customer success (wrong author, no review); a spreadsheet upload first
+  (needs a mapping UI and validation as large as the editors); wait for AI-drafted models (CR-WS5-6; AI output is not
+  a fact until accepted, so the editors are needed anyway).
+- Consequences: **Engineering (L)**, split into five tickets (S06 M, S08 M, S09 S, S07 S, S11 M) plus stop rules (S,
+  additive `stopRules` on `gates.createRequest`, CR). The journey drops `support/journey.ts` API entry for these steps
+  and walks them in the UI; D-095 is retired when all five land. Owner: Head of PM with design (field specs), Eng.
+  Timing: **before the pilot**. This is the pilot entry criterion: "an operator can start a case alone".
+
+### D-113 — Validation tasks: a draft task editor on S09 (PQ-13)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: G1 drafts five validation tasks from the locked plan (D-090), but nobody can edit them before they are sent.
+- Decision: S09's experiment card gets a **"Validation tasks · Draft"** section after G1 approval. The experiment owner
+  and the case owner can edit title, owner (directory picker), due date (inside the experiment window) and deliverable;
+  add a task; or remove an unsent draft task. Tasks never carry threshold, sample or budget: those change only by an
+  amendment with a reason (D-086). Draft edits are not material, because G1 authorizes the experiment and its budget,
+  not task wording; each edit is audited (`task.updated`). A sent task is read-only here and shows its external key. A
+  task added after sending is unsent until it is previewed and sent. "Preview tasks" stays the step before sending
+  (D-098).
+- Alternatives considered: tasks inside the experiment plan (makes wording edits look like amendments and needs a
+  second editor); no edits (derived titles do not match how teams brief fieldwork).
+- Consequences: **Engineering (M):** additive draft-task endpoints (add, update, remove on an unsent validation task
+  set; CR), the S09 section, DB tests with a cross-tenant and an unauthorized-role attempt. Owner: Head of PM with
+  design; Eng. Timing: **before the pilot**.
+
+### D-114 — Missing prototype actions: which ship for the pilot (PQ-11)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Decision:
+  1. **S14 Task mapping editor — before the pilot (S).** S14 › Connections › Jira row › "Task mapping", with one tab for
+     Validation tasks and one for Pilot tasks. Fields: destination project, issue type, and an assignee table (person ·
+     role · Jira account · Mapped / Unmapped / Not found). "Check with Jira" runs a dry lookup; Save writes
+     `admin.setMapping`. Changing project or issue type on a mapping used by an approved, unsent task set is a
+     `plan_destination_changed` (material by default): the dialog shows the impact ("Approval G2 v3 needs re-approval ·
+     unsent tasks pause") before saving. Assignee edits are not material.
+  2. **S11 Record spend — before the pilot (S).** Under the budget meter: kind (Committed · Spent), amount (EUR,
+     one-time), date, description, reference (PO or invoice number), optional task link. Entries are append-only; a
+     correction is a reversing entry with a reason. Spend above the remaining approved amount is refused with "Request
+     scope change" (UX research §7.3). Spending starts at activation, so the pilot needs it.
+  3. **S02 "Suggested adjacent segments · AI draft" — post-pilot.** No data source and no writer (CR-WS5-6).
+  4. **S04 "Request normalization" — post-pilot.** The blocking message already names what differs; the operator edits
+     the candidate boundary.
+- Alternatives considered: ship all four (two have no data source); ship none (the journey edits the mapping through
+  the API, and Jonas cannot record spend).
+- Consequences: Engineering S + S; the journey step 23 uses the S14 editor. Owner: Head of PM; Eng. Timing as above.
+
+### D-115 — Pilot measures: a short list of measure types, not a catalogue (PQ-20)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: Thresholds are free text on S10; the G3 demand clause recognizes the measure by a key derived from its name.
+- Decision: Each pre-registered threshold picks a **measure type**: Demand (paid use and continuation), Delivery effort
+  (per site), Buyer fit (qualitative), Spend against budget, or Other. Required fields: measure type, name, operator and
+  target with unit (or "Qualitative"), measurement window, data source. The G3 demand clause reads the Demand type,
+  not the name. A tenant-managed catalogue waits until partners show repeated measures.
+- Alternatives considered: a tenant catalogue now (admin work before any data); keep free text (a renamed measure
+  silently drops out of the G3 check).
+- Consequences: **Engineering (S):** additive `measureType` on `OutcomeTargetInput` (CR), S10 form, G3 precondition
+  test. Owner: Head of PM; Eng. Timing: **during the pilot**, before the partner's first G2.
+
+### D-116 — One action to accept an AI claim as fact, when it is unedited and cited (PQ-16)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: Accepting a claim proposal creates an AI draft claim; a person then accepts it as fact (D-076). Two clicks
+  for the same intent.
+- Decision: S05 offers **"Accept as fact"** on a proposal when it is unedited and every evidence citation opens for the
+  viewer. One human act runs both steps in one transaction and writes both audit events. The confirm dialog shows the
+  claim, its kind and its citations. When the person edits the text, or a citation is missing, only "Add as draft" is
+  offered and acceptance stays a second step. Uncited evidence still becomes Unknown (D-088).
+- Rationale: never-rule 11 needs a human acceptance, not two. The explicit label and the citation check keep the act
+  deliberate (UX research §4.5: "Fits asserted by AI" erodes trust).
+- Alternatives considered: keep two steps (friction with no trust gain for cited claims); one step always (would
+  accept uncited text).
+- Consequences: **Engineering (S):** additive `acceptAsFact` on `analysis.decideProposal` (CR), S05, the WS5 claim test.
+  Owner: design; Eng. Timing: **during the pilot**.
+
+### D-117 — "Used by" for SAM: keep the reachable pool entered, add an upper-bound check (PQ-18)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Decision: The reachable pool stays an entered number: PRD §6 defines it by channel and service coverage, not as a
+  share of SAM. The engine adds a check that the reachable pool is no more than SAM sites; a breach blocks like SAM >
+  TAM. Lineage records the check, so SAM's drawer reads "Used by: Reachable pool (upper-bound check: 500 ≤ 2,000
+  sites)". The acceptance script's "used by SOM, economics" is corrected to the honest chain.
+- Alternatives considered: derive the pool as SAM × coverage % (invents a precision the PRD does not have); keep the
+  empty "Used by" (true, but hides a real dependency).
+- Consequences: **Engineering (S):** sizing check, lineage edge kind "checked against", golden test. Owner: Eng.
+  Timing: **during the pilot**.
+
+### D-118 — Aster narrative and demo data confirmations (PQ-3, PQ-4, PQ-5, PQ-15, PQ-19)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Decision:
+  - **PQ-3:** upside adoption 30% is confirmed for Aster (D-041). It stays an Assumption. Real tenants enter their own;
+    there is no product default. Keep current interim.
+  - **PQ-4:** MD-21 v1 reads "Returned to change the owner and confirm EUR". Copy change in the fixture narrative
+    (fixture CR, S). Before the pilot (the demo tenant is used in onboarding).
+  - **PQ-5:** History shows committed versions only; no sizing or economics v1 in the demo. Keep current interim;
+    revisit post-pilot if partners ask for version compare.
+  - **PQ-15:** the narrative changes, not the keys. A retried task takes the next free key ("PIL-17"), because Jira
+    cannot reserve keys and we never report a key the connector did not return (never-rule 9). Docs and fixture
+    narrative copy only. Before the pilot.
+  - **PQ-19:** snapshot versions stay numbered per case. Every label pairs the gate with the version ("G2 · Snapshot
+    v2") so per-case numbers never read as per-gate. Narrative updated to v2/v3 for a fresh journey (aster-demo keeps
+    v3 → v4). Copy change (S). Before the pilot.
+- Alternatives considered: per-gate numbering (three different "v1"s on one case); reserving Jira keys (not possible).
+- Owner: Head of PM; Eng for the fixture copy.
+
+### D-119 — Display confirmations (PQ-6, PQ-7, PQ-8, PQ-9)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Decision:
+  - **PQ-6:** keep the server rule (D-081) and put the gate in the label: **"Pending · G2"** means needed for the next
+    gate and in progress; **"Blocker · G3"** means unresolved for a later gate and does not stop the next one. A
+    tooltip defines both. Copy change (S). Before the pilot.
+  - **PQ-7:** keep sensitivity first, then weakest evidence (D-067). Design updates the prototype and tests H9 in the
+    pilot usability sessions. Keep current interim.
+  - **PQ-8:** Maya Rao is the data owner of the restricted site list; Jonas Klein sees aggregates only. A data owner
+    must be able to see the data they answer for. Design fixes the prototype. Keep current interim.
+  - **PQ-9:** keep hiding ladder values while a blocking check is open (D-066). The ledger keeps the two conflicting
+    inputs visible and editable, so the user can fix them. Design updates the prototype. Keep current interim.
+- Owner: design (PQ-6 copy with Eng). Timing: before the pilot (PQ-7 test during the pilot).
+
+### D-120 — Licensed intelligence rights and model-provider data terms (policy and contract item)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: PRD §3, §13 and §14: intelligence rights and API availability are unknown; source licensing applies to
+  ingestion, display, embeddings, model context and exports. The licence table already carries
+  `maxExcerptSentences`, `allowModelContext`, `allowEmbeddings` and `allowExport`. Analysis runs on the fixture
+  provider; a live provider needs signed terms (BUILD_PLAN §9).
+- Decision:
+  1. **Evidence for the pilot** comes from customer uploads and the customer's existing intelligence subscriptions. We
+     build no licensed-intelligence API adapter until rights and an API are confirmed in writing.
+  2. **Fail closed.** A licence with no written confirmation defaults to: metadata only, 0 excerpt sentences, no model
+     context, no embeddings, no export. Each licence row adds a term end date and an on-expiry action (remove excerpts
+     and embeddings, keep provenance metadata for audit; PRD S13).
+  3. **Minimum terms before any live AI provider** for a tenant. All must be in signed documents:
+     - a data processing agreement (GDPR Art. 28) with a named sub-processor list and change notice;
+     - no training or fine-tuning on customer inputs or outputs;
+     - zero data retention, or retention of 30 days or less for abuse monitoring only, with deletion after;
+     - processing in the EU, or an approved transfer mechanism (SCCs) with a transfer impact assessment;
+     - an independent security attestation (SOC 2 Type II or ISO 27001) and breach notice within 72 hours;
+     - customer ownership of inputs and outputs; no provider claim on them;
+     - for each licensed source the tenant uses with AI, the licence permits processing by a third-party AI service
+       under these terms (`allowModelContext` is set only then).
+  4. **Enablement.** Live analysis is off per tenant by default. A tenant administrator turns it on only after the
+     signed addendum is recorded (document reference and date), and only after a manual eval run passes on that
+     provider. Enabling is audited. The model name stays configuration (`ANALYSIS_MODEL`).
+- Alternatives considered: live provider in the pilot under standard consumer terms (fails PRD §13); block AI for the
+  whole pilot (the AI-down journey works, but we would learn nothing about the bounded agent).
+- Consequences: **Policy/legal action** (Legal drafts the addendum; the customer confirms source rights). **Engineering
+  (M):** licence term end and on-expiry action (CR), a tenant "Live analysis" setting with document reference (CR),
+  S14 display. Owner: Legal with the Head of PM; Eng. Timing: fail-closed defaults **before the pilot**; live provider
+  **during the pilot**, only when the terms are signed.
+- Pilot default: fixture provider; uploads with fail-closed licences. Questions:
+  - To Legal: "Will our model provider sign a DPA with no training, zero (or ≤ 30-day abuse-only) retention, EU
+    processing or SCCs, SOC 2 Type II or ISO 27001, and 72-hour breach notice? Who signs the customer addendum?"
+  - To the customer's licence owner: "For each intelligence source you will use, does your licence allow us to (a)
+    store a copy in your tenant, (b) show excerpts of up to N sentences to licensed users, (c) index or embed it, (d)
+    send excerpts to an AI provider under these terms, (e) include derived figures in exports? When does it end, and
+    what must be deleted then?"
+
+### D-121 — First task connector: Jira Cloud with OAuth 2.0 (3LO) as a dedicated integration user (policy and contract item)
+- Date: 2026-10-09 · Stage: Product decisions · Status: Accepted (Head of PM)
+- Context: The connector is simulated (D-020, D-084). The edition and auth were open (BUILD_PLAN §9).
+- Decision:
+  1. **Edition:** Jira Cloud only for the pilot. Data Center waits for a customer that needs it.
+  2. **Auth:** OAuth 2.0 (3LO). The customer's Jira admin creates a **dedicated integration account** ("Growth OS
+     integration") and authorizes our app as that account. Scopes: read and write Jira work, read users, offline access
+     (refresh tokens). The account gets Browse, Create and Assign only in the mapped projects. Tokens are stored
+     encrypted; an expired or revoked token shows "Jira connection expired" (D-104).
+  3. **Attribution:** Jira shows the integration account as reporter. Each issue body states the case, the approving
+     gate and snapshot ("ME-104 · approved under G2 · Snapshot v3"), and who requested the send. Authorization stays
+     ours: the send-time re-check (never-rule 10) decides, not Jira permissions.
+  4. **Idempotency:** our key is written as a Jira issue entity property at create; reconcile searches the mapped
+     project by that property before any retry (never-rule 9). "Confirmed · PIL-n" only after Jira returns the key.
+  5. **Data we keep:** issue key, URL and status only. We read nothing outside the mapped projects.
+- Alternatives considered: personal API tokens (tied to one person, broad scope, break when they leave); per-user 3LO
+  (good attribution, but retries fail when one user's token lapses and a send could run as someone who lost access);
+  a Forge app first (more review work before we know the pilot needs it).
+- Consequences: **Engineering (L):** Jira Cloud adapter behind `TaskConnector`, OAuth flow and token storage, entity
+  property idempotency, reconcile search, a sandbox fault suite matching `connector-faults/*`. **Customer action:**
+  the Jira admin installs the app and creates the account. Owner: Eng with the customer IT lead; Head of PM. Timing:
+  **before the pilot**; CSV export stays the outage fallback (PRD §10).
+- Pilot default: Jira Cloud, 3LO as an integration account. Question for the customer IT lead: "Do you run Jira Cloud?
+  Will your Jira admin install our OAuth app and create an integration account with Browse, Create and Assign in the
+  pilot projects only? Which project keys and issue types should validation and pilot tasks use?"
+
+### Product decision summary
+
+| PQ | Decision (short) | Impact | Owner | Timing | Follow-up ticket title |
+|---|---|---|---|---|---|
+| PQ-1 | Four G3 blockers stay; D-039 final (D-111) | Keep current interim | Head of PM | Before pilot | — |
+| PQ-2 | Extension ≤ 25% of parent budget, ≤ 50% of window, one per G2; Aster X1 €30k · 45 days (D-110) | Engineering M + fixture CR | Head of PM, Finance, Eng | Before pilot | Enforce the extension rule and real extension caps |
+| PQ-3 | 30% upside adoption confirmed for Aster (D-118) | Keep current interim | Head of PM | Before pilot | — |
+| PQ-4 | "Returned to change the owner and confirm EUR" (D-118) | Copy change | Head of PM, Eng | Before pilot | Fixture narrative copy fixes |
+| PQ-5 | History shows committed versions only (D-118) | Keep current interim | Head of PM | Post-pilot review | — |
+| PQ-6 | "Pending · G2" / "Blocker · G3" with tooltip (D-119) | Copy change (S) | Design, Eng | Before pilot | Thesis blocker labels name the gate |
+| PQ-7 | Sensitivity, then weakest evidence; test H9 (D-119) | Keep current interim | Design | During pilot | — |
+| PQ-8 | Maya owns the restricted site list (D-119) | Keep current interim | Design | Before pilot | — |
+| PQ-9 | Hide ladder values while blocked; inputs stay editable (D-119) | Keep current interim | Design | Before pilot | — |
+| PQ-10 | G3 blocker names €400k one-time scale investment (D-111) | Engineering S | Eng | During pilot | G3 blocker names the one-time scale investment |
+| PQ-11 | Mapping editor and Record spend now; AI segments and normalization later (D-114) | Engineering S + S | Head of PM, Eng | Before pilot / post-pilot | S14 task mapping editor; S11 record spend form |
+| PQ-12 | Milestones in pilot plan; structured stop rules on S10 (D-112) | Engineering S | Head of PM, Eng | Before pilot | Pre-registered stop rules on the G2 request |
+| PQ-13 | Draft validation task editor on S09 (D-113) | Engineering M | Head of PM, design, Eng | Before pilot | S09 validation task draft editor |
+| PQ-14 | Committee personas added; no G3 grant in demo (D-109) | Fixture CR (S) | Head of PM | During pilot | Aster policy values and committee personas |
+| PQ-15 | Narrative uses the next free key (D-118) | Copy change | Head of PM | Before pilot | Fixture narrative copy fixes |
+| PQ-16 | One "Accept as fact" when unedited and cited (D-116) | Engineering S | Design, Eng | During pilot | One-step accept for cited AI claims |
+| PQ-17 | Five minimal editors; no assisted import (D-112) | Engineering L | Head of PM, design, Eng | Before pilot | Case data-entry editors (S06, S08, S09, S07, S11) |
+| PQ-18 | Reachable pool stays entered; ≤ SAM check in lineage (D-117) | Engineering S | Eng | During pilot | Reachable pool upper-bound check |
+| PQ-19 | Per-case numbering; labels pair gate and version (D-118) | Copy change (S) | Head of PM | Before pilot | Gate + version snapshot labels |
+| PQ-20 | Measure types; G3 reads Demand type (D-115) | Engineering S | Head of PM, Eng | During pilot (before first G2) | Outcome measure types |
+| Policy | Ceilings, G3 committee 2 of 3 with finance, expiry 30/30/14 (D-109) | Policy action + Engineering M | Head of PM, customer Finance, Eng | Before pilot (quorum during) | G3 committee quorum and approval policy defaults |
+| Rights | Fail-closed licences; minimum provider terms; tenant opt-in (D-120) | Legal action + Engineering M | Legal, Head of PM, Eng | Before pilot / during pilot | Licence term end and live-analysis enablement |
+| Jira | Jira Cloud, OAuth 3LO as integration account (D-121) | Engineering L + customer action | Eng, customer IT | Before pilot | Jira Cloud adapter |
+
+**Change requests these decisions open (D-031, Proposed, for the Principal Architect):** CR-PD-1 `GatePolicyBody`
+required seats and X limits (share, duration share, one per parent); CR-PD-2 `AuthorityGrant.doaReference`; CR-PD-3
+Aster fixture values (grants, expiry, X1 €30k · 45 days, 16/22 hours per site, committee personas, narrative copy);
+CR-PD-4 `OutcomeTargetInput.measureType`; CR-PD-5 `stopRules` on `gates.createRequest`; CR-PD-6 draft validation task
+endpoints; CR-PD-7 `License` term end and on-expiry action; CR-PD-8 tenant live-analysis setting; CR-PD-9
+`acceptAsFact` on `analysis.decideProposal`. All are additive.
