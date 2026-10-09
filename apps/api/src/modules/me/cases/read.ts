@@ -34,7 +34,7 @@ const COUNTRY: Record<string, string> = {
 const FRESH_ORDER: EvidenceFreshness[] = ['current', 'ageing', 'stale', 'superseded'];
 const APPROVED = new Set(['approved', 'approved_with_conditions']);
 const GATE_NAME: Record<GateCode, string> = {
-  G0: 'Scope',
+  G0: 'Mandate', // rail caption "Mandate · 5 Oct" (prototype)
   G1: 'Validation',
   G2: 'Pilot',
   G3: 'Scale',

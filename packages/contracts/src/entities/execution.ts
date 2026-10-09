@@ -231,6 +231,17 @@ export const OutcomeTarget = z.object({
 });
 export type OutcomeTarget = z.infer<typeof OutcomeTarget>;
 
+/**
+ * A pilot threshold pre-registered with the G2 request (D-102): frozen into the first G2 snapshot and
+ * copied to every later one (thresholds never move silently). Additive on `gates.createRequest`.
+ */
+export const OutcomeTargetInput = OutcomeTarget.omit({ id: true, snapshotId: true }).extend({
+  metricKey: z.string().regex(/^[a-z][a-z0-9_]{0,62}$/),
+  name: z.string().min(1),
+  thresholdText: z.string().min(1),
+});
+export type OutcomeTargetInput = z.infer<typeof OutcomeTargetInput>;
+
 /** An actual. Append-only: edits create a new version that supersedes the previous one. */
 export const OutcomeObservation = z.object({
   id: Id,
@@ -292,7 +303,12 @@ export const OutcomeReviewView = z.object({
     })
     .nullable(),
   decision: DecisionRecord.nullable(),
-  scaleGate: z.object({ blocked: z.boolean(), unmet: z.array(Blocker) }),
+  /** `summary`: the one-line D-039 sentence ("G3 preconditions unmet: …"). Optional; additive (D-103). */
+  scaleGate: z.object({
+    blocked: z.boolean(),
+    unmet: z.array(Blocker),
+    summary: z.string().nullable().optional(),
+  }),
   /** If-Match for `outcomes.saveReviewDraft`. Additive (D-068). */
   rowVersion: RowVersion.optional(),
   /** The open or decided extension (X) request after this review, if any. Additive (D-068). */

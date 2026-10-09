@@ -426,6 +426,12 @@ export const assumptionHandlers: HandlerMap = {
         summary: `${a.display_key} disputed by a reviewer (stays open until resolved with a reason)`,
         details: { challengeId: ch.id },
       });
+      // A dispute changes the assumption's standing (acceptance step 9: `assumption_changed`, D-096).
+      await t.analytics(
+        'assumption_changed',
+        { objectType: 'assumption', objectId: a.id, caseId: c.id, stage: c.stage as never },
+        { decisionCritical: a.decision_critical, origin: 'human' },
+      );
       return (await challengesWhere(t.tx, { ids: [ch.id] }))[0]!;
     },
   }),

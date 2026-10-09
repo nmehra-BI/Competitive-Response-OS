@@ -15,6 +15,7 @@ import {
   GateScope,
   MaterialChange,
 } from '../entities/gate';
+import { OutcomeTargetInput } from '../entities/execution';
 import { DecimalString, Id, IsoDate, Sha256Hex } from '../primitives';
 import { CaseParams, endpoint, IdParams, Rationale } from './endpoint';
 
@@ -159,6 +160,8 @@ export const gateEndpoints = {
       scope: GateScope,
       parentGateRequestId: Id.nullable(),
       proposedConditions: z.array(ConditionInput),
+      /** G2 only: the pilot thresholds to pre-register (D-102). Optional; additive. */
+      outcomeTargets: z.array(OutcomeTargetInput).optional(),
     }),
     response: GateRequest,
   }),

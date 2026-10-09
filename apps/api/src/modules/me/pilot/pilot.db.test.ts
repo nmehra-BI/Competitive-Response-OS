@@ -207,7 +207,7 @@ describe('steps 21–22: activation', () => {
     expect(out.current!.state).toBe('committed');
     expect(out.current!.baselineSnapshotId).toBe(out.baseline!.snapshotId);
     expect(out.activationBlockers).toEqual([]);
-    expect(out.taskSet!.summaryText).toBe('6 tasks · not sent yet');
+    expect(out.taskSet!.summaryText).toBe('6 tasks not sent to Jira');
     expect(await caseStage(t, a)).toBe('pilot_running');
     expect((await analyticsFor(t, a, 'pilot_activated')).map((e) => e.props)).toEqual([{ tasks: 6 }]);
     expect(await auditActions(t, a, out.current!.id)).toContain('pilot.activated');

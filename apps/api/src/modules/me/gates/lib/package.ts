@@ -163,7 +163,10 @@ export function diffChanges(from: SnapshotContent, to: SnapshotContent): Change[
       material: MATERIAL_FIELDS.has(field),
     });
   }
-  for (const c of d.components.changed)
+  // Assumption versions are listed through the assumptions block above (name, old → new value); a
+  // pinned assumption_version component swap would only repeat it as "added" / "removed" ids.
+  const shown = (c: { type: string }) => c.type !== 'assumption_version';
+  for (const c of d.components.changed.filter(shown))
     out.push({
       path: `components.${c.type}.${c.id}`,
       label: `${c.type.replace(/_/g, ' ')}`,
@@ -171,7 +174,7 @@ export function diffChanges(from: SnapshotContent, to: SnapshotContent): Change[
       to: c.to === null ? null : `v${c.to}`,
       material: true,
     });
-  for (const c of d.components.added)
+  for (const c of d.components.added.filter(shown))
     out.push({
       path: `components.${c.type}.${c.id}`,
       label: `${c.type.replace(/_/g, ' ')} added`,
@@ -179,7 +182,7 @@ export function diffChanges(from: SnapshotContent, to: SnapshotContent): Change[
       to: c.version === null ? 'pinned' : `v${c.version}`,
       material: true,
     });
-  for (const c of d.components.removed)
+  for (const c of d.components.removed.filter(shown))
     out.push({
       path: `components.${c.type}.${c.id}`,
       label: `${c.type.replace(/_/g, ' ')} removed`,

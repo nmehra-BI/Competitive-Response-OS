@@ -1,6 +1,7 @@
 /** Row → contract serializers for gate requests, snapshots, approvals, conditions, positions, dissent. */
 import {
   ConditionInput,
+  OutcomeTargetInput,
   GateScope,
   RoleCode,
   SnapshotContent,
@@ -79,8 +80,18 @@ export async function gateById(tx: Tx, id: string): Promise<GateRow | null> {
   );
 }
 
-/** Stored scope jsonb = GateScope + the proposed conditions of the request (WS4b decision). */
-const StoredScope = GateScope.extend({ proposedConditions: z.array(ConditionInput).default([]) });
+/**
+ * Stored scope jsonb = GateScope + the proposed conditions of the request (WS4b decision) + the G2
+ * pilot thresholds to pre-register (D-102). Contract reads parse GateScope, which drops both.
+ */
+const StoredScope = GateScope.extend({
+  proposedConditions: z.array(ConditionInput).default([]),
+  outcomeTargets: z.array(OutcomeTargetInput).default([]),
+});
+
+export function outcomeTargetsOf(g: Pick<GateRow, 'scope'>): OutcomeTargetInput[] {
+  return StoredScope.parse(g.scope).outcomeTargets;
+}
 
 export function scopeOf(g: Pick<GateRow, 'scope'>): GateScope {
   return GateScope.parse(g.scope);

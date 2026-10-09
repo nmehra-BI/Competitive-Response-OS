@@ -107,7 +107,7 @@ describe('reviews inbox', () => {
       ]),
     );
     expect(inbox.gateDecisions.find((d) => d.caseKey === 'ME-104')!.href).toBe(
-      `/me/cases/ME-104/decisions?gate=${ids(a).g2}`,
+      `/me/cases/ME-104/decisions?gate=G2`,
     );
   });
 

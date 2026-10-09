@@ -114,7 +114,8 @@ describe('assumptions (aster-start)', () => {
       }),
     });
     expect(Assumption.parse(down.json())).toMatchObject({ scenario: 'downside', current: { value: '0.1' } });
-    expect(await analyticsFor(w, w.tenants.a!, 'assumption_changed')).toHaveLength(2);
+    // The base assumption, Daniel's dispute (D-096) and the Downside assumption each emit one.
+    expect(await analyticsFor(w, w.tenants.a!, 'assumption_changed')).toHaveLength(3);
     const list = API.assumptions.list.response.parse(
       (
         await api(w, API.assumptions.list, await w.cookie('a', 'priya'), { params: { caseRef: caseKey } })

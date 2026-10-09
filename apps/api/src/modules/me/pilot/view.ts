@@ -25,6 +25,7 @@ import {
   type People,
 } from '../gates/lib/common';
 import { conditionRows, toCondition } from '../gates/lib/serialize';
+import { summaryText } from '../../tasksync/text';
 
 export async function pilotPlanOf(tx: Tx, caseId: string) {
   return tx.selectFrom('me.pilot_plan').selectAll().where('case_id', '=', caseId).executeTakeFirst();
@@ -177,7 +178,6 @@ export async function taskSetView(tx: Tx, taskSetId: string): Promise<TaskSet | 
   const paused = count((x) => PAUSED.includes(x.sync.status));
   const pending = count((x) => PENDING.includes(x.sync.status));
   const tool = conn?.provider?.startsWith('jira') ? 'Jira' : (conn?.name ?? 'the task tool');
-  const anySent = tasks.some((x) => x.sync.status !== 'not_sent');
   return {
     id: s.id,
     caseId: s.case_id,
@@ -188,9 +188,12 @@ export async function taskSetView(tx: Tx, taskSetId: string): Promise<TaskSet | 
     destinationLabel: conn ? `${tool}${mapping ? ` · project ${mapping.destination_project}` : ''}` : null,
     tasks,
     summary: { total: tasks.length, confirmed, failed, pending, paused },
-    summaryText: !anySent
-      ? `${tasks.length} task${tasks.length === 1 ? '' : 's'} · not sent yet`
-      : `${confirmed} of ${tasks.length} tasks confirmed in ${tool}${failed ? ` · ${failed} failed` : ''}${paused ? ` · ${paused} paused` : ''}`,
+    // One summary rule for S09, S11 and the task-sync API (tasksync/text.ts): "5 of 6 tasks confirmed
+    // in Jira · 1 failed (permission)", honest about every non-confirmed group.
+    summaryText: summaryText(
+      tasks.map((x) => ({ status: x.sync.status, lastErrorCode: x.sync.lastErrorCode })),
+      tool,
+    ),
   };
 }
 

@@ -69,9 +69,7 @@ export async function awaitingDecisions(
       dueText: g.gate.submitted_at
         ? `Submitted ${shortDate(g.gate.submitted_at)} · snapshot v${snap.version}`
         : `Snapshot v${snap.version}`,
-      href: g.caseRow
-        ? `/me/cases/${key}/decisions?gate=${g.gate.id}`
-        : `/me/mandates/${key}?gate=${g.gate.id}`,
+      href: g.caseRow ? `/me/cases/${key}/decisions?gate=${code}` : `/me/mandates/${key}?gate=${g.gate.id}`,
     });
   }
   return out;

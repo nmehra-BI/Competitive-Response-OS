@@ -23,6 +23,7 @@ import { caseSourceIds, defaultStopRules, latestCommittedEconomics, latestCommit
 import {
   contentOf,
   dissentOfCase,
+  outcomeTargetsOf,
   proposedConditionsOf,
   scopeOf,
   snapshotById,
@@ -546,6 +547,25 @@ export async function freezeAndInsert(
       })
       .onConflict((oc) => oc.doNothing())
       .execute();
+  // The first snapshot of a G2 request pre-registers the pilot thresholds stated with the request
+  // (D-102); outcome targets are immutable rows, so they can never move after this point.
+  if (!built.prevSnapshotId && gate.gate_code === 'G2')
+    for (const t of outcomeTargetsOf(gate))
+      await tx
+        .insertInto('platform.outcome_target')
+        .values({
+          tenant_id: tenantIdSql,
+          case_id: gate.case_id!,
+          snapshot_id: row.id,
+          metric_key: t.metricKey,
+          name: t.name,
+          threshold_text: t.thresholdText,
+          operator: t.operator,
+          threshold_value: t.thresholdValue,
+          unit: t.unit,
+          window_text: t.windowText,
+        })
+        .execute();
   // Pre-registered outcome targets travel with the package (thresholds never move silently).
   if (built.prevSnapshotId) {
     const targets = await tx

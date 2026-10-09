@@ -270,7 +270,7 @@ export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<Out
         }
       : null,
     decision,
-    scaleGate: { blocked: !g3.allMet, unmet: g3.blockers },
+    scaleGate: { blocked: !g3.allMet, unmet: g3.blockers, summary: g3.summary },
     rowVersion: r.row_version,
     extensionRequest: x ? await toGateRequest(tx, x) : null,
   };

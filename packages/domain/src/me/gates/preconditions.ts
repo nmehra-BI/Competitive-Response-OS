@@ -108,7 +108,8 @@ export type XFacts = {
 export type GateFacts = G0Facts | G1Facts | G2Facts | G3Facts | XFacts;
 
 /** Pre-registered metrics that express demand in "X of N" form (used for the G3 blocker copy). */
-export const DEMAND_METRIC_KEYS: readonly string[] = ['paid_use_continuation'];
+// The fixture key and the key S10 derives from the PRD measure name "Paid use and continuation" (D-102).
+export const DEMAND_METRIC_KEYS: readonly string[] = ['paid_use_continuation', 'paid_use_and_continuation'];
 
 // ---------------------------------------------------------------------------
 // Key functions
