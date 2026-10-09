@@ -456,15 +456,12 @@ export const outcomeHandlers: HandlerMap = {
         .returning('id')
         .executeTakeFirstOrThrow();
       if (b.outcome === 'revise' || b.outcome === 'extend' || b.outcome === 'stop') {
-        const gate = await t.tx
-          .selectFrom('platform.gate_request')
-          .select('gate_code')
-          .where('id', '=', r.gate_request_id)
-          .executeTakeFirst();
+        // `extension_requested` is emitted once, by `outcomes.requestExtension` when the X request
+        // exists (D-071): "Revise" alone requests no extension, so the transition does not emit it.
         props =
           b.outcome === 'stop'
             ? { case_stopped: { fromStage: c.stage as never, outcome: 'stop' as const } }
-            : { extension_requested: { parentGate: (gate?.gate_code ?? 'G2') as 'G2' } };
+            : {};
         await moveCase(t, c.id, b.outcome === 'stop' ? 'outcome_stop' : 'outcome_revise_or_extend', {
           actor: ctx.identity.actor,
           facts,
@@ -501,12 +498,20 @@ export const outcomeHandlers: HandlerMap = {
       const b = ctx.body;
       const parent = await gateById(t.tx, b.parentGateRequestId);
       if (!parent || parent.case_id !== c.id) throw notFound();
-      if (b.spendCap.startsWith('-'))
-        throw new ApiError('VALIDATION_FAILED', 'The cap is not negative.', {
-          errors: [{ path: 'body.spendCap', code: 'custom', message: 'Must not be negative' }],
+      // Null is the PRD placeholder (€[cap], [duration] days; D-040, D-068): the request is
+      // submittable and never approvable. A stated cap must be positive: zero is never used to
+      // mean "missing" (never-rule 5).
+      if (b.spendCap !== null && (b.spendCap.startsWith('-') || scaled(b.spendCap) === 0n))
+        throw new ApiError('VALIDATION_FAILED', 'The cap must be a positive amount, or empty for €[cap].', {
+          errors: [
+            {
+              path: 'body.spendCap',
+              code: 'custom',
+              message: 'Must be positive, or null for the placeholder',
+            },
+          ],
         });
-      // "0" means the cap is still a placeholder (€[cap], D-040): requested, never approvable.
-      const amount = scaled(b.spendCap) === 0n ? null : b.spendCap;
+      const amount = b.spendCap;
       const ps = scopeOf(parent);
       const scope = {
         amount,

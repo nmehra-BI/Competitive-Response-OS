@@ -248,17 +248,16 @@ describe('outcomes', () => {
     expect(out.review.recommendation!.accepted).toBe(true);
     expect(await caseStage(t, a)).toBe(outcomeReview.stageAfterDecision);
     expect(await auditActions(t, a, out.decision.id)).toEqual(['outcome.decided']);
-    expect((await analyticsFor(t, a, 'extension_requested')).map((e) => e.props)).toEqual([
-      { parentGate: 'G2' },
-    ]);
+    // The decision alone requests no extension: `extension_requested` comes with the X request (D-071).
+    expect(await analyticsFor(t, a, 'extension_requested')).toEqual([]);
   });
 
   it('step 27: Maya requests X1 with €[cap] → Awaiting decision; Elena’s approve is refused (no amount)', async () => {
     const body = {
       parentGateRequestId: ids(a).g2,
-      spendCap: '0',
+      spendCap: null,
       currency: 'EUR',
-      durationDays: 30,
+      durationDays: null,
       ownerId: a.user('jonas'),
       scopeItems: ['Extension work within €[cap] and the chosen scope', 'The existing 4 pilot sites'],
     };
@@ -282,6 +281,15 @@ describe('outcomes', () => {
         })
       ).statusCode,
     ).toBe(404);
+    // Zero never stands for "missing": a stated cap must be positive (null is the placeholder).
+    const zero = await call(t.app, API.outcomes.requestExtension, {
+      params: { caseRef: 'ME-104' },
+      body: { ...body, spendCap: '0' },
+      cookie: k.maya,
+      idempotencyKey: true,
+    });
+    expect(zero.statusCode).toBe(400);
+    expect(await analyticsFor(t, a, 'extension_requested')).toEqual([]);
     const res = await call(t.app, API.outcomes.requestExtension, {
       params: { caseRef: 'ME-104' },
       body,
@@ -298,7 +306,10 @@ describe('outcomes', () => {
     });
     expect(x1.scope.amount).toBeNull();
     expect(x1.scope.doesNotAuthorize).toContain('Does not unblock G3');
-    expect((await analyticsFor(t, a, 'extension_requested')).at(-1)!.props).toEqual({ parentGate: 'G2' });
+    // Exactly one `extension_requested` per extension, carrying the X request (D-071).
+    const ext = await analyticsFor(t, a, 'extension_requested');
+    expect(ext.map((e) => e.props)).toEqual([{ parentGate: 'G2' }]);
+    expect(x1.scope.durationDays).toBeNull();
     expect(await caseStage(t, a)).toBe('validation'); // X never moves the case
     const pkg = await currentPackage(t, k.elena, x1.id);
     expect(pkg.panel.allowedDispositions).not.toContain('approve');
