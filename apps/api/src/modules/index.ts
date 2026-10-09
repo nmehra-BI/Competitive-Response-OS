@@ -15,6 +15,17 @@ import { authHandlers } from './platform/auth';
 import { commentHandlers } from './platform/comments';
 import { evidenceHandlers } from './platform/evidence';
 import { searchHandlers } from './platform/search';
+import { assumptionHandlers } from './me/assumptions';
+import { caseHandlers } from './me/cases';
+import { comparisonHandlers } from './me/comparisons';
+import { economicsHandlers } from './me/economics';
+import { feasibilityHandlers } from './me/feasibility';
+import { lineageHandlers } from './me/lineage';
+import { mandateHandlers } from './me/mandates';
+import { opportunityHandlers } from './me/opportunities';
+import { overviewHandlers } from './me/overview';
+import { sizingHandlers } from './me/sizing';
+import { thesisHandlers } from './me/thesis';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -24,4 +35,15 @@ export const handlers: HandlerMap = {
   ...commentHandlers,
   ...adminHandlers,
   ...auditHandlers,
+  ...caseHandlers,
+  ...assumptionHandlers,
+  ...comparisonHandlers,
+  ...mandateHandlers,
+  ...opportunityHandlers,
+  ...sizingHandlers,
+  ...economicsHandlers,
+  ...lineageHandlers,
+  ...thesisHandlers,
+  ...feasibilityHandlers,
+  ...overviewHandlers,
 };
