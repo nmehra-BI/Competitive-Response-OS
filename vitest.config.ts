@@ -15,13 +15,18 @@ export default defineConfig({
             'fixtures/*/src/**/*.test.ts',
             'fixtures/*/test/**/*.test.ts',
           ],
+          exclude: ['**/node_modules/**', '**/*.db.test.ts'],
           environment: 'node',
         },
       },
       {
         test: {
           name: 'db',
-          include: ['packages/db/test/**/*.test.ts', 'apps/api/test/db/**/*.test.ts'],
+          include: [
+            'packages/db/test/**/*.test.ts',
+            'apps/api/test/db/**/*.test.ts',
+            'apps/worker/src/**/*.db.test.ts',
+          ],
           environment: 'node',
           pool: 'forks',
           poolOptions: { forks: { singleFork: true } },
