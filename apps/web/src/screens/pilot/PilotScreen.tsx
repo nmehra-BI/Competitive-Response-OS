@@ -213,17 +213,17 @@ function PilotView({
         params: { id: ts.id },
         body: { previewId: preview.id, previewHash: preview.contentHash },
       }),
-      (r) => {
+      () => {
         setPreview(null);
         setView(null);
-        setNote(r.summaryText);
+        setNote(null);
       },
     );
 
   const retry = () =>
     ts &&
-    run(retryCmd.mutateAsync({ params: { id: ts.id }, body: { taskIds: failed.map((t) => t.id) } }), (r) =>
-      setNote(r.summaryText),
+    run(retryCmd.mutateAsync({ params: { id: ts.id }, body: { taskIds: failed.map((t) => t.id) } }), () =>
+      setNote(null),
     );
 
   const exportCsv = async () => {
@@ -290,8 +290,9 @@ function PilotView({
           <span style={{ fontSize: 13 }}>{t.owner.displayName}</span>
         ) : (
           <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-            <span className="ws8d-row-flag">
-              <Icon name="alert" size={13} /> Unassigned
+            <span className="ws8d-row-flag" style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <Icon name="alert" size={13} />
+              Unassigned
             </span>
             {!active ? (
               <Button

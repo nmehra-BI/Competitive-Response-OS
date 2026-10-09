@@ -628,7 +628,11 @@ function KeyEvents({
     const last = obs.reduce((a, b) => (a.recordedAt > b.recordedAt ? a : b));
     items.push({
       initials: last.recordedBy.initials,
-      title: `Actuals recorded for ${fmtPeriod(last.periodStart, last.periodEnd, true)}`,
+      title: `Actuals recorded for ${fmtPeriod(
+        obs.reduce((a, o) => (o.periodStart < a ? o.periodStart : a), last.periodStart),
+        obs.reduce((a, o) => (o.periodEnd > a ? o.periodEnd : a), last.periodEnd),
+        true,
+      )}`,
       detail: obs.map((o) => o.sourceText.replace(/^Source: /, '')).join(' · '),
       when: fmtDateTime(last.recordedAt),
       keyDecision: false,

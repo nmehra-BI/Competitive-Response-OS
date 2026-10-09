@@ -292,9 +292,11 @@ function AuthoritySection({ illustrative }: { illustrative: boolean }) {
                       key: 'ceiling',
                       header: 'Ceiling',
                       cell: (r) => (
-                        <Mono size={12.5} strong>
-                          {r.grant ? ceilingText(r.grant, illustrative) : 'above €[limit]'}
-                        </Mono>
+                        <span style={{ whiteSpace: 'nowrap' }}>
+                          <Mono size={12.5} strong>
+                            {r.grant ? ceilingText(r.grant, illustrative) : 'above €[limit]'}
+                          </Mono>
+                        </span>
                       ),
                     },
                     {

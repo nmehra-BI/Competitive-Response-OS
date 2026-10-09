@@ -23,7 +23,7 @@ export const WS8D_STORAGE_KEY = 'growth-os:ws8d-mocks';
 /** S11 variants (FRONTEND §7): partial sync is the normal path; the others are seeded states. */
 export type PilotVariant = 'normal' | 'expired' | 'invalidated' | 'timeout';
 /** S12 starting point: pilot window ended with no actuals, or the decision already recorded. */
-export type OutcomesMoment = 'pilot_ended' | 'decided';
+export type OutcomesMoment = 'pilot_ended' | 'recommended' | 'decided';
 
 export interface Seed {
   pilotVariant?: PilotVariant;
@@ -154,7 +154,37 @@ function initial(seed: Seed = {}): Ws8dState {
     audit: [],
     clock: {},
   };
-  if (seed.outcomesMoment === 'decided') seedDecided(s);
+  if (prepared) {
+    s.audit.push({
+      at: s.c1MetAt!,
+      actorId: people.jonas.id,
+      actorKind: 'human',
+      actorRole: 'pilot_owner',
+      action: 'condition.met',
+      objectType: 'condition',
+      objectId: 'a57e0017-0000-4000-8000-000000000001',
+      objectVersion: 1,
+      summary: 'Marked C1 met · Pilot limited to 4 sites as signed by the specialist',
+      rule: 'condition.owner',
+    });
+    s.audit.push({
+      at: J.pilotActivated,
+      actorId: people.jonas.id,
+      actorKind: 'human',
+      actorRole: 'pilot_owner',
+      action: 'pilot_plan.activated',
+      objectType: 'pilot_plan_version',
+      objectId: 'a57eff00-0000-4000-8000-000000001003',
+      objectVersion: 1,
+      summary: 'Activated the approved pilot plan v1 · stage Pilot running',
+      rule: 'pilot.activate',
+    });
+  }
+  if (seed.outcomesMoment === 'decided' || seed.outcomesMoment === 'recommended') seedDecided(s);
+  if (seed.outcomesMoment === 'recommended') {
+    s.decision = null;
+    s.audit = s.audit.filter((e) => e.action !== 'outcome.decided');
+  }
   return s;
 }
 
@@ -186,6 +216,45 @@ function seedDecided(s: Ws8dState) {
     by: outcomeReview.decision.decidedBy,
     at: outcomeReview.decision.decidedAt,
   };
+  // The seeded moment appears in History exactly as if it had been recorded step by step.
+  for (const o of s.observations) {
+    s.audit.push({
+      at: o.recordedAt,
+      actorId: o.recordedBy,
+      actorKind: 'human',
+      actorRole: 'pilot_owner',
+      action: 'outcome.recorded',
+      objectType: 'outcome_observation',
+      objectId: o.id,
+      objectVersion: 1,
+      summary: `Recorded ${o.targetKey.replace(/_/g, ' ')}: ${o.valueText} · ${o.sourceText.replace(/^Source: /, '')}`,
+      rule: 'outcome.record',
+    });
+  }
+  s.audit.push({
+    at: '2027-03-04T17:00:00+01:00',
+    actorId: people.maya.id,
+    actorKind: 'human',
+    actorRole: 'case_owner',
+    action: 'outcome_review.recommendation_set',
+    objectType: 'outcome_review',
+    objectId: 'a57eff00-0000-4000-8000-000000002001',
+    objectVersion: 1,
+    summary: `Recommended “${outcomeReview.recommendation.label}” · not a decision`,
+    rule: 'outcome_review.edit',
+  });
+  s.audit.push({
+    at: outcomeReview.decision.decidedAt,
+    actorId: outcomeReview.decision.decidedBy,
+    actorKind: 'human',
+    actorRole: 'sponsor',
+    action: 'outcome.decided',
+    objectType: 'decision_record',
+    objectId: 'a57e0022-0000-4000-8000-000000000001',
+    objectVersion: 1,
+    summary: `Decision recorded: ${outcomeReview.decision.label} · stage Validation`,
+    rule: 'outcome.decide · sponsor',
+  });
 }
 
 /** Fixture outcome target keys, in the order of the pre-registered thresholds. */

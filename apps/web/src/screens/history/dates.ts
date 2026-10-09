@@ -11,12 +11,14 @@ function parse(iso: string): Date {
 
 export function fmtDate(iso: string | null | undefined, opts: { year?: boolean } = {}): string {
   if (!iso) return '—';
-  return parse(iso).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    ...(opts.year === false ? {} : { year: 'numeric' }),
-    timeZone: TZ,
-  });
+  return parse(iso)
+    .toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      ...(opts.year === false ? {} : { year: 'numeric' }),
+      timeZone: TZ,
+    })
+    .replace('Sept', 'Sep');
 }
 
 export function fmtDateTime(iso: string | null | undefined): string {
@@ -34,7 +36,7 @@ export function fmtDateTime(iso: string | null | undefined): string {
     hour12: false,
     timeZone: TZ,
   });
-  return `${date}, ${time}`;
+  return `${date.replace('Sept', 'Sep')}, ${time}`;
 }
 
 export function fmtTime(iso: string | null | undefined): string {
