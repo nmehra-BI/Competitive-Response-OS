@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens/tokens.css"
+    "./tokens.css": "./src/tokens/tokens.css",
+    "./components.css": "./src/styles/components.css"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -20,8 +21,13 @@
     "react": "^18.3.1"
   },
   "devDependencies": {
+    "@growth-os/fixtures-aster": "workspace:*",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.7",
     "react": "^18.3.1",
-    "@growth-os/fixtures-aster": "workspace:*"
+    "react-dom": "^18.3.1"
   }
 }

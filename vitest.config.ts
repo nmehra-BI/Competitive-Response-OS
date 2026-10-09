@@ -12,6 +12,9 @@ export default defineConfig({
             'packages/*/src/**/*.test.ts',
             'packages/*/test/unit/**/*.test.ts',
             'apps/*/src/**/*.test.ts',
+            // Component and hook tests (jsdom via a `// @vitest-environment jsdom` docblock per file).
+            'packages/*/src/**/*.test.tsx',
+            'apps/*/src/**/*.test.tsx',
             'fixtures/*/src/**/*.test.ts',
             'fixtures/*/test/**/*.test.ts',
           ],

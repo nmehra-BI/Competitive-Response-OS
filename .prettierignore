@@ -7,3 +7,4 @@ docs/
 *.md
 packages/db/src/generated/
 .claude/
+apps/web/public/mockServiceWorker.js
