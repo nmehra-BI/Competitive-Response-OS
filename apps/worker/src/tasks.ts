@@ -8,6 +8,7 @@ import type { Db, ObjectStore } from '@growth-os/db';
 import { analyticsTasks } from './jobs/analytics';
 import { evidenceTasks } from './jobs/evidence';
 import { createTimerTasks, type TimerOptions } from './jobs/timers';
+import { createOutboxTasks } from './jobs/outbox';
 
 export interface WorkerDeps {
   db: Db;
@@ -20,5 +21,6 @@ export function createTaskList(deps: WorkerDeps): TaskList {
     ...evidenceTasks({ db: deps.db, objects: deps.objects }),
     ...analyticsTasks({ db: deps.db }),
     ...createTimerTasks(deps.db, deps.timers),
+    ...createOutboxTasks(deps.db),
   };
 }

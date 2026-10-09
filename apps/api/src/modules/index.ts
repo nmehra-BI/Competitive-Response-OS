@@ -33,6 +33,7 @@ import { outcomeHandlers } from './me/outcomes';
 import { pilotHandlers } from './me/pilot';
 import { reviewHandlers } from './platform/reviews';
 import { workHandlers } from './platform/work';
+import { taskSyncHandlers } from './tasksync';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -60,4 +61,5 @@ export const handlers: HandlerMap = {
   ...outcomeHandlers,
   ...reviewHandlers,
   ...workHandlers,
+  ...taskSyncHandlers,
 };
