@@ -823,6 +823,23 @@ fast-tracked by the PE and recorded here; nothing breaking was accepted.
   source or not built). Which are needed for the pilot? Owner: PM.
 - **PQ-12 — G2 stop rules and milestones.** The S10 prepare form does not collect stop rules or milestones (not in
   `GateScope`); the snapshot takes them from committed versions. Confirm that is the intended source. Owner: PM.
+- **PQ-13 — Who writes the validation tasks?** The G1 decision locks the experiment and creates its validation task
+  set (D-086), but no endpoint authors the tasks in it (the pilot plan has `pilot.saveDraft`; an experiment plan has
+  no task list). The seed carries VAL-1…5 and the step-12 joint test inserts them. Options: tasks in the experiment
+  plan (contract change), or a task editor on S09. Owner: PM with design. (Wave 3, D-080.)
+- **PQ-14 — Investment committee persona.** D-034 lets the committee stop a case, but the fixture has no committee
+  member; tests grant Priya the role. Should Aster have a named committee member? Owner: PM. (Wave 3.)
+- **PQ-15 — Retried task key in the narrative.** The fixture shows task 2 becoming PIL-12 after the retry; with honest
+  sequential keys the retried issue gets the next free key (PIL-17 when the counter starts at 11). Tests assert
+  `PIL-n` and exactly 6 issues. Change the narrative or reserve keys? Owner: PM. (Wave 3, D-084.)
+- **PQ-16 — Two acceptances for an AI claim.** Accepting a claim proposal adds an AI draft claim; a person then accepts
+  it as a fact with `claims.accept` (D-076). Should S05 offer one action that does both (still a human act)?
+  Owner: design. (Wave 3.)
+
+**Updates at the Wave 3 integration (2026-10-09):** PQ-2 — the API now takes `spendCap: null` /
+`durationDays: null` as the placeholder; `"0"` is refused (D-071). PQ-6 — the server sets the blocker status by the
+S05 rule (D-081); the wording question stays open. PQ-11 — `budget.recordEntry` exists in the API (WS4b); the S11
+UI for it is still open.
 
 ---
 
@@ -1038,3 +1055,290 @@ API streams build against the Wave 1 contracts in parallel.
 
 New open product questions: PQ-6 to PQ-12 (see "Open product questions" above).
 
+
+---
+
+## Stage: Build — Wave 3 back-end integration (2026-10-09)
+
+Wave 3 merged the four back-end streams into `claude/zen-euler-ph3oag` on top of the Wave 2 head `29e1f67`: WS4a
+(discover and assess API, 64 endpoints), WS4b (decide, execute and review API, 38 endpoints), WS6 (simulated
+connector, outbox worker, task sync and dev routes, 7 endpoints) and WS5 (analysis harness, providers, tool gateway,
+ten skills, evals and 9 endpoints). Notes are in `docs/market-expansion/build/notes/WS{4a,4b,5,6}.md`. The entries
+below consolidate the streams' decisions, the PE's deduplication, the D-068 contract wiring, the joint tests and
+the change-request (CR) decisions (D-031 process: additive changes accepted now, the rest deferred with a reason).
+All 146 registry endpoints now have handlers.
+
+### D-071 — Wave 3 integration order, conflicts and one `extension_requested`
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The four streams branched from `ca95231` and each added one-line registrations to shared files; WS4b emitted
+  `extension_requested` twice per extension (the `outcome_revise_or_extend` transition and `outcomes.requestExtension`)
+  and read a `"0"` cap as the €[cap] placeholder.
+- Decision: Merge `--no-ff` in the order WS4a → WS4b → WS6 → WS5 (D-032 rules). Conflicts: `apps/api/src/modules/index.ts`
+  three times (all registrations kept) and `apps/worker/src/tasks.ts` (WS6 outbox tasks + WS5 `analysis.run`);
+  `schedule.test.ts`, `vitest.config.ts`, `.env.example`, the package files and the lockfile merged cleanly; the
+  lockfile was regenerated with `pnpm install`. `extension_requested` is emitted **once**, by
+  `outcomes.requestExtension`, when the X request exists (the event carries the X gate request); "Revise" alone
+  requests nothing, so the case transition no longer emits it. `spendCap: null` / `durationDays: null` are the PRD
+  placeholder (D-040, D-068): submittable, never approvable; a stated cap must be positive (`"0"` → 400, because zero
+  never stands for missing).
+- Alternatives considered: keep the transition's event (it would fire for "Revise" with no extension).
+- Consequences: `outcomes.db.test.ts` asserts no event on the decision and exactly one with the X request.
+
+### D-072 — One implementation of gate facts, gate read models and snapshot summaries
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: WS4a (`me/cases/gate-facts.ts`, `gate-read.ts`) and WS4b (`me/gates/lib/facts.ts`, `serialize.ts`,
+  `snapshot.ts`) built the same helpers in parallel and they disagreed (G1 sources, finance sign-off binding, G3 targets,
+  button labels, money copy).
+- Decision: The gate library is `apps/api/src/modules/me/gates/lib/` (WS4b's, the superset: G0/X facts, the gate
+  policy's precondition keys, targets from the approved G2 snapshot, finance sign-off bound to the committed economics
+  version). `caseGateState(tx, case, gate)` is the single source of a gate's preconditions and display status;
+  `gates.preconditions`, the case header rail (G1–G3, X), the outcome review's scale block and the overview all call
+  it. `caseSourceIds` is one definition (originating opportunity sources + sizing inputs, cohorts and claims) for G1
+  evidence, snapshot evidence and header freshness. WS4a's duplicates are deleted. Snapshot content takes the sizing
+  and economics text from WS4a's `committedSizingSummary` / `committedEconomicsSummary` (now built with the frozen
+  `packages/ui/src/format` rules, exported as `@growth-os/ui/format`, so it equals the fixture's `expectedDisplay`)
+  and a first snapshot takes its recommendation and alternatives from `committedThesis`.
+- Consequences: `me/gates/agreement.db.test.ts` proves the header rail and `gates.preconditions` agree for G1, G2, G3
+  and X, and that a fresh snapshot's sizing/economics text equals the serializers and the seeded package.
+
+### D-073 — Approval integrity: order of checks, error codes and conditions
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS4b): `gates.decide` checks AGENT (pipeline) → gate state → `SNAPSHOT_STALE` (stale gate, non-current
+  snapshot or another snapshot id) → `SNAPSHOT_HASH_MISMATCH` → policy: for approve dispositions `gate.decide`
+  (admin `FORBIDDEN` → `SELF_APPROVAL_PROHIBITED` → `CONFLICT_OF_INTEREST` → role → `AUTHORITY_INSUFFICIENT` on the
+  tenant-local `asOf`), for other dispositions designated approver and not conflicted → `gateRequestMachine.apply` for
+  sign-offs and condition owners (`PRECONDITIONS_UNMET`). The authorize hook checks visibility only, so admins reach
+  the policy and get `FORBIDDEN`; the DB guard repeats the critical checks. Proposed conditions live in
+  `gate_request.scope.proposedConditions` (contract reads strip the key); a condition repeated word for word
+  (whitespace-normalized, same flag) keeps its proposal key (C1, C2), new ones get the next key. Package fields
+  (`approvals`, `positions`, `panel`) describe the viewed snapshot only; `gateHistory` lists every decision. G3 is
+  refused at `gates.createRequest` while any precondition is unmet (D-039 summary, all blockers). Text (rationale,
+  dissent, blockers) never enters audit.
+- Consequences: steps 18 and 29 in `apps/api/test/db/security/approval.test.ts`; step 19–20 in `gates.db.test.ts`.
+
+### D-074 — AI-down: nothing depends on analysis runs
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: WS5's guard test (no module outside `analysis/` and admin Diagnostics reads runs or proposals) failed after
+  the merge: WS4a's opportunity list read the latest discovery run's status for `discoveryPartial`.
+- Decision: `discoveryPartial` and `unavailableSources` come from discovery connection health only; the run's own
+  status and detail are on the analysis panel. `ANALYSIS_ENABLED=false` refuses start, discovery and resume with 503
+  `CONNECTOR_UNAVAILABLE` ("Analysis is turned off. Continue by hand; nothing depends on it."); a failing provider ends
+  the run `failed` with "Stopped — your work is saved". The guard test stays as written.
+- Alternatives considered: whitelist the opportunity list in the test (weakens the guarantee).
+- Consequences: Aster still shows "1 source unavailable" (the trade registry connection is down).
+
+### D-075 — One approval-effectiveness rule for API, worker and timer (CR-WS6-5)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `packages/db/src/approval.ts` holds `APPROVAL_EXECUTED_SQL` ("used": G0/G3 always; pilot activated; a
+  locked experiment started; a task write it authorized left the outbox — sent, sending, checking or confirmed),
+  `loadApprovalGateFacts`, the pure `approvalEffectivenessOf` and `approvalEffectivenessFor(tx, gate, now)`. An
+  approval past `expires_at` that was never used is `expired` before the timer runs (fail closed). Task-sync preview and
+  send, the worker's send-time re-check, the expiry timer's candidate query, and WS4b's activation, budget and
+  experiment-start checks all use it.
+- Consequences: the three copies (WS6 API, WS6 worker, WS4b) are gone; WS6's policy unit tests exercise the shared rule.
+
+### D-076 — Accepted proposals write through WS4a's record writers (CR-WS5-3)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `analysis.decideProposal` calls `createOpportunityFromProposal` and `createClaimFromProposal` inside its
+  pipeline; WS5's stand-ins are deleted. A candidate becomes a Detected opportunity (`origin ai`, `agent_run_id`, fit
+  criteria, unknowns, cited sources, likely duplicate only on the same mandate; audit
+  `opportunity.created_from_proposal` with proposal and run ids). A claim becomes an **AI draft** claim (`status
+  proposed`, kind from the proposal — never scenario/actual; an evidence claim without a citation becomes unknown;
+  `ai_edited` when the person edited it); it becomes a fact only through `claims.accept` (never-rule 11). Cited passage
+  ids are mapped to source ids before the writer validates them. Other proposal types are adopted as drafts with no
+  business write (CR-WS5-6 deferred).
+- Alternatives considered: WS5's stand-in that accepted the claim directly (one step, but two writers and a second
+  acceptance rule).
+- Consequences: WS5's claim test now proves the two-step acceptance; PQ-16 asks whether S05 should combine them.
+
+### D-077 — Tenant time zone (migration 0004, D-068 §10)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `0004_pe_wave3_integration.sql` adds `platform.tenant.time_zone text NOT NULL DEFAULT 'Europe/Berlin'`.
+  `auth.me` returns it (`Tenant.timeZone`); authority `asOf` dates (WS4a `authorizeOnCase`, WS4b `subjectOf`, overview,
+  pilot), materiality stale/invalidation reasons and both timer jobs (read per tenant, the option is only the fallback)
+  use it. Display-only helpers that format a past timestamp without an identity (`shortDate`) still default to
+  Europe/Berlin.
+- Consequences: DB tests prove a 23:30 Berlin change reads "26 Nov" for an Auckland tenant and that the expiry reason
+  follows the tenant's calendar.
+
+### D-078 — Package read receipts and `changesSince` (D-068 §9)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `platform.gate_request_view (gate_request_id, user_id, snapshot_version, viewed_at)` (0004, RLS) records the
+  current version a person opened; `gates.package` reads the previous receipt, returns it as `changesSince` and
+  measures `changesSinceViewerLastSaw` against that version (none when it is the version shown; a first-time viewer
+  sees the changes from the superseded snapshot; `compareTo` still wins), then upserts the receipt. Opening an older
+  version on purpose never moves it back. A receipt is not business state: never audited, never in a snapshot,
+  humans only.
+- Alternatives considered: audit events as receipts (audit must not carry reads; queries cannot write audit).
+- Consequences: `me/gates/package-views.db.test.ts` (with the real WS4a assumption commit and WS4b refresh).
+
+### D-079 — Directory reads `people.list` and `catalogue.scopeOptions` (D-068 §12–13)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: `people.list` (`modules/platform/directory`) lists active human principals with ≥ 1 unrevoked role, sorted
+  by name, with their roles and business-unit scopes (empty = tenant-wide); agents and services never appear; a tenant
+  administrator appears with the admin role only. `catalogue.scopeOptions` (`modules/me/catalogue`) lists the business
+  units the viewer's roles reach (all for a tenant-wide role), the product and segment catalogue, and the countries of
+  the tenant's mandates and opportunities. Both are readable by any person with a role; agents → 403
+  `AGENT_IDENTITY_FORBIDDEN`, a person without a role → 403, another tenant's or a hidden business unit → 404, no
+  session → 401. MSW mocks mirror the same rules.
+- Consequences: the S02/S03/S14 interim persona-directory fallbacks (D-067 §6) can switch to these endpoints.
+
+### D-080 — Joint tests across the streams
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: Four DB suites in `apps/api/test/db/joint/` drive the real endpoints and the real worker code:
+  `pilot-to-simulator.test.ts` (steps 21–23 with no stand-ins: G2 decided through `gates.decide`, activation blockers
+  listed together, `pilot.activate`, preview/send, permission fault, mapping fix, retry → exactly 6 simulator issues,
+  same keys); `g1-to-validation-send.test.ts` (step 12 from `aster-start`: WS4a assessment → G1 submitted and approved
+  → plan locked, validation task set → VAL-1…5 confirmed only after keys return; the five tasks are inserted because no
+  endpoint authors them, PQ-13); `proposal-to-records.test.ts` (WS5 acceptance → WS4a writers, provenance, then WS4a
+  commands on the new records); `assumption-pauses-writes.test.ts` (a decision-critical `assumptions.update` invalidates
+  the active G2, pauses the four unsent writes, keeps the two confirmed, and the worker sends nothing more).
+- Consequences: the seams WAVE3 §7 named are each proven once end to end.
+
+### D-081 — Wave 3 change requests accepted (additive)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: **CR-WS4a-1** `SizingOutput.ladder.tam.available` and `reachablePool.available` (optional; the API's
+  redacted blocked result sets every rung false). **CR-WS4a-4** optional `title` on `opportunities.convertToCase`
+  (default "<candidate> — <product>"). **CR-WS4b-3** nullable extension cap — done by D-068/D-071. **CR-WS4b-4**
+  optional `result` on `outcomes.recordObservation`, used only where the threshold has no number (placeholder or
+  qualitative); for a numeric threshold a contradicting result is 400 (never-rule 12). **CR-WS5-2**
+  `AnalysisRun.output { summary, unknowns, notChecked }` served from the run checkpoint. **CR-WS5-3** writers swapped
+  (D-076). **CR-WS5-5** `analysis.proposals` accepts a mandate ref for discovery proposals — documented as the
+  behaviour, no new endpoint. **CR-WS5-7** `ANALYSIS_RUN_WALL_TIME_MS` removed from `.env.example` (budgets come from
+  skill manifests). **CR-WS6-1** `send_ok` / `reconcile_found` also from `paused_approval_changed` and
+  `paused_connector` (new transition rows; the worker applies the machine from the link's real state). **CR-WS6-3**
+  the expiry timer also pauses the links of queued tasks whose rows it paused. **CR-WS6-5** shared
+  approval-effectiveness helper (D-075). WS4b's decisions under review: proposed conditions in the scope JSON —
+  accepted (proposals never block activation); the activation-time `snapshot_component (pilot_plan_version)` row on the
+  approved G2 snapshot — accepted as the convention (CR-WS4b-2); `spendCap "0"` — superseded by null; the outcome result
+  read from the value's wording — kept only as the fallback when no stated result is given. The thesis blocker status
+  (D-068) follows the S05 rule: the next gate still to approve is "Pending", a later gate "Blocker"; resolved blockers
+  are omitted.
+- Consequences: every change is optional on the wire; old clients and stored rows still validate.
+
+### D-082 — Wave 3 change requests deferred or rejected
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: **Deferred:** CR-WS4a-2 (`thesis_changed` change type — needs an enum and default-policy change; `other`
+  already classifies as uncertain → stale + escalate, which is safe); CR-WS4a-3 (economics driver kind — the null
+  assumption link works and is tested); CR-WS4a-5 (xlsx export — no new spreadsheet dependency before a customer needs
+  it; CSV keeps per-year and one-time apart); CR-WS4b-1 (`applyResolution` in `platform/materiality.ts` — WS4b's local
+  `applyInvalidations` is correct and tested; move when a second caller appears); CR-WS4b-6 (domain budget helper —
+  the integer-cent guard sums one-time money of one gate only); CR-WS5-1 (shared access helpers for the worker —
+  security-relevant move of `effectiveAccess`; the worker restatement is covered by the gateway entitlement tests;
+  schedule with a parity test); CR-WS5-4 (`agent_run.focus` column — only the fixture selection uses it; the
+  checkpoint holds it); CR-WS5-6 (writers for adopted drafts — each owning screen needs its own design); CR-WS6-2 (a
+  named "sender not authorized" transition — the audit already carries `actor_not_authorized`); CR-WS6-4
+  (`sim.project_member` — permission failures surface at send time). **Rejected:** CR-WS4b-5 (nullable
+  `MaterialChange.actor` — breaking for consumers; the nil-UUID "System" person stays and is documented).
+- Consequences: no breaking change entered Wave 3.
+
+### D-083 — Outbox dispatch: lease, reconcile before retry, re-check at claim
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS6): three steps per row — claim (lock, re-check, `sending` with a 60 s lease, attempts + 1), the connector
+  call outside any transaction, then record the outcome through `syncMachine` with the system actor. The re-check at
+  claim runs connection (→ `pause_connector`), then approval effectiveness and plan current (→
+  `pause_approval_changed`: `approval_invalidated` / `approval_expired` / `plan_changed`), then "sender still holds a
+  role with `task_sync.send` in scope" (→ failed, retryable, `actor_not_authorized`). The worker searches by
+  idempotency key before **every** re-send (attempts > 0 or Checking), not only after timeouts; a search needs only a
+  usable connection. A key returned by the tool is always recorded as Confirmed, even if a pause landed meanwhile
+  (CR-WS6-1). The sweep (every minute) moves expired leases to Checking, claims due rows across tenants, searches each
+  paused-while-Checking row once, aligns paused links, and resumes `paused_connector` rows after reconnect when the
+  approval and plan still hold. Backoff 30 s × 2^(n−1), ≤ 15 min, never before Retry-After, 5 attempts; a manual retry
+  or resume grants 5 more. The preview (30 min TTL) binds the send by content hash; send and retry lock the task set.
+- Consequences: crash, timeout, concurrent-retry, expired-token and invalidation suites in `apps/api/test/connector-faults/`.
+
+### D-084 — Simulated connector semantics
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS6): the simulator lives in `sim.*` and runs on the pool (autocommit), never inside the caller's business
+  transaction. `createTask` is idempotent per key (the UNIQUE index is the last defence). Keys are `<last segment of the
+  project>-n` (`PIL-n`, `ME-VAL` → `VAL-n`) from `sim.project_counter`, so a retried task takes the next free key.
+  `token_expired` is sticky and connection-level until the rules are replaced; other faults apply to creates and consume
+  `remaining`; projects are open (no membership table), permission failures are injected rules. The task key is
+  computed once at preview with `externalTaskIdempotencyKey` (pilot: owning plan version; experiment: the
+  pre-registered original plan version) and reused forever. Dev routes exist only with `AUTH_MODE=dev`, in
+  illustrative tenants, for the caller's own connection.
+- Consequences: PQ-15 (PIL-12 in the narrative vs the next free key).
+
+### D-085 — Snapshots: content, refresh and expiry periods
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS4b + D-072): data fields (assumptions at current versions, sizing, economics, validation results, dissent,
+  components) are rebuilt from committed rows; narrative fields (ask, recommendation, alternatives, limitations, stop
+  rules, sign-offs) carry over on refresh and resubmit, with positions recorded on the previous snapshot merged into the
+  sign-offs; unchanged sizing/economics blocks carry over so the diff shows real changes; pre-registered outcome
+  targets are copied to the new snapshot (thresholds never move). G1 pins the draft plans it authorizes; G2 and later
+  pin result versions and signed feasibility reviews; activation adds the plan version as a component of the approved
+  G2 snapshot (insert-only; the hash is unchanged) so a scope change reaches the approval. Approvals of G1, G2 and X
+  expire `decided_at + approvalExpiryDays` (gate policy, default 14); G0 and G3 never expire.
+- Consequences: step 19 refresh v3 → v4 shows only the adoption change.
+
+### D-086 — Experiments: lock, amendments, results
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS4b): an experiment is locked only by the G1 follow-on, which marks the pinned plan as the original and
+  creates the validation task set (`owner_type 'experiment'`, authorizing G1, validation mapping) — empty, see PQ-13.
+  Locked plans refuse edits (`INVALID_TRANSITION`); an amendment is a new plan version with a reason and the original
+  stays visible ("Original (pre-registered)"); results are append-only versions with period and source ("Too early to
+  read" counts as recorded). Amendments and new result versions call materiality (`other` → uncertain → escalate).
+- Consequences: steps 10–11, 13–14.
+
+### D-087 — Pilot activation preconditions and hand-off
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS4b): `pilot.activate` needs an effective G2 approval (D-075), every task owned and every blocking
+  condition met; the blockers are listed together in server order (unowned tasks with ordinal and title, then open
+  conditions with key and text). Activation commits the plan version, sets it current, locks the task set
+  (`owner_type 'pilot_plan_version'`, `owner_id` = that version, authorizing G2), moves the case to Pilot running, opens
+  outcome review v1 and emits `pilot_activated {tasks}`; WS4b never sends. WS6 treats "plan current" as
+  `pilot_plan.current_version_id = task_set.owner_id`. A scope change commits a new version and calls materiality
+  (`spend_ceiling_changed` / `plan_tasks_changed`).
+- Consequences: steps 21–22 and the WS6 hand-off (D-080).
+
+### D-088 — Analysis harness
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS5): the provider request is rebuilt every turn from the persisted checkpoint (context blocks, tool calls
+  and results, untrusted passages, answers); every step commits atomically with the checkpoint and refuses if the run
+  was cancelled; committed tool results are reused by tool + argument hash on resume. Budgets: wall time and tool
+  calls per attempt, tokens and cost per run; a tool budget reached → remaining calls refused → `partial`; time, cost,
+  token budget or 24 turns → `failed` `BUDGET_EXHAUSTED`, resumable. The trace stores structured step summaries and
+  redacted arguments with a hash, never the model's reasoning (no thinking settings are sent). Evidence reaches the
+  model only inside escaped untrusted-data blocks with a standing instruction to treat it as data; the gateway order is
+  allowlist → budget → tenant and identity (the requester's current access) → strict schema → entitlements
+  (restricted → "denied · not summarised", never listed or counted). Output is proposals only; uncited or unsupported
+  precise claims become unknown. The fixture provider is the default; a missing fixture or key is an error, never a
+  fallback. At most 4 running runs per tenant; skill versions are pinned per run; the model name is configuration only.
+- Consequences: WF-09 tests in `apps/worker/src/jobs/analysis/{run,gateway}.db.test.ts`.
+
+### D-089 — Evaluation graders
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS5): `pnpm evals:smoke` runs the deterministic suites with the fixture provider; security, provenance and
+  recovery suites require zero failures (citation validity 100%, provenance 100%, 0 injections, 0 restricted leakage);
+  expert-scored suites run deterministic proxies and report "expert review pending" until people score them.
+- Consequences: CI runs the smoke set on every change; live-provider runs are manual.
+
+### Change-request register — Wave 3
+
+| CR | From | Request | Decision | Record |
+|---|---|---|---|---|
+| CR-WS4a-1 | WS4a | `available` on TAM and reachable pool | **Accepted** (optional) | D-081 |
+| CR-WS4a-2 | WS4a | `thesis_changed` material change type | **Deferred** — `other` is uncertain → stale + escalate | D-082 |
+| CR-WS4a-3 | WS4a | Economics driver kind / override flag | **Deferred** — current model works | D-082 |
+| CR-WS4a-4 | WS4a | Optional title on convert | **Accepted** (optional) | D-081 |
+| CR-WS4a-5 | WS4a | xlsx export | **Deferred** — CSV only | D-082 |
+| CR-WS4b-1 | WS4b | `applyResolution` platform helper | **Deferred** — local helper correct and tested | D-082 |
+| CR-WS4b-2 | WS4b | G2 pins the pilot plan | **Accepted** as the activation-time component convention | D-081, D-085 |
+| CR-WS4b-3 | WS4b | Nullable extension cap | **Accepted** (D-068) | D-071 |
+| CR-WS4b-4 | WS4b | Human result for non-numeric targets | **Accepted** (optional; never overrides a number) | D-081 |
+| CR-WS4b-5 | WS4b | Nullable `MaterialChange.actor` | **Rejected** — breaking; "System" person stays | D-082 |
+| CR-WS4b-6 | WS4b | Domain budget helper | **Deferred** | D-082 |
+| CR-WS5-1 | WS5 | Shared access helpers for the worker | **Deferred** — needs a parity test | D-082 |
+| CR-WS5-2 | WS5 | `AnalysisRun.output` | **Accepted** (optional) | D-081 |
+| CR-WS5-3 | WS5 | Swap stand-in writers | **Done** | D-076 |
+| CR-WS5-4 | WS5 | `agent_run.focus` column | **Deferred** — checkpoint holds it | D-082 |
+| CR-WS5-5 | WS5 | Mandate proposals path | **Accepted** as documented behaviour | D-081 |
+| CR-WS5-6 | WS5 | Writers for adopted drafts | **Deferred** — per-screen design | D-082 |
+| CR-WS5-7 | WS5 | Unread wall-time setting | **Done** (removed) | D-081 |
+| CR-WS6-1 | WS6 | Confirm from paused states | **Accepted** (transition rows) | D-081, D-083 |
+| CR-WS6-2 | WS6 | Named "sender not authorized" transition | **Deferred** — audit code suffices | D-082 |
+| CR-WS6-3 | WS6 | Timer pauses queued links | **Done** | D-081 |
+| CR-WS6-4 | WS6 | `sim.project_member` | **Deferred** | D-082 |
+| CR-WS6-5 | WS6 | Shared approval-effectiveness helper | **Done** | D-075 |
+
+New open product questions: PQ-13 to PQ-16, and updates to PQ-2, PQ-6 and PQ-11 (see "Open product questions").
