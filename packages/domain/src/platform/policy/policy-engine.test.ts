@@ -38,7 +38,7 @@ const SPEC: Record<Action, readonly RoleCode[]> = {
   'opportunity.convert': ['case_owner'],
   'case.edit': ['case_owner'],
   'case.hold_resume': ['sponsor', 'case_owner'],
-  'case.stop': ['sponsor'],
+  'case.stop': ['sponsor', 'investment_committee'],
   'model.edit_draft': ['case_owner', 'finance_reviewer'],
   'model.commit': ['case_owner'],
   'assumption.edit': ['case_owner'],

@@ -272,6 +272,7 @@ export const ROLE_ACTIONS: Readonly<Record<RoleCode, readonly Action[]>> = {
     'gate.decide',
     'gate.record_position',
     'outcome.decide',
+    'case.stop', // D-034 (CR-WS3-1): ARCHITECTURE §7.3 "Outcome decision, stop case"; PRD §4 G3 "or stop"
     'materiality.resolve',
   ],
   read_only_reviewer: ['case.read', 'case.read_brief', 'source.read_metadata'],
