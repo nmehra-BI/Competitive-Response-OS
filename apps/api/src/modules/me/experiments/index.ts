@@ -608,7 +608,7 @@ export const experimentHandlers: HandlerMap = {
     load: (ctx, tx) => loadExp(tx, ctx.params.id),
     authorize: (ctx, { c }) => editAuth(ctx.identity.subject, c, 'experiment.edit'),
     handle: async (ctx, t, { e }) => {
-      const authorizingGate = await approvalEffectiveness(t.tx, e.locked_by_gate_request_id);
+      const authorizingGate = await approvalEffectiveness(t.tx, e.locked_by_gate_request_id, ctx.now);
       const r = experimentMachine.apply(e.lifecycle as never, 'start', human(ctx.userId), {
         authorizingGate,
       });

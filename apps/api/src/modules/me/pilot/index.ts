@@ -105,7 +105,7 @@ export const pilotHandlers: HandlerMap = {
   [API.pilot.get.id]: query(API.pilot.get, {
     load: (ctx, tx) => caseAndPlan(tx, ctx.params.caseRef),
     authorize: (ctx, { c }) => caseVisible(ctx.identity.subject, c),
-    handle: async (ctx, { tx }, { c, plan }) => pilotView(tx, c, needPlan(plan), asOfDate(ctx.now)),
+    handle: async (ctx, { tx }, { c, plan }) => pilotView(tx, c, needPlan(plan), asOfDate(ctx.now), ctx.now),
   }),
 
   [API.pilot.saveDraft.id]: command(API.pilot.saveDraft, {
@@ -249,7 +249,7 @@ export const pilotHandlers: HandlerMap = {
         summary: `Pilot plan draft v${draft.version} edited`,
         details: { tasks: ctx.body.tasks?.length ?? null, milestones: ctx.body.milestones?.length ?? null },
       });
-      return pilotView(tx, c, (await pilotPlanOf(tx, c.id))!, asOfDate(ctx.now));
+      return pilotView(tx, c, (await pilotPlanOf(tx, c.id))!, asOfDate(ctx.now), ctx.now);
     },
   }),
 
@@ -260,7 +260,7 @@ export const pilotHandlers: HandlerMap = {
       const plan = needPlan(p);
       const { tx } = t;
       const draft = await versionById(tx, plan.draft_version_id);
-      const facts = await activationFacts(tx, plan, draft);
+      const facts = await activationFacts(tx, plan, draft, ctx.now);
       const r = caseMachine.apply(c.stage as never, 'pilot_activated', SYSTEM_GATE, {
         approval: facts.approval,
         blockingConditionsMet: facts.blockingConditionsMet,
@@ -383,7 +383,13 @@ export const pilotHandlers: HandlerMap = {
         strict: true,
         props: { pilot_activated: { tasks: tasks.length } },
       });
-      return pilotView(tx, (await caseById(tx, c.id))!, (await pilotPlanOf(tx, c.id))!, asOfDate(ctx.now));
+      return pilotView(
+        tx,
+        (await caseById(tx, c.id))!,
+        (await pilotPlanOf(tx, c.id))!,
+        asOfDate(ctx.now),
+        ctx.now,
+      );
     },
   }),
 

@@ -46,7 +46,7 @@ export const budgetHandlers: HandlerMap = {
         throw new ApiError('VALIDATION_FAILED', 'Amounts are positive; record a correction as a new entry.', {
           errors: [{ path: 'body.amount', code: 'custom', message: 'Must not be negative' }],
         });
-      const effective = await approvalEffectiveness(t.tx, gate.id);
+      const effective = await approvalEffectiveness(t.tx, gate.id, ctx.now);
       if (effective !== 'effective' || !gate.requested_amount || !gate.currency)
         throw new ApiError(
           effective === 'invalidated'

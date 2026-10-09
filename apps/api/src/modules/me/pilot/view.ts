@@ -241,8 +241,9 @@ export async function activationFacts(
   tx: Tx,
   plan: PilotPlanRow,
   draft: VersionRow | undefined,
+  now: Date,
 ): Promise<ActivationFacts> {
-  const approval = await approvalEffectiveness(tx, plan.gate_request_id);
+  const approval = await approvalEffectiveness(tx, plan.gate_request_id, now);
   const conds = plan.gate_request_id ? await conditionRows(tx, [plan.gate_request_id]) : [];
   const open = conds.filter((c) => c.blocks_execution && c.status === 'open');
   const tasks = draft?.task_set_id ? await taskRows(tx, draft.task_set_id) : [];
@@ -309,6 +310,7 @@ export async function pilotView(
   c: CaseLite,
   plan: PilotPlanRow,
   asOf: string,
+  now: Date,
 ): Promise<PilotPlanView> {
   const [current, draft] = await Promise.all([
     versionById(tx, plan.current_version_id),
@@ -338,7 +340,7 @@ export async function pilotView(
   );
   const setId = (current ?? draft)?.task_set_id ?? null;
   const taskSet = setId ? await taskSetView(tx, setId) : null;
-  const act = await activationFacts(tx, plan, draft);
+  const act = await activationFacts(tx, plan, draft, now);
   const conn = taskSet?.connectionId
     ? await tx
         .selectFrom('platform.connection')

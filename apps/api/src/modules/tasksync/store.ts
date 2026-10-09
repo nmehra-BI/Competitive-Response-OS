@@ -6,7 +6,6 @@
 import { externalTaskIdempotencyKey, type ExternalTaskInput } from '@growth-os/connectors';
 import {
   type ConnectorStatus,
-  type GateRequestStatus,
   type SyncStatus,
   type Task,
   type TaskFunction,
@@ -14,7 +13,7 @@ import {
   type TaskSetOwnerType,
   type TaskStatus,
 } from '@growth-os/contracts';
-import { sql, type Tx } from '@growth-os/db';
+import { approvalEffectivenessFor, sql, type Tx } from '@growth-os/db';
 import type { ApprovalEffectiveness } from '@growth-os/domain';
 import { casesByIds, type CaseRow } from '../../platform/cases';
 import { notFound } from '../../platform/errors';
@@ -309,31 +308,15 @@ export interface GateContext {
 export async function loadGateContext(tx: Tx, gateRequestId: string, now: Date): Promise<GateContext> {
   const g = await sql<{
     gate_code: string;
-    status: GateRequestStatus;
-    expires_at: Date | null;
     approval_id: string | null;
     snapshot_hash: string | null;
     snapshot_version: number | null;
     current_version: number | null;
-    has_invalidation: boolean;
-    has_expired: boolean;
-    executed: boolean;
     open_blocking: number;
   }>`
-    SELECT g.gate_code, g.status, g.expires_at,
+    SELECT g.gate_code,
       ea.id AS approval_id, ea.snapshot_hash, es.version AS snapshot_version,
       (SELECT s.version FROM platform.decision_snapshot s WHERE s.id = g.current_snapshot_id) AS current_version,
-      EXISTS (SELECT 1 FROM platform.approval a JOIN platform.approval_invalidation i ON i.approval_id = a.id
-               WHERE a.gate_request_id = g.id) AS has_invalidation,
-      EXISTS (SELECT 1 FROM platform.approval a JOIN platform.approval_invalidation i ON i.approval_id = a.id
-               WHERE a.gate_request_id = g.id AND i.kind = 'expired') AS has_expired,
-      (g.gate_code IN ('G0','G3')
-        OR EXISTS (SELECT 1 FROM me.pilot_plan pp WHERE pp.gate_request_id = g.id AND pp.activated_at IS NOT NULL)
-        OR EXISTS (SELECT 1 FROM me.experiment e WHERE e.locked_by_gate_request_id = g.id
-                     AND e.lifecycle IN ('running','result_recorded'))
-        OR EXISTS (SELECT 1 FROM platform.outbox_message o
-                    WHERE o.authorization_ref->>'gateRequestId' = g.id::text
-                      AND (o.sent_at IS NOT NULL OR o.status IN ('sending','checking','confirmed')))) AS executed,
       (SELECT count(*)::int FROM platform.condition c
         WHERE c.gate_request_id = g.id AND c.blocks_execution AND c.status = 'open') AS open_blocking
     FROM platform.gate_request g
@@ -353,15 +336,8 @@ export async function loadGateContext(tx: Tx, gateRequestId: string, now: Date):
       gateLabel: '',
       blockingConditionsMet: false,
     };
-  let approval: ApprovalEffectiveness;
-  if (row.status === 'invalidated') approval = 'invalidated';
-  else if (row.status === 'expired') approval = 'expired';
-  else if ((row.status === 'approved' || row.status === 'approved_with_conditions') && row.approval_id)
-    approval =
-      row.expires_at && new Date(row.expires_at).getTime() <= now.getTime() && !row.executed
-        ? 'expired'
-        : 'effective';
-  else approval = row.has_expired ? 'expired' : row.has_invalidation ? 'invalidated' : 'missing';
+  // The same rule the worker re-checks at send time and the expiry timer applies (D-075).
+  const approval = await approvalEffectivenessFor(tx, gateRequestId, now);
   const version = row.snapshot_version ?? row.current_version;
   return {
     approval,

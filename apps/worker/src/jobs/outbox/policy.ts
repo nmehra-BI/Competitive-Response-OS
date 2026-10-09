@@ -3,8 +3,9 @@
  * effectiveness from gate facts, and the actor re-check against the frozen role table.
  */
 import type { ConnectorErrorKind } from '@growth-os/connectors';
-import type { GateRequestStatus, RoleAssignment } from '@growth-os/contracts';
-import { ROLE_ACTIONS, type ApprovalEffectiveness } from '@growth-os/domain';
+import type { RoleAssignment } from '@growth-os/contracts';
+import { approvalEffectivenessOf, type ApprovalGateFacts } from '@growth-os/db';
+import { ROLE_ACTIONS } from '@growth-os/domain';
 
 /** Default backoff: 30 s, 1 min, 2 min, 4 min … capped at 15 min; never sooner than Retry-After. */
 export function defaultBackoffMs(attempts: number, retryAfterMs: number | null = null): number {
@@ -34,37 +35,12 @@ export const RECHECK_CODES = {
   attemptsExhausted: 'attempts_exhausted',
 } as const;
 
-export interface GateFacts {
-  status: GateRequestStatus;
-  expiresAt: string | null;
-  /** An approve / approve-with-conditions approval without an invalidation row. */
-  hasEffectiveApproval: boolean;
-  hasExpiredInvalidation: boolean;
-  hasInvalidation: boolean;
-  /** The approval was already used (pilot activated, experiment started, a task write left the outbox). */
-  executed: boolean;
-}
-
 /**
- * Whether the gate approval still authorizes external writes (never-rule 10). An approval past its
- * expiry that was never used is expired even before the expiry timer has run (fail closed).
+ * Approval effectiveness lives in `@growth-os/db` (D-075, CR-WS6-5) so the API's request-time check,
+ * this worker's send-time check and the expiry timer share one definition.
  */
-export function approvalEffectiveness(g: GateFacts | null, now: Date): ApprovalEffectiveness {
-  if (!g) return 'missing';
-  if (g.status === 'invalidated') return 'invalidated';
-  if (g.status === 'expired') return 'expired';
-  if (g.status !== 'approved' && g.status !== 'approved_with_conditions') {
-    if (g.hasInvalidation) return 'invalidated';
-    return 'missing';
-  }
-  if (!g.hasEffectiveApproval) {
-    if (g.hasExpiredInvalidation) return 'expired';
-    if (g.hasInvalidation) return 'invalidated';
-    return 'missing';
-  }
-  if (g.expiresAt && Date.parse(g.expiresAt) <= now.getTime() && !g.executed) return 'expired';
-  return 'effective';
-}
+export type GateFacts = ApprovalGateFacts;
+export const approvalEffectiveness = approvalEffectivenessOf;
 
 /** Does the user still hold a role that may send tasks for this case (scope: business unit / case)? */
 export function mayStillSend(

@@ -9,10 +9,10 @@
  * is the plan version that owns it; an experiment task set while the experiment is locked by the
  * same gate and not cancelled.
  */
-import { sql, type Tx } from '@growth-os/db';
-import type { ConnectorStatus, GateRequestStatus, RoleCode } from '@growth-os/contracts';
+import { loadApprovalGateFacts, sql, type Tx } from '@growth-os/db';
+import type { ConnectorStatus, RoleCode } from '@growth-os/contracts';
 import type { ApprovalEffectiveness } from '@growth-os/domain';
-import { approvalEffectiveness, mayStillSend, type GateFacts } from './policy';
+import { approvalEffectiveness, mayStillSend } from './policy';
 
 export interface TaskSetRef {
   id: string;
@@ -29,47 +29,8 @@ export interface SendFacts {
   actorAuthorized: boolean;
 }
 
-const iso = (v: Date | string | null): string | null =>
-  v === null ? null : v instanceof Date ? v.toISOString() : new Date(v).toISOString();
-
-export async function loadGateFacts(tx: Tx, gateRequestId: string): Promise<GateFacts | null> {
-  const r = await sql<{
-    status: GateRequestStatus;
-    expires_at: Date | string | null;
-    has_effective: boolean;
-    has_expired: boolean;
-    has_invalidation: boolean;
-    executed: boolean;
-  }>`
-    SELECT g.status, g.expires_at,
-      EXISTS (SELECT 1 FROM platform.approval a
-               WHERE a.gate_request_id = g.id AND a.disposition IN ('approve','approve_with_conditions')
-                 AND NOT EXISTS (SELECT 1 FROM platform.approval_invalidation i WHERE i.approval_id = a.id))
-        AS has_effective,
-      EXISTS (SELECT 1 FROM platform.approval a JOIN platform.approval_invalidation i ON i.approval_id = a.id
-               WHERE a.gate_request_id = g.id AND i.kind = 'expired') AS has_expired,
-      EXISTS (SELECT 1 FROM platform.approval a JOIN platform.approval_invalidation i ON i.approval_id = a.id
-               WHERE a.gate_request_id = g.id) AS has_invalidation,
-      (g.gate_code IN ('G0','G3')
-        OR EXISTS (SELECT 1 FROM me.pilot_plan pp WHERE pp.gate_request_id = g.id AND pp.activated_at IS NOT NULL)
-        OR EXISTS (SELECT 1 FROM me.experiment e WHERE e.locked_by_gate_request_id = g.id
-                     AND e.lifecycle IN ('running','result_recorded'))
-        OR EXISTS (SELECT 1 FROM platform.outbox_message o
-                    WHERE o.authorization_ref->>'gateRequestId' = g.id::text
-                      AND (o.sent_at IS NOT NULL OR o.status IN ('sending','checking','confirmed')))
-      ) AS executed
-    FROM platform.gate_request g WHERE g.id = ${gateRequestId}`.execute(tx);
-  const row = r.rows[0];
-  if (!row) return null;
-  return {
-    status: row.status,
-    expiresAt: iso(row.expires_at),
-    hasEffectiveApproval: row.has_effective,
-    hasExpiredInvalidation: row.has_expired,
-    hasInvalidation: row.has_invalidation,
-    executed: row.executed,
-  };
-}
+/** Send-time gate facts: the shared reader in `@growth-os/db` (D-075). */
+export const loadGateFacts = loadApprovalGateFacts;
 
 export async function planIsCurrent(tx: Tx, set: TaskSetRef): Promise<boolean> {
   if (set.ownerType === 'pilot_plan_version') {

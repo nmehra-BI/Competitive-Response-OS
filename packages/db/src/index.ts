@@ -123,3 +123,11 @@ export {
   type AuditRecord,
   type PlatformAuditWriter,
 } from './audit';
+
+export {
+  APPROVAL_EXECUTED_SQL,
+  approvalEffectivenessFor,
+  approvalEffectivenessOf,
+  loadApprovalGateFacts,
+  type ApprovalGateFacts,
+} from './approval';

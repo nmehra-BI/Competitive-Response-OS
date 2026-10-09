@@ -3,7 +3,7 @@
  * RLS applies; the worker role reaches other tenants only through platform.list_tenant_ids().
  * State change, invalidation rows, paused writes and the audit event commit together.
  */
-import { sql, withTenant, type Db, type Tx } from '@growth-os/db';
+import { APPROVAL_EXECUTED_SQL, sql, withTenant, type Db, type Tx } from '@growth-os/db';
 import type { CaseStage, ExperimentLifecycle, GateCode, GateRequestStatus } from '@growth-os/contracts';
 import {
   planApprovalExpiry,
@@ -52,14 +52,7 @@ export async function loadExpiryCandidates(tx: Tx, now: string): Promise<ExpiryC
   }>`
     SELECT g.id, g.case_id, g.gate_code, g.status, g.expires_at,
       (SELECT c.stage FROM platform.workflow_case c WHERE c.id = g.case_id) AS case_stage,
-      (g.gate_code IN ('G0','G3')
-        OR EXISTS (SELECT 1 FROM me.pilot_plan pp WHERE pp.gate_request_id = g.id AND pp.activated_at IS NOT NULL)
-        OR EXISTS (SELECT 1 FROM me.experiment e WHERE e.locked_by_gate_request_id = g.id
-                     AND e.lifecycle IN ('running','result_recorded'))
-        OR EXISTS (SELECT 1 FROM platform.outbox_message o
-                    WHERE o.authorization_ref->>'gateRequestId' = g.id::text
-                      AND (o.sent_at IS NOT NULL OR o.status IN ('sending','checking','confirmed')))
-      ) AS executed,
+      ${APPROVAL_EXECUTED_SQL} AS executed,
       ARRAY(SELECT a.id::text FROM platform.approval a
              WHERE a.gate_request_id = g.id AND a.disposition IN ('approve','approve_with_conditions')
                AND NOT EXISTS (SELECT 1 FROM platform.approval_invalidation i WHERE i.approval_id = a.id)
