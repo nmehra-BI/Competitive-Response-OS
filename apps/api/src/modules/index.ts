@@ -15,6 +15,7 @@ import { authHandlers } from './platform/auth';
 import { commentHandlers } from './platform/comments';
 import { evidenceHandlers } from './platform/evidence';
 import { searchHandlers } from './platform/search';
+import { taskSyncHandlers } from './tasksync';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -24,4 +25,5 @@ export const handlers: HandlerMap = {
   ...commentHandlers,
   ...adminHandlers,
   ...auditHandlers,
+  ...taskSyncHandlers,
 };
