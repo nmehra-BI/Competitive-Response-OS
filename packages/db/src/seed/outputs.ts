@@ -36,6 +36,7 @@ export function sizingGoldenMismatches(out: SizingOutput): string[] {
   check(m, 'sam.cohortSum', out.ladder.sam.cohortSum, e.sam.cohortSum);
   check(m, 'sam.overlapRemoved', out.ladder.sam.overlapRemoved, e.sam.overlapRemoved);
   check(m, 'sam.value', out.ladder.sam.value.amount, e.sam.value);
+  check(m, 'sam.available', out.ladder.sam.available ?? true, true);
   check(m, 'reachablePool.population', out.ladder.reachablePool.population, e.reachablePool.population);
   for (const s of SCENARIOS) {
     const row = out.ladder.som.find((r) => r.scenario === s);

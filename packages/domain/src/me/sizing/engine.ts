@@ -240,6 +240,7 @@ function calculateSizing(input: SizingInput, inputHash: string): SizingOutput {
         value: toMoney(samValue ?? perYear('annual_market_spend', new Dec(0), currency, priceYear)),
         cohortSum: sam?.cohortSum ?? 0,
         overlapRemoved: sam?.overlapRemoved ?? 0,
+        available: sam !== null, // D-033: placeholders above are never a displayable zero
       },
       reachablePool: { population: reach.floor().toNumber() },
       som,

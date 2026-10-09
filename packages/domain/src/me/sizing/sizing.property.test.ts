@@ -139,6 +139,9 @@ describe('sizing properties', () => {
         expect(out.blocked, `${key} ${label}`).toBe(true);
         expect(blockingKeys(out), `${key} ${label}`).toContain(key);
         expect(out.ladder.som, `${key} ${label}`).toEqual([]);
+        // D-033: a SAM the engine could not compute is flagged, never a displayable zero.
+        if (key === 'TOO_MANY_COHORTS_FOR_AGGREGATE_METHOD')
+          expect(out.ladder.sam.available, `${key} ${label}`).toBe(false);
       });
     }
   });

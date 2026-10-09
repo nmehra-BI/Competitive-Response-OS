@@ -53,6 +53,7 @@ describe('golden: sizing engine vs Aster fixture', () => {
       overlapRemoved: expectedSizing.sam.overlapRemoved,
     });
     expect(out.ladder.sam.value.amount).toBe(expectedSizing.sam.value);
+    expect(out.ladder.sam.available).toBe(true); // D-033
     expect(out.ladder.sam.value.measure).toBe('annual_market_spend');
     const samNode = out.lineage.find((n) => n.nodeKey === 'sizing.sam.value')!;
     expect(samNode.formulaText).toBe(

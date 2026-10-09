@@ -155,6 +155,12 @@ export const SizingOutput = z.object({
       value: Money,
       cohortSum: z.number().int(),
       overlapRemoved: z.number().int(),
+      /**
+       * D-033 (CR-WS2-1, additive): false when SAM could not be computed (wrong cohort count, missing
+       * overlap or site IDs). Then population/value/cohortSum/overlapRemoved are placeholders, never
+       * a zero to display: show "Not available" with the blocking check. Absent means computed.
+       */
+      available: z.boolean().optional(),
     }),
     reachablePool: z.object({ population: z.number().int() }), // a site count, never money
     som: z.array(SomScenarioOutput),
