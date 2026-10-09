@@ -807,3 +807,234 @@ fast-tracked by the PE and recorded here; nothing breaking was accepted.
   submission requires both. Proposed wording: "returned to change the owner and confirm EUR". Owner: PM.
 - **PQ-5 — Version history depth.** Does the History tab need sizing/economics v1 in the demo? If yes, the
   fixture needs v1 inputs (fixture CR). Owner: PM with design.
+- **PQ-6 — Thesis blocker wording.** S05 shows an open item for the upcoming gate as "Pending" and one for a
+  later gate as "Blocker" (prototype). With `ThesisView.blockers[].status` (D-068) the server decides; confirm
+  the meaning of each word. Owner: PM with design.
+- **PQ-7 — Assumption register order.** S09 sorts by sensitivity, then weakest evidence first, so "Specialist
+  requirements (None)" leads Test first; the prototype lists it last (D-067). Owner: design.
+- **PQ-8 — Restricted site list owner.** The prototype names Jonas Klein as data owner, but the fixture makes
+  him aggregate-only; S06 names Maya Rao. Which is right? Owner: PM.
+- **PQ-9 — SAM > TAM state.** The prototype still shows the ladder when sizing is blocked; the screens hide ladder
+  values while a blocking check is open (D-066, WS2-3). Confirm with design.
+- **PQ-10 — G3 note.** S12's scale reason omits the prototype's "€400k one-time scale-entry investment" clause:
+  no view carries that number. Should the outcome review or the G3 preconditions name it? Owner: PM.
+- **PQ-11 — Missing actions from the prototype.** "Suggested adjacent segments · AI draft" on S02, "Request
+  normalization" on S04, budget entries on S11 (`budget.recordEntry`) and mapping edits on S14 have no UI (no data
+  source or not built). Which are needed for the pilot? Owner: PM.
+- **PQ-12 — G2 stop rules and milestones.** The S10 prepare form does not collect stop rules or milestones (not in
+  `GateScope`); the snapshot takes them from committed versions. Confirm that is the intended source. Owner: PM.
+
+---
+
+## Stage: Build — Wave 2 screen integration (2026-10-09)
+
+Wave 2 merged the four screen streams into `claude/zen-euler-ph3oag` on top of the Wave 1 head `ca95231`:
+WS8a (Overview, Cases, Mandate + G0, Opportunities, Compare, My Work, Reviews), WS8b (Thesis, Sizing,
+Feasibility, Economics), WS8c (Validation, Decisions, decision brief) and WS8d (Pilot, Outcomes, Evidence,
+History, Administration). Notes are in `docs/market-expansion/build/notes/WS8{a,b,c,d}.md`. The entries below
+consolidate the streams' decisions, the PE's integration work and the change-request (CR) decisions. Every
+accepted contract change is additive (D-031 §4) and listed for the API side in `WAVE3.md` §8, because the Wave 3
+API streams build against the Wave 1 contracts in parallel.
+
+### D-061 — Wave 2 integration order and mock handler precedence
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: All four streams branched from WS7's `c00e84c` and run against MSW mocks. Screen mocks load in folder
+  order and the first matching handler wins, so a stream that answered a shared endpoint for every id silently
+  shadowed the others: Decisions answered every `gates.get/package/decide` (breaking G0 on S02), every
+  `gates.preconditions` (hiding WS8d's X) and every `cases.header` (hiding the converted ME-104 of the discovery
+  journey); Pilot answered the VAL task set's `taskSync.*`; Economics answered the S09 register.
+- Decision: Merge `--no-ff` in the order WS8a → WS8b → WS8c → WS8d (D-032 rules: keep both sides of
+  `screens/registry.ts`; one value for the every-route axe timeout, 180 s; keep WS8b's animation wait in the axe
+  helper; regenerate the lockfile). Shared endpoints are **claimed by id** with WS8a's `scoped()` (falls through
+  when the predicate is false). The claim table lives in `mocks/handlers.ts` and `mocks/precedence.test.ts` pins
+  it: `cases.header` → opportunities for cases converted in this tab, decisions for ME-104, else WS7;
+  `gates.get/package/decide` → decisions for G1/G2, mandate for its G0 requests, else WS7; `gates.preconditions` →
+  decisions for ME-104 G1/G2, outcomes for X, else WS7; `taskSync.*` → pilot for the PIL set, validation for the
+  VAL set; `assumptions.list` → one register (validation) that merges WS8b's disputes; the fixture adoption
+  dispute thread is WS8c journey state and every other challenge belongs to economics; `admin.connections` →
+  admin (stateful, supersedes WS7); `lineage.get` → sizing for ME-104. Pilot adds `tasks.update` for My Work.
+- Alternatives considered: an explicit precedence number per mock module (hides ownership; any reorder breaks a
+  stream); one shared mock module for every shared endpoint (moves journey state away from the screens that own
+  it). A shared module was used only for the assumption register, where two streams model the same rows.
+- Consequences: Every stream's unit and e2e specs pass together (36/36 e2e). A new screen mock that answers an
+  endpoint someone else answers must claim by id and extend the table and the test. WS8b's registry edit had also
+  mangled the registry's example comment; the PE restored it.
+
+### D-062 — Mock journey state persists per tab in sessionStorage
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The acceptance steps switch persona with a full page load (Maya submits, Elena decides), and MSW keeps
+  state in page memory.
+- Decision (WS8a, WS8c, WS8d): each journey mirrors its mock state to `sessionStorage` (`growth-os:mock:*` via
+  `persisted()`, `growth-os:ws8c-mock` with presets `start … expired` chosen by `growth-os:ws8c-preset`,
+  `growth-os:ws8d-mocks` with `pilotVariant` / `outcomesMoment` seeds). State is bound to WS7's `state.scenario`
+  so `resetMockState()` resets it; restore happens once per page load; a new tab starts fresh. WS8b's variants
+  use the shared scenario object (`setScenario({ sizingVariant, adoptionDisputed, thesisRun, siteListRestricted })`)
+  and switch client-side. Moments differ on purpose: discovery at aster-start, assessment at 13–14 Oct, the WS8c
+  journey from `start` to `expired`, the pilot after the G2 approval; the case header follows the journey that
+  owns ME-104 (D-061).
+- Alternatives considered: extend WS7's `MockScenario` for every stream (one file edited by four streams);
+  in-app navigation only (cannot switch persona).
+- Consequences: e2e specs seed a moment and reload; Vitest resets all stores between tests. Against the real API
+  the journeys need a fresh `aster-start` seed (the G0 spec assumes the next mandate is MD-22).
+
+### D-063 — The web app runs the domain engines
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: S08 recomputes while the user types and the S06/S08 mocks must return exactly what the engines return.
+  WS8b built against a stub domain and carried a verbatim copy of the WS2 engines behind `engine/adapter.ts`.
+- Decision: `apps/web` depends on `@growth-os/domain`; the sizing and economics adapters re-export
+  `createSizingEngine`, `createEconomicsEngine`, `CASH_FLOW_INPUT_LABELS` and the lineage helpers from it, and the
+  copies are deleted. The fixture-hash tests (`74cedbb3…`, `3b748b4d…`) and golden values run against the domain
+  engines. Live recompute is a **preview**: the debounced draft save returns the server result, which replaces
+  the local one (same engine, same input, asserted equal); committed snapshots are only read, never recomputed;
+  the client never persists computed money (FRONTEND §1.3).
+- Alternatives considered: keep the copies (drift); recompute on the server only (no immediate feedback).
+- Consequences: The S08/S06 chunks share one ~44 kB engine chunk; any engine change is one change for API, seed,
+  worker and web.
+
+### D-064 — Shared UI fixes from the screen streams
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: (1) `useFocusableScroll` moves from WS8c into `@growth-os/ui`; `DataTable` uses it so its scroll area
+  is a named, keyboard-focusable region while it overflows (axe `scrollable-region-focusable`; always when
+  overflow cannot be measured); screens with their own `.gos-table-scroll` call it on a container.
+  (2) `ApprovalPanelView` gains an optional `lockBody` under the lock banner's policy reason (additive prop; the
+  frozen `ApprovalPanelProps` is unchanged); S10's "Viewing as … Only Elena Fischer can decide G2 v3" moves there.
+  (3) **The approvals in a package are those on its current snapshot**: `decidedNoteFor` (connected panel) and S10's
+  `decidedNote` ignore approvals on earlier snapshots, so a decision on v1 never hides the actions after a return
+  and resubmission (WS8a decision 5). WS4 lists earlier-snapshot decisions in `gateHistory` only.
+- Consequences: Unit tests cover the region (with and without overflow), the lock body and the snapshot rule.
+
+### D-065 — Multipart upload in the web client
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: D-051 accepted CR-WS1-1 (no contract change) and left the client path to WS8d, which did not build it.
+- Decision: `api()` sends endpoints in `MULTIPART_ENDPOINT_IDS` (`evidence.upload`) as `multipart/form-data`: the
+  body as the JSON `metadata` part, the file as the `file` part (named after the `File` or the body's
+  `fileName`), with the Idempotency-Key header and no explicit Content-Type (the browser sets the boundary).
+  A multipart endpoint without a file, or a file on a JSON endpoint, is a programming error. `useCommand` passes
+  the file and includes its size and type in the intent fingerprint.
+- Consequences: An S13 upload form can use it directly; no MSW upload mock yet (the WS1 API handler exists).
+
+### D-066 — Honest display rules the screens added
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (WS8b, WS8d, WS8a):
+  1. **Blocked sizing hides ladder values.** While `result.blocked`, S06 replaces the ladder with "Ladder values
+     are hidden while a blocking check is open", SAM count and formula read "Paused", and lineage values read
+     "Not available — resolve the blocking checks first" (D-033, WS2-3). Deliberately differs from the prototype's
+     SAM > TAM state (PQ-9).
+  2. **Negative outcomes are neutral.** S12 renders Not met / Inconclusive with the neutral `ResultGlyph` and an
+     Actual kind tag with period and source — never red; a recorded result is a fact, not a failure.
+  3. **Never "Synced".** S11's banner carries the server's `summaryText` ("5 of 6 tasks confirmed in Jira · 1 failed
+     (permission)"); the polite status line describes the next action and never restates a count that can go
+     stale. A timed-out task shows "Checking" until it reconciles (the mock keeps it there for at least one poll).
+  4. **Placeholders stay placeholders.** The extension cap field shows "€[cap]" and "Placeholder · confirm with PM"
+     (D-040); authority ceilings in an illustrative tenant read "up to €[limit]"; S12's scale reason is composed
+     from the server's unmet G3 preconditions.
+  5. **Unknown is never 0** on S04 (dashed Unknown tag; "Not ranked — 1 input missing (channel access)"); spend to
+     date with a finance source down reads "Not available — …" on S01.
+  6. **AI cannot review.** The specialist row on S07 stays "Pending — human review required"; no readiness score.
+- Consequences: The release-blocker never-rules hold in the UI before the API lands.
+
+### D-067 — Screen interaction decisions
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision (stream notes, consolidated):
+  1. **Rank** (WS8a): S04 shows "Rank i of n" from `RankingRow.rank` (D-068), falling back to the order of ranked
+     rows; the score is the server's 2-decimal string, never recomputed. A comparison is created from the `ids`
+     deep link (`comparisons.create` must return the existing comparison for an identical set) and selection for
+     comparison is explicit (max 4).
+  2. **One approval panel** (WS8a, WS8c): G0 decides in the shared connected `ApprovalPanel` bound to the package's
+     snapshot id + hash. **Approving a package approves its proposed conditions**: S10 sends
+     `approve_with_conditions` with the proposed conditions verbatim plus any the approver adds; the API treats
+     identical text as the same condition. Stale or superseded versions disable every action with the reason;
+     policy reasons lock the panel for everyone else.
+  3. **Register order** (WS8c): Test first / Test next / Watch / Monitor from the API's `registerGroup`; within a
+     group, sensitivity, then weakest evidence first, key as tie-break (PQ-7).
+  4. **Drafts** (WS8a, WS8b): autosave with If-Match and a keep-mine / take-theirs conflict; committed versions are
+     read-only ("Changes create vN+1"); S06 "Undo edit" is a session undo stack (no pre-edit value in the
+     contract; CR-WS8b-5 deferred).
+  5. **"Used by"** (WS8b): grouped by measure and walked along the measure chain (SAM → Reachable pool, SOM,
+     Economics), never a false direct edge (D-056).
+  6. **Interim sources** (WS8a, WS8d): owner pickers outside a case use the dev persona directory and admin names
+     the persona list until `people.list` and `catalogue.scopeOptions` land (D-068); S02 scope fields stay
+     read-only until then; My Work reads the task row version from the pilot plan only when the work item has none.
+  7. **Dates** render in Europe/Berlin until `Tenant.timeZone` is served; ISO calendar dates never shift.
+  8. **Brief and package** (WS8c): the brief sits inside the case layout and print CSS hides the chrome; package
+     text is server text (nothing decision-relevant is computed in the browser).
+  9. **Navigation** (WS8d): task titles are `?task=` deep links; Diagnostics opens a run trace only from `?run=`
+     (no tenant-wide run list). The S02 "AI draft" box is omitted (no data source; PQ-11).
+- Consequences: The screens switch to WS4 endpoint by endpoint with no code change beyond the D-068 fallbacks.
+
+### D-068 — Contract additions from the screen streams (CR decisions)
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: The four notes raised 25 change requests (register below). The Wave 3 API streams are building against the frozen
+  contracts, so only additive, backward-compatible changes are accepted now; each is listed with its API-side
+  wiring in `WAVE3.md` §8 for the Wave 3 integration.
+- Decision: Accepted (additive): `OutcomeReviewView.rowVersion` and `.extensionRequest`; `MessageDraft.rowVersion`;
+  `WorkItem.rowVersion` (and `WorkItem.id` documented as the task id for tasks); `RankingRow.rank` (set by the
+  domain ranking engine; golden and property tests extended); `ComparisonCell.evidenceQuality`;
+  `FeasibilityAssessment.questionDetail`; `ThesisView.blockers[].status` with `ThesisBlockerStatus` and its labels;
+  `DecisionPackageView.changesSince { sinceVersion, viewedAt }`; `Tenant.timeZone` (the column is a migration at the
+  Wave 3 integration); `outcomes.requestExtension` accepts `spendCap: null` / `durationDays: null` for the PRD
+  placeholder (submittable, never approvable — consistent with D-040 and D-045); new reads `people.list`
+  (`GET /people`) and `catalogue.scopeOptions` (`GET /me/scope-options`), 146 endpoints; label maps
+  `REVIEW_AREA_LABELS` and `GATE_REQUEST_STATUS_LABELS`. API behaviour clarified without a contract change:
+  identical proposed conditions are not duplicated by `gates.decide`; `assumptions.update` returns snapshot ids and
+  approval ids as its field names say (the WS8c mock is corrected).
+- Alternatives considered: wait for Wave 3 to land before changing contracts (the screens keep workarounds that
+  read the wrong source of truth, e.g. sending the review version as a row version).
+- Consequences: The web reads each new field with a fallback for an API that predates it; contract tests prove old
+  responses still validate. The register below records each CR.
+
+### D-069 — Change requests deferred or rejected in Wave 2
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Decision: **Rejected:** a G0 decision summary on `Mandate` (CR-WS8a-4; the package is the record and a copy would
+  drift); `LineageNode.usedBy` (CR-WS8b-3; D-056 stands). **Deferred:** the pre-edit value on `LedgerRow` / draft edit
+  history (CR-WS8b-5; needs a draft-history design, the session undo stack suffices for the pilot). **Resolved by
+  other means:** admin names (CR-WS8d-4) by `people.list` and `catalogue.scopeOptions` without changing the admin
+  shapes; case people (CR-WS8d-5) by `cases.members` (D-037); the WS7 items (focusable table scroll, lock-banner
+  body, axe timeout) by D-064 and D-070.
+- Consequences: No breaking change entered Wave 2.
+
+### D-070 — Test robustness for the integrated screens
+- Date: 2026-10-09 · Stage: Build · Status: Accepted
+- Context: With 23 real screens, the WS7 every-route axe crawl exceeded 30 s; S06's drawer fade-in made axe measure
+  half-transparent text; the integration machine also runs the Wave 3 streams, so component tests timed out at
+  Testing Library's 1 s wait; S11's reconcile could complete inside one refetch, so "Checking" was sometimes never
+  painted; several worktrees run Vite on the default port.
+- Decision: The axe crawl gets 180 s; `axeViolations` waits for finite animations first (WS8b); a Vitest setup gives
+  Testing Library a 5 s async budget (no assertion changes); the S11 mock reconciles a timed-out task only on a read
+  at least 1.5 s after the timeout (its unit test advances the clock explicitly); e2e runs use a unique
+  `E2E_PORT` because `reuseExistingServer` would otherwise attach to another worktree's Vite.
+- Consequences: Unit 2031/2031, DB 115/115 and e2e 36/36 pass on the integrated head; no test was skipped or
+  weakened.
+
+### Change-request register — Wave 2
+
+| CR | From | Request | Decision | Record |
+|---|---|---|---|---|
+| CR-WS8a-1 | WS8a | People directory | **Accepted** (`people.list`) | D-068 |
+| CR-WS8a-2 | WS8a | Product / segment / country catalogue | **Accepted** (`catalogue.scopeOptions`) | D-068 |
+| CR-WS8a-3 | WS8a | `WorkItem.rowVersion` (+ task id) | **Accepted** (optional field; `id` is the task id) | D-068 |
+| CR-WS8a-4 | WS8a | G0 summary on `Mandate` | **Rejected** — the package is the record | D-069 |
+| CR-WS8a-5 | WS8a | `RankingRow.rank` | **Accepted** (engine sets it) | D-068 |
+| CR-WS8a-6 | WS8a | `ComparisonCell.evidenceQuality` | **Accepted** | D-068 |
+| CR-WS8b-1 | WS8b | Long specialist question | **Accepted** (`questionDetail`) | D-068 |
+| CR-WS8b-2 | WS8b | `REVIEW_AREA_LABELS` | **Accepted** | D-068 |
+| CR-WS8b-3 | WS8b | `LineageNode.usedBy` | **Rejected** (D-056) | D-069 |
+| CR-WS8b-4 | WS8b | Status on thesis blockers | **Accepted** (`ThesisBlockerStatus`) | D-068, PQ-6 |
+| CR-WS8b-5 | WS8b | Pre-edit value on `LedgerRow` | **Deferred** — needs draft history | D-069 |
+| CR-WS8c-1 | WS8c | `GATE_REQUEST_STATUS_LABELS` | **Accepted** | D-068 |
+| CR-WS8c-2 | WS8c | `REVIEW_AREA_LABELS` | **Accepted** (same as CR-WS8b-2) | D-068 |
+| CR-WS8c-3 | WS8c | Since-version on package changes | **Accepted** (`changesSince`) | D-068 |
+| CR-WS8c-4 | WS8c | `Tenant.timeZone` | **Accepted** (field now; column at Wave 3 integration) | D-068 |
+| CR-WS8c-5 | WS8c | Focusable `DataTable` scroll | **Done** in `packages/ui` | D-064 |
+| CR-WS8c-6 | WS8c | Lock-banner body | **Done** (`lockBody`) | D-064 |
+| CR-WS8c-7 | WS8c | Axe crawl timeout | **Done** (180 s) | D-070 |
+| CR-WS8c-8 | WS8c | Proposed-condition dedupe; id kinds in `assumptions.update` | **Clarified** (API behaviour, no contract change) | D-068 |
+| CR-WS8d-1 | WS8d | `OutcomeReviewView.rowVersion` | **Accepted** | D-068 |
+| CR-WS8d-2 | WS8d | `MessageDraft.rowVersion` | **Accepted** | D-068 |
+| CR-WS8d-3 | WS8d | Nullable extension cap / duration | **Accepted** (request widened; placeholder never approvable) | D-068, D-040 |
+| CR-WS8d-4 | WS8d | Names in admin responses | **Resolved** by `people.list` + `catalogue.scopeOptions` | D-069 |
+| CR-WS8d-5 | WS8d | Case people for pickers | **Resolved** by `cases.members` | D-037 |
+| CR-WS8d-6 | WS8d | X request on the outcome review | **Accepted** (`extensionRequest`) | D-068 |
+
+New open product questions: PQ-6 to PQ-12 (see "Open product questions" above).
+
