@@ -93,11 +93,4 @@ export interface PreconditionEvaluator {
   evaluate(facts: PreconditionFacts): Precondition[];
 }
 
-/** TODO(WS3): implement one function per precondition key. Unknown keys fail closed (met: false). */
-export function createPreconditionEvaluator(): PreconditionEvaluator {
-  return {
-    evaluate: () => {
-      throw new Error('TODO(WS3): PreconditionEvaluator.evaluate');
-    },
-  };
-}
+// Implementation: ./preconditions.ts (createPreconditionEvaluator, evaluateGate).
