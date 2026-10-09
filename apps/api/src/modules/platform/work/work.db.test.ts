@@ -56,6 +56,17 @@ describe('work.mine', () => {
       syncText: 'Not sent to the task tool',
     });
     expect(tasks[0]!.brief!.stayInside).toContain('Not scale');
+    // A task item's id is the task id and its rowVersion is the tasks.update If-Match (D-068).
+    expect(tasks.every((x) => typeof x.rowVersion === 'number')).toBe(true);
+    const upd = await call(t.app, API.pilot.updateTask, {
+      params: { id: tasks[0]!.id },
+      body: { status: 'in_progress' },
+      cookie: k.jonas,
+      ifMatch: tasks[0]!.rowVersion!,
+    });
+    expect(upd.statusCode).toBe(200);
+    const again = (await mine(k.jonas)).items.find((x) => x.id === tasks[0]!.id)!;
+    expect(again.rowVersion).toBe(tasks[0]!.rowVersion! + 1);
     expect(w.items.filter((x) => x.kind === 'condition').map((x) => x.title.slice(0, 2))).toEqual([
       'C1',
       'C2',

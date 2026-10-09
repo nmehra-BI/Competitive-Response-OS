@@ -67,6 +67,16 @@ export async function feasibilityView(tx: Tx, identity: Identity, caseId: string
         .orderBy('created_at')
         .execute()
     : [];
+  // The full question a reviewer was asked: the latest review request for the dimension (D-068).
+  const asked = await tx
+    .selectFrom('platform.review_request')
+    .select(['target_type', 'question', 'created_at'])
+    .where('case_id', '=', caseId)
+    .where('target_type', 'like', 'feasibility.%')
+    .orderBy('created_at', 'desc')
+    .execute();
+  const questionDetail = (dimension: string, stored: string): string =>
+    asked.find((q) => q.target_type === `feasibility.${dimension}`)?.question ?? stored;
   const comps = await tx
     .selectFrom('me.competitor_entry')
     .selectAll()
@@ -103,6 +113,7 @@ export async function feasibilityView(tx: Tx, identity: Identity, caseId: string
         caseId: r.case_id,
         dimension: r.dimension as FeasibilityDimension,
         question: r.question,
+        questionDetail: questionDetail(r.dimension, r.question),
         evidenceText: r.evidence_text,
         reviewer: who(people, r.reviewer_user_id),
         status: r.status as FeasibilityAssessment['status'],

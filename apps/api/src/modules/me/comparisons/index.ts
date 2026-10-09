@@ -6,9 +6,11 @@
  */
 import {
   API,
+  EVIDENCE_QUALITY_LABELS,
   type Comparison,
   type ComparisonAttribute,
   type ComparisonCell,
+  type EvidenceQuality,
   type RankingWeights,
 } from '@growth-os/contracts';
 import {
@@ -108,14 +110,23 @@ export async function toComparison(tx: Tx, identity: Identity, cmp: ComparisonRo
     .execute();
   const opps = await tx
     .selectFrom('me.opportunity')
-    .select(['id', 'name'])
+    .select(['id', 'name', 'evidence_quality'])
     .where('id', 'in', cmp.opportunity_ids)
     .execute();
-  const chips = await sourceChips(
-    tx,
-    identity,
-    cells.flatMap((c) => c.source_ids),
-  );
+  // Growth-evidence cells carry the candidate's evidence quality (D-068); other cells have none.
+  const quality = (o: string, a: string): EvidenceQuality | null =>
+    a === 'growth_evidence'
+      ? ((opps.find((x) => x.id === o)?.evidence_quality as EvidenceQuality | undefined) ?? null)
+      : null;
+  const oppSources = await tx
+    .selectFrom('me.opportunity_source')
+    .select(['opportunity_id', 'source_id'])
+    .where('opportunity_id', 'in', cmp.opportunity_ids)
+    .execute();
+  const chips = await sourceChips(tx, identity, [
+    ...cells.flatMap((c) => c.source_ids),
+    ...oppSources.map((x) => x.source_id),
+  ]);
   const out: ComparisonCell[] = [];
   for (const o of cmp.opportunity_ids) {
     for (const c of cells.filter((x) => x.opportunity_id === o))
@@ -129,7 +140,29 @@ export async function toComparison(tx: Tx, identity: Identity, cmp: ComparisonRo
         unknown: RATED.includes(c.attribute as ComparisonAttribute) && c.rating === null,
         incomparable: c.incomparable,
         sources: chipsFor(chips, c.source_ids),
+        evidenceQuality: quality(o, c.attribute),
       });
+    // Growth evidence is the candidate's own evidence quality when no reviewer wrote a cell for it:
+    // a read of the opportunity, never a rating (D-068).
+    if (!cells.some((x) => x.opportunity_id === o && x.attribute === 'growth_evidence')) {
+      const q = quality(o, 'growth_evidence');
+      const srcs = chipsFor(
+        chips,
+        oppSources.filter((x) => x.opportunity_id === o).map((x) => x.source_id),
+      );
+      out.push({
+        opportunityId: o,
+        attribute: 'growth_evidence',
+        rating: null,
+        ratingLabel: null,
+        valueText: q ? EVIDENCE_QUALITY_LABELS[q] : 'Unknown',
+        detailText: srcs.length ? `${srcs.length} source${srcs.length === 1 ? '' : 's'}` : null,
+        unknown: q === null,
+        incomparable: false,
+        sources: srcs,
+        evidenceQuality: q,
+      });
+    }
     for (const a of RATED)
       if (!cells.some((x) => x.opportunity_id === o && x.attribute === a))
         out.push({
@@ -142,6 +175,7 @@ export async function toComparison(tx: Tx, identity: Identity, cmp: ComparisonRo
           unknown: true,
           incomparable: false,
           sources: [],
+          evidenceQuality: quality(o, a),
         });
   }
   const history = await weightRows(tx, cmp.id);

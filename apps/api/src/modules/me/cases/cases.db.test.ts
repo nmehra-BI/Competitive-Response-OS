@@ -293,6 +293,9 @@ describe('cases', () => {
     expect(feas.rows.find((r) => r.dimension === 'operations')!.question).toBe(
       'Can we install and support 4 pilot sites?',
     );
+    expect(feas.rows.find((r) => r.dimension === 'operations')!.questionDetail).toBe(
+      'Can we install and support 4 pilot sites?',
+    );
     const priya = await api(w, API.cases.requestReview, await w.cookie('demo', 'lena'), {
       params: { caseRef: 'ME-104' },
       body: {

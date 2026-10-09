@@ -57,6 +57,15 @@ describe('comparisons', () => {
     expect(c.ranking[2]!.reason).toMatch(/^Not ranked — 1 input missing/);
     expect(c.ranking[3]!.reason).toBe('Excluded until normalized');
     expect(c.incomparableWarnings.map((x) => key(x.opportunityId))).toEqual(['OPP-09']);
+    // The engine's rank is passed through (D-068): 1-based among ranked rows, null when not ranked.
+    expect(c.ranking.map((r) => r.rank)).toEqual([1, 2, null, null]);
+    // Growth-evidence cells carry the candidate's evidence quality; other cells have none.
+    const growth = c.cells.filter((x) => x.attribute === 'growth_evidence');
+    expect(growth.length).toBeGreaterThan(0);
+    expect(growth.every((x) => x.evidenceQuality !== null && x.evidenceQuality !== undefined)).toBe(true);
+    expect(
+      c.cells.filter((x) => x.attribute !== 'growth_evidence').every((x) => x.evidenceQuality === null),
+    ).toBe(true);
   });
 
   it('step 4: Austrian breweries (OPP-09) blocks the ranking until excluded again', async () => {
@@ -110,6 +119,7 @@ describe('comparisons', () => {
     expect(c.weightsHistory.map((h) => h.version)).toEqual([1, 2]);
     // OPP-07: 3×20% + 3×30% + 2×50% = 2.50; OPP-16: 2×20% + 2×30% + 1×50% = 1.50.
     expect(c.ranking.slice(0, 2).map((r) => r.score)).toEqual(['2.50', '1.50']);
+    expect(c.ranking.slice(0, 2).map((r) => r.rank)).toEqual([1, 2]);
     expect(
       (
         await api(w, API.comparisons.applyWeights, await w.cookie('demo', 'lena'), {
@@ -139,7 +149,14 @@ describe('comparisons', () => {
       body: { mandateId: w.tenants.a!.id(mandate.id), opportunityRefs: ['OPP-07', 'OPP-14'] },
     });
     const c = Comparison.parse(res.json());
-    expect(c.cells.every((x) => x.rating === null && x.unknown)).toBe(true);
+    // Every rated cell is Unknown (null, never 0); growth evidence is the candidate's own quality.
+    const rated = c.cells.filter((x) => x.attribute !== 'growth_evidence');
+    expect(rated.length).toBe(6);
+    expect(rated.every((x) => x.rating === null && x.unknown)).toBe(true);
+    expect(c.cells.filter((x) => x.attribute === 'growth_evidence').map((x) => x.rating)).toEqual([
+      null,
+      null,
+    ]);
     expect(c.ranking.every((r) => !r.ranked && r.reason!.startsWith('Not ranked — 3 inputs missing'))).toBe(
       true,
     );

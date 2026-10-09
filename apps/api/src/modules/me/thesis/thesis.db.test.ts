@@ -234,4 +234,38 @@ describe('thesis', () => {
     });
     expect(after.disagreements.map((d) => d.statement)).toContain('Census counts include closed sites');
   });
+
+  it('blocker status: the next gate to approve reads Pending, a later gate Blocker; resolved ones are omitted', async () => {
+    await inTenant(w, A(), async (tx) => {
+      for (const [text, gate, status] of [
+        ['Sizing sign-off for validation', 'G1', 'open'],
+        ['Installer capacity for the pilot', 'G2', 'open'],
+        ['Already resolved item', 'G1', 'resolved'],
+      ] as const)
+        await tx
+          .insertInto('me.blocker')
+          .values({
+            tenant_id: A().tenantId,
+            case_id: caseId,
+            text,
+            blocks_gate: gate,
+            owner_user_id: A().user('maya'),
+            status,
+            ...(status === 'resolved'
+              ? { resolution: 'Done', resolved_by: A().user('maya'), resolved_at: new Date() }
+              : {}),
+          })
+          .execute();
+    });
+    const view = ThesisView.parse(
+      (await api(w, API.thesis.get, await w.cookie('a', 'maya'), { params: { caseRef: caseKey } })).json(),
+    );
+    expect(view.blockers.map((b) => [b.text, b.gate, b.status])).toEqual(
+      expect.arrayContaining([
+        ['Sizing sign-off for validation', 'G1', 'pending'],
+        ['Installer capacity for the pilot', 'G2', 'blocker'],
+      ]),
+    );
+    expect(view.blockers.map((b) => b.text)).not.toContain('Already resolved item');
+  });
 });

@@ -33,9 +33,9 @@ import {
   type People,
 } from '../gates/lib/common';
 import { loadGateCtx } from '../gates/lib/access';
-import { evaluate } from '../gates/lib/facts';
+import { caseGateState } from '../gates/lib/facts';
 import { moveCase } from '../gates/lib/moves';
-import { gateById, scopeOf } from '../gates/lib/serialize';
+import { GATE_COLUMNS, gateById, scopeOf, toGateRequest, type GateRow } from '../gates/lib/serialize';
 import { nextGateKey, submitGate } from '../gates';
 
 const policy = createPolicyEngine();
@@ -238,7 +238,17 @@ export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<Out
   }
   const missing = rows.filter((x) => x.target && !x.latest);
   const decision = await decisionRecord(tx, r.decision_record_id);
-  const g3 = await evaluate(tx, { gateCode: 'G3', caseRow: c, gate: null });
+  const g3 = (await caseGateState(tx, c, 'G3')).evaluation;
+  // The latest extension (X) requested after this review: its parent is the review's G2 (D-068).
+  const x = (await tx
+    .selectFrom('platform.gate_request')
+    .select([...GATE_COLUMNS])
+    .where('case_id', '=', c.id)
+    .where('gate_code', '=', 'X')
+    .where('parent_gate_request_id', '=', r.gate_request_id)
+    .where('status', '<>', 'withdrawn')
+    .orderBy('created_at', 'desc')
+    .executeTakeFirst()) as GateRow | undefined;
   return {
     id: r.id,
     caseId: c.id,
@@ -261,6 +271,8 @@ export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<Out
       : null,
     decision,
     scaleGate: { blocked: !g3.allMet, unmet: g3.blockers },
+    rowVersion: r.row_version,
+    extensionRequest: x ? await toGateRequest(tx, x) : null,
   };
 }
 

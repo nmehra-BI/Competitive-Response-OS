@@ -53,6 +53,7 @@ export const workHandlers: HandlerMap = {
           't.due_on',
           't.due_rule',
           't.deliverable',
+          't.row_version',
           's.authorizing_gate_request_id',
           's.owner_type',
           's.owner_id',
@@ -101,6 +102,8 @@ export const workHandlers: HandlerMap = {
             stayInside: scope ? [...scope.authorizes, ...scope.doesNotAuthorize] : [],
             measuredAgainst: plan?.thresholds_text.join('; ') || 'The pre-registered thresholds of the plan',
           },
+          // The If-Match for `tasks.update` from My Work (D-068).
+          rowVersion: t.row_version,
         };
         (t.status === 'done' ? doneTab : tasksTab).push(item);
       }

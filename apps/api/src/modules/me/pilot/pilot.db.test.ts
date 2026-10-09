@@ -299,17 +299,28 @@ describe('steps 21–22: activation', () => {
       cookie: k.jonas,
     });
     const d = API.pilot.messageDrafts.response.parse(list.json()).items[0]!;
+    // The draft carries its own row version for If-Match (D-068).
+    expect(d.rowVersion).toBe(0);
     const ok = await call(t.app, API.pilot.updateMessageDraft, {
       params: { id: d.id },
       body: { body: 'Thank you for joining.' },
       cookie: k.jonas,
-      ifMatch: 0,
+      ifMatch: d.rowVersion,
     });
     expect(ok.statusCode).toBe(200);
-    expect(API.pilot.updateMessageDraft.response.parse(ok.json())).toMatchObject({
-      origin: 'ai_edited',
-      status: 'draft',
-    });
+    const edited = API.pilot.updateMessageDraft.response.parse(ok.json());
+    expect(edited).toMatchObject({ origin: 'ai_edited', status: 'draft', rowVersion: 1 });
+    // A stale row version is refused (412), never a silent overwrite.
+    expect(
+      (
+        await call(t.app, API.pilot.updateMessageDraft, {
+          params: { id: d.id },
+          body: { body: 'Stale edit' },
+          cookie: k.jonas,
+          ifMatch: d.rowVersion,
+        })
+      ).statusCode,
+    ).toBe(412);
     expect(
       (
         await call(t.app, API.pilot.updateMessageDraft, {

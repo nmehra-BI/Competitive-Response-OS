@@ -4,6 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API, FeasibilityView } from '@growth-os/contracts';
+import { specialistQuestion } from '@growth-os/fixtures-aster';
 import { analyticsFor, api, auditFor, inTenant, world, type World } from '../cases/test-support';
 import { caseById } from '../cases/access';
 import { caseByRef } from '../gates/lib/common';
@@ -48,6 +49,11 @@ describe('feasibility', () => {
       status: 'signed',
       reviewer: { displayName: 'Lena Hoffmann' },
     });
+    // The full specialist question is served for the S07 quote (D-068).
+    expect(spec.questionDetail).toBe(specialistQuestion);
+    expect(v.rows.every((r) => typeof r.questionDetail === 'string' && r.questionDetail.length > 0)).toBe(
+      true,
+    );
     expect(JSON.stringify(v)).not.toMatch(/score/i);
     expect(
       (await api(w, API.feasibility.get, await w.cookie('demo', 'admin'), { params: { caseRef: 'ME-104' } }))

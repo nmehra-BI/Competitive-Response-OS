@@ -293,6 +293,7 @@ export function toMessageDraft(r: {
   title: string;
   body: string;
   origin: string;
+  row_version: number;
 }): MessageDraft {
   return {
     id: r.id,
@@ -302,6 +303,7 @@ export function toMessageDraft(r: {
     origin: r.origin as MessageDraft['origin'],
     status: 'draft',
     notice: 'Draft — not authorized to send',
+    rowVersion: r.row_version,
   };
 }
 

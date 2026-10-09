@@ -105,7 +105,8 @@ export const pilotHandlers: HandlerMap = {
   [API.pilot.get.id]: query(API.pilot.get, {
     load: (ctx, tx) => caseAndPlan(tx, ctx.params.caseRef),
     authorize: (ctx, { c }) => caseVisible(ctx.identity.subject, c),
-    handle: async (ctx, { tx }, { c, plan }) => pilotView(tx, c, needPlan(plan), asOfDate(ctx.now), ctx.now),
+    handle: async (ctx, { tx }, { c, plan }) =>
+      pilotView(tx, c, needPlan(plan), asOfDate(ctx.now, ctx.identity.tenant.timeZone), ctx.now),
   }),
 
   [API.pilot.saveDraft.id]: command(API.pilot.saveDraft, {
@@ -249,7 +250,13 @@ export const pilotHandlers: HandlerMap = {
         summary: `Pilot plan draft v${draft.version} edited`,
         details: { tasks: ctx.body.tasks?.length ?? null, milestones: ctx.body.milestones?.length ?? null },
       });
-      return pilotView(tx, c, (await pilotPlanOf(tx, c.id))!, asOfDate(ctx.now), ctx.now);
+      return pilotView(
+        tx,
+        c,
+        (await pilotPlanOf(tx, c.id))!,
+        asOfDate(ctx.now, ctx.identity.tenant.timeZone),
+        ctx.now,
+      );
     },
   }),
 
@@ -387,7 +394,7 @@ export const pilotHandlers: HandlerMap = {
         tx,
         (await caseById(tx, c.id))!,
         (await pilotPlanOf(tx, c.id))!,
-        asOfDate(ctx.now),
+        asOfDate(ctx.now, ctx.identity.tenant.timeZone),
         ctx.now,
       );
     },

@@ -160,6 +160,9 @@ describe('outcomes', () => {
 
   it('step 26: review draft with causal limitations; the recommendation is not a decision (If-Match)', async () => {
     const r = await review();
+    // The view carries the review's own row version for If-Match (D-068), and no X request yet.
+    expect(r.rowVersion).toBe(0);
+    expect(r.extensionRequest).toBeNull();
     const res = await call(t.app, API.outcomes.saveReviewDraft, {
       params: { caseRef: 'ME-104' },
       body: {
@@ -169,7 +172,7 @@ describe('outcomes', () => {
         recommendation: { outcome: 'extend', text: outcomeReview.recommendation.text },
       },
       cookie: k.maya,
-      ifMatch: 0,
+      ifMatch: r.rowVersion,
     });
     expect(res.statusCode).toBe(200);
     const v = API.outcomes.saveReviewDraft.response.parse(res.json());
@@ -180,6 +183,8 @@ describe('outcomes', () => {
     });
     expect(v.decision).toBeNull();
     expect(v.causalLimitations).toEqual([...outcomeReview.causalLimitations]);
+    expect(v.rowVersion).toBe(r.rowVersion! + 1);
+    expect(res.headers.etag).toContain(String(v.rowVersion));
     expect(await caseStage(t, a)).toBe('pilot_running');
     expect(
       (
@@ -305,6 +310,8 @@ describe('outcomes', () => {
       buttonLabel: 'Approve extension €[cap]',
     });
     expect(x1.scope.amount).toBeNull();
+    // The outcome review links the X request it led to (D-068).
+    expect((await review()).extensionRequest).toMatchObject({ id: x1.id, key: 'ME-104-X1' });
     expect(x1.scope.doesNotAuthorize).toContain('Does not unblock G3');
     // Exactly one `extension_requested` per extension, carrying the X request (D-071).
     const ext = await analyticsFor(t, a, 'extension_requested');

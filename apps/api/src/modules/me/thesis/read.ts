@@ -8,6 +8,7 @@ import {
   type ReviewStatus,
   type ThesisVersion,
   type ThesisView,
+  type ThesisBlockerStatus,
 } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
 import type { Identity } from '../../../platform/context';
@@ -136,6 +137,17 @@ export async function thesisView(tx: Tx, identity: Identity, c: CaseRecord): Pro
     ...blockers.map((b) => b.owner_user_id ?? c.owner_user_id),
     ...feas.map((f) => f.reviewer_user_id),
   ]);
+  // Blocker status (D-068, PQ-6): an open item for the next gate still to be approved is "Pending";
+  // one for a later gate is a "Blocker". Resolved blockers are omitted (only open rows are read).
+  const approved = await tx
+    .selectFrom('platform.gate_request')
+    .select('gate_code')
+    .where('case_id', '=', c.id)
+    .where('status', 'in', ['approved', 'approved_with_conditions'])
+    .execute();
+  const nextGate =
+    (['G1', 'G2', 'G3'] as const).find((g) => !approved.some((a) => a.gate_code === g)) ?? null;
+  const blockerStatus = (gate: string): ThesisBlockerStatus => (gate === nextGate ? 'pending' : 'blocker');
   return {
     current: committed.length ? toThesisVersion(committed[committed.length - 1]!) : null,
     draft: draft ? toThesisVersion(draft) : null,
@@ -148,6 +160,7 @@ export async function thesisView(tx: Tx, identity: Identity, c: CaseRecord): Pro
       owner: who(people, b.owner_user_id ?? c.owner_user_id),
       dueOn: isoDateOrNull(b.due_on),
       gate: b.blocks_gate,
+      status: blockerStatus(b.blocks_gate),
     })),
     reviewers: feas.map((f) => ({
       person: who(people, f.reviewer_user_id),
