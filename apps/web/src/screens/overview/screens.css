@@ -356,6 +356,9 @@
 }
 .dx-errors a {
   color: var(--text-primary);
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
 }
 .dx-footer {
   display: flex;

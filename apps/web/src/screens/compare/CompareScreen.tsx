@@ -33,7 +33,7 @@ import {
 } from '@growth-os/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
 import { api, queryKey } from '../../lib/api-client';
 import { useApiQuery, useCommand } from '../../lib/query';
@@ -68,6 +68,13 @@ const strip = (w: RankingWeights): Weights => ({
   channelAccess: w.channelAccess,
   evidenceCoverage: w.evidenceCoverage,
 });
+/** Keep `ids=OPP-07,OPP-14` readable in shared links (URLSearchParams would encode the commas). */
+function useReplaceSearch() {
+  const navigate = useNavigate();
+  return (next: URLSearchParams) =>
+    navigate({ search: `?${next.toString().replace(/%2C/g, ',')}` }, { replace: true });
+}
+
 const same = (a: Weights, b: Weights) =>
   a.productFit === b.productFit &&
   a.channelAccess === b.channelAccess &&
@@ -75,7 +82,8 @@ const same = (a: Weights, b: Weights) =>
 
 export default function CompareScreen() {
   useDocumentTitle('Compare');
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const replaceSearch = useReplaceSearch();
   const ids = (params.get('ids') ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -111,7 +119,7 @@ export default function CompareScreen() {
       onCreated={(id) => {
         const next = new URLSearchParams(params);
         next.set('comparison', id);
-        setParams(next, { replace: true });
+        replaceSearch(next);
       }}
     />
   );
@@ -223,7 +231,8 @@ function RankCell({ row, ranked }: { row: RankingRow | undefined; ranked: Rankin
 }
 
 function ComparisonView({ id }: { id: string }) {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const replaceSearch = useReplaceSearch();
   const cmp = useApiQuery(API.comparisons.get, { params: { id } });
   const opps = useApiQuery(
     API.opportunities.list,
@@ -241,7 +250,7 @@ function ComparisonView({ id }: { id: string }) {
       onApplied={(v) => {
         const next = new URLSearchParams(params);
         next.set('weights', `v${v}`);
-        setParams(next, { replace: true });
+        replaceSearch(next);
       }}
     />
   );
