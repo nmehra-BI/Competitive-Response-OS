@@ -43,6 +43,7 @@ import { pollWhile, SYNC_IN_FLIGHT, useApiQuery, useCommand } from '../../lib/qu
 import { useViewer } from '../../lib/session';
 import { fmtDate, fmtDateTime, fmtPeriod } from '../history/dates';
 import '../history/ws8d.css';
+import { usePeople } from '../../lib/people';
 
 type View = PilotPlanView;
 type Money = NonNullable<View['budget']>['approved'];
@@ -75,9 +76,9 @@ function matchesTask(t: Task, ref: string | null): boolean {
   return t.id === ref || t.sync.externalKey === ref || String(t.ordinal) === ref;
 }
 
-/** Everyone the plan names (task owners, condition owners). The contract has no case-people list. */
-function peopleOf(v: View, viewer: PersonRef | undefined): PersonRef[] {
-  const map = new Map<string, PersonRef>();
+/** Everyone the plan names (task owners, condition owners) plus the tenant directory (D-094). */
+function peopleOf(v: View, viewer: PersonRef | undefined, directory: PersonRef[] = []): PersonRef[] {
+  const map = new Map<string, PersonRef>(directory.map((p) => [p.id, p]));
   for (const t of v.taskSet?.tasks ?? []) if (t.owner) map.set(t.owner.id, t.owner);
   for (const c of v.conditions) map.set(c.owner.id, c.owner);
   if (viewer) map.set(viewer.id, viewer);
@@ -148,6 +149,7 @@ function PilotView({
   setSearch: (s: URLSearchParams, o?: { replace?: boolean }) => void;
 }) {
   const [dialog, setDialog] = useState<Dialog>(null);
+  const directory = usePeople();
   const [preview, setPreview] = useState<TaskSyncPreview | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [lastError, setLastError] = useState<unknown>(null);
@@ -242,8 +244,10 @@ function PilotView({
   };
 
   const firstBlocker = v.activationBlockers[0];
-  const ownerBlocker = v.activationBlockers.find((b) => b.key === 'task_owner_missing');
-  const conditionBlocker = v.activationBlockers.find((b) => b.key === 'condition_open');
+  // Blocker keys are the activation guards (D-087): every task owned, blocking conditions met.
+  const ownerBlocker = v.activationBlockers.find((b) => b.key === 'all_tasks_owned');
+  const conditionBlocker = v.activationBlockers.find((b) => b.key === 'blocking_conditions_met');
+  const conditionKey = /\b(C\d+)\b/.exec(conditionBlocker?.message ?? '')?.[1] ?? 'condition';
   const operateReason = 'Only the pilot owner can do this.';
 
   const statusNote =
@@ -360,7 +364,11 @@ function PilotView({
       {ownerBlocker ? (
         <Banner tone="warn" title="Missing owner blocks activation" body={ownerBlocker.message} />
       ) : conditionBlocker ? (
-        <Banner tone="warn" title="Open condition C1 blocks activation" body={conditionBlocker.message} />
+        <Banner
+          tone="warn"
+          title={`Open condition ${conditionKey} blocks activation`}
+          body={conditionBlocker.message}
+        />
       ) : null}
       {paused && ts ? (
         <Banner
@@ -503,7 +511,7 @@ function PilotView({
         <OwnerDialog
           v={v}
           task={dialog.task}
-          people={peopleOf(v, viewerPerson)}
+          people={peopleOf(v, viewerPerson, directory.people)}
           caseRef={caseRef}
           onClose={() => setDialog(null)}
           onDone={(name) => setNote(`${name} owns “${dialog.task.title}”.`)}

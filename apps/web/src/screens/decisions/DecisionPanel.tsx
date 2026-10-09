@@ -18,6 +18,7 @@ import { ProblemBanner } from '../../app/shell/ProblemBanner';
 import { useCommand } from '../../lib/query';
 import { dayTime, fullDate } from './dates';
 import { GATE_KIND, peopleIn } from './PackageArticle';
+import { usePeople } from '../../lib/people';
 
 const APPROVE = new Set(['approve', 'approve_with_conditions']);
 
@@ -88,15 +89,23 @@ export function DecisionPanel({
   const req = pkg.gateRequest;
   const s = pkg.snapshot;
   const decide = useCommand(API.gates.decide);
+  // Condition owners: the tenant directory (the pilot owner may not be in the package yet) + package people.
+  const directory = usePeople();
   const withdraw = useCommand(API.gates.withdraw);
   const [withdrawing, setWithdrawing] = useState(false);
   const [reason, setReason] = useState('');
   const isApprover = pkg.panel.chain.some((c) => c.isViewer);
   const note = decidedNote(pkg);
   const block = !note && isApprover ? snapshotBlockReason(pkg) : null;
-  const proposed: ConditionInput[] = req.conditions
-    .filter((c) => req.submittedBy && c.addedBy.id === req.submittedBy.id)
-    .map((c) => ({ text: c.text, ownerId: c.owner.id, dueOn: c.dueOn, dueRule: c.dueRule, flag: c.flag }));
+  // The author's proposed conditions as frozen in the snapshot the approver reads (D-073): listed in the
+  // panel so the approver sees and keeps (or removes) them; kept word for word they keep their key (C1).
+  const proposed: ConditionInput[] = req.conditions.some(
+    (c) => req.submittedBy && c.addedBy.id === req.submittedBy.id,
+  )
+    ? req.conditions
+        .filter((c) => req.submittedBy && c.addedBy.id === req.submittedBy.id)
+        .map((c) => ({ text: c.text, ownerId: c.owner.id, dueOn: c.dueOn, dueRule: c.dueRule, flag: c.flag }))
+    : s.content.conditionsProposed;
   const isAuthor = !!viewer && !!req.submittedBy && viewer.id === req.submittedBy.id;
   const canWithdraw = isAuthor && !note && (req.status === 'awaiting_decision' || req.status === 'stale');
 
@@ -178,16 +187,17 @@ export function DecisionPanel({
       doesNotAuthorize={req.scope.doesNotAuthorize}
       panel={pkg.panel}
       disabledReason={block}
-      people={[...peopleIn(pkg).values()]}
+      initialConditions={proposed}
+      people={[...new Map([...directory.people.map((p) => [p.id, p] as const), ...peopleIn(pkg)]).values()]}
       busy={decide.isPending}
       error={decide.error ? <ProblemBanner error={decide.error} /> : null}
       decidedNote={note}
       secondaryAction={secondary}
       lockBody={lockBody}
       onDecide={(sub) => {
-        // Approving a package approves the conditions it proposes, verbatim, plus any added now.
+        // Approving a package approves the listed conditions: the proposals (pre-filled) plus any added now.
         const approving = APPROVE.has(sub.disposition);
-        const conditions = approving ? [...proposed, ...sub.conditions] : [];
+        const conditions = approving ? sub.conditions : [];
         decide.mutate({
           params: { id: req.id },
           body: {

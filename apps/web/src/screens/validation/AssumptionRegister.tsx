@@ -16,7 +16,9 @@ import {
   Mono,
   SensitivityTag,
 } from '@growth-os/ui';
+import { useState } from 'react';
 import { dayMonth } from '../decisions/dates';
+import { ChangeValueForm } from './ChangeValueForm';
 import { GROUP_SUBTITLE, groupRegister } from './register';
 
 export interface RegisterProps {
@@ -24,6 +26,8 @@ export interface RegisterProps {
   experiments: Experiment[];
   selectedKey: string | null;
   onOpenDispute: (key: string) => void;
+  /** The case owner may change a value; the change is a new version with a reason (never-rule 12). */
+  canChangeValues?: boolean;
 }
 
 function experimentKeys(a: Assumption, experiments: Experiment[]): string | null {
@@ -31,8 +35,15 @@ function experimentKeys(a: Assumption, experiments: Experiment[]): string | null
   return keys.length ? keys.join(', ') : null;
 }
 
-export function AssumptionRegisterTable({ items, experiments, selectedKey, onOpenDispute }: RegisterProps) {
+export function AssumptionRegisterTable({
+  items,
+  experiments,
+  selectedKey,
+  onOpenDispute,
+  canChangeValues = false,
+}: RegisterProps) {
   const groups = groupRegister(items);
+  const [changing, setChanging] = useState<string | null>(null);
   return (
     <div className="ws8c-register">
       <div className="gos-table-scroll">
@@ -95,6 +106,20 @@ export function AssumptionRegisterTable({ items, experiments, selectedKey, onOpe
                     <td>
                       <AssumptionStatusTag status={a.status} detail={a.statusDetail ?? undefined} />
                       {a.dueOn ? <div className="ws8c-small ws8c-muted">Due {dayMonth(a.dueOn)}</div> : null}
+                      {canChangeValues && a.status !== 'retired' ? (
+                        changing === a.id ? (
+                          <ChangeValueForm assumption={a} onDone={() => setChanging(null)} />
+                        ) : (
+                          <button
+                            type="button"
+                            className="ws8c-linkbtn"
+                            aria-label={`Change value · ${a.name}`}
+                            onClick={() => setChanging(a.id)}
+                          >
+                            Change value
+                          </button>
+                        )
+                      ) : null}
                     </td>
                   </tr>
                 );

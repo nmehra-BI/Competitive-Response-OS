@@ -81,7 +81,12 @@ describe('S12 Outcomes', () => {
     const submit = screen.getByRole('button', {
       name: 'Submit extension request €[cap]',
     }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
+    // Empty cap and duration are the PRD placeholders (PQ-2, D-071): submittable, never approvable.
+    expect(submit.disabled).toBe(false);
+    fireEvent.change(screen.getByPlaceholderText('€[cap]'), { target: { value: '0' } });
+    expect(
+      (screen.getByRole('button', { name: /^Submit extension request/ }) as HTMLButtonElement).disabled,
+    ).toBe(true); // a stated cap must be positive: zero never stands for missing
     fireEvent.change(screen.getByPlaceholderText('€[cap]'), { target: { value: '25000' } });
     fireEvent.change(screen.getByPlaceholderText('[duration] days'), { target: { value: '60' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit extension request €25k' }));

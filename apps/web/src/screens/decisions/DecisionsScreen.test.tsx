@@ -85,10 +85,11 @@ describe('S10 Decisions · package', () => {
       expect(within(p).getByRole('button', { name })).toBeTruthy();
     }
     fireEvent.click(within(p).getByRole('button', { name: 'Approve pilot €120k · 90 days' }));
-    const confirm = within(p).getByRole('button', { name: 'Approve pilot €120k · 90 days' });
+    // The author's proposed conditions are listed for the approver, so the confirm button counts them.
+    const confirm = within(p).getByRole('button', { name: /^Approve pilot €120k · 90 days · 2 conditions/ });
     expect((confirm as HTMLButtonElement).disabled).toBe(true); // rationale required
     fireEvent.change(within(p).getByLabelText(/Rationale/), { target: { value: 'Thresholds met.' } });
-    fireEvent.click(within(p).getByRole('button', { name: 'Approve pilot €120k · 90 days' }));
+    fireEvent.click(within(p).getByRole('button', { name: /^Approve pilot €120k · 90 days · 2 conditions/ }));
     await waitFor(() =>
       expect(p.textContent).toMatch(/Approved with conditions · 2 conditions · \d+ \w+, \d\d:\d\d/),
     );

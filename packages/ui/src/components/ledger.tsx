@@ -220,6 +220,19 @@ export interface LineageDrawerViewProps {
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])';
 
+/** "13 Oct 2026, 16:30" for an ISO date-time; anything else is shown as given. */
+function whenText(at: string): string {
+  const d = new Date(at);
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(at) || Number.isNaN(d.getTime())) return at;
+  return d.toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /**
  * Lineage drawer: formula, inputs one level deep, used by, history, engine label. A modal dialog
  * that traps focus, closes on Escape and restores focus to the trigger.
@@ -348,18 +361,24 @@ export function LineageDrawerView({
                   </ul>
                 </section>
               ) : null}
-              {usedBy.length ? (
+              {!loading && node ? (
                 <section className="gos-drawer__section">
                   <h3>Used by</h3>
-                  <ul className="gos-list-plain" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {usedBy.map((u) => (
-                      <li key={u.href}>
-                        <UiLink href={u.href} className="gos-chip">
-                          {u.label}
-                        </UiLink>
-                      </li>
-                    ))}
-                  </ul>
+                  {usedBy.length ? (
+                    <ul className="gos-list-plain" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {usedBy.map((u) => (
+                        <li key={u.href}>
+                          <UiLink href={u.href} className="gos-chip">
+                            {u.label}
+                          </UiLink>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+                      No other calculated figure uses this value.
+                    </p>
+                  )}
                 </section>
               ) : null}
               {history.length ? (
@@ -374,7 +393,9 @@ export function LineageDrawerView({
                         >
                           {h.text}
                         </span>
-                        <span className="gos-activity__when">{h.at}</span>
+                        <time className="gos-activity__when" dateTime={h.at}>
+                          {whenText(h.at)}
+                        </time>
                       </li>
                     ))}
                   </ul>

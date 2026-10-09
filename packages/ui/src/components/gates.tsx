@@ -230,6 +230,11 @@ export interface ApprovalPanelViewProps {
   disabledReason?: string | null;
   /** Candidate condition owners. */
   people?: PersonRef[];
+  /**
+   * Conditions the author proposed (snapshot `conditionsProposed`): listed for the approver to keep or
+   * remove; a proposal kept word for word keeps its key (C1, D-073). Additive (D-101).
+   */
+  initialConditions?: ConditionInput[];
   busy?: boolean;
   error?: ReactNode;
   onDecide?: (d: DecisionSubmission) => void;
@@ -282,7 +287,7 @@ export function ApprovalPanelView(props: ApprovalPanelViewProps) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [rationale, setRationale] = useState('');
   const [note, setNote] = useState('');
-  const [conditions, setConditions] = useState<ConditionInput[]>([]);
+  const [conditions, setConditions] = useState<ConditionInput[]>(props.initialConditions ?? []);
   const modeHeading = useRef<HTMLDivElement>(null);
   const allowed = new Set(panel.allowedDispositions);
   const canApprove = allowed.has('approve') || allowed.has('approve_with_conditions');
@@ -290,7 +295,7 @@ export function ApprovalPanelView(props: ApprovalPanelViewProps) {
     setMode(m);
     setRationale('');
     setNote('');
-    setConditions([]);
+    setConditions(m === 'approve' ? (props.initialConditions ?? []) : []);
     requestAnimationFrame(() => modeHeading.current?.focus());
   };
   const confirm = () => {

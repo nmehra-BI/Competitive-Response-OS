@@ -9,6 +9,7 @@ import {
   GATE_STATUS_LABELS,
   type ConditionInput,
   type GateRequest,
+  type OutcomeTargetInput,
   type PersonRef,
 } from '@growth-os/contracts';
 import {
@@ -48,6 +49,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
   const [authorizes, setAuthorizes] = useState('');
   const [notAuthorizes, setNotAuthorizes] = useState('');
   const [conditions, setConditions] = useState<ConditionInput[]>([]);
+  const [targets, setTargets] = useState<OutcomeTargetInput[]>([]);
   const create = useCommand(API.gates.createRequest);
   const missing = [
     !amount && 'budget',
@@ -69,6 +71,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
             gateCode: 'G2',
             parentGateRequestId: null,
             proposedConditions: conditions,
+            outcomeTargets: targets,
             scope: {
               amount: Number(amount).toFixed(2),
               currency: 'EUR',
@@ -123,6 +126,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
           onChange={setNotAuthorizes}
           rows={3}
         />
+        <ThresholdList value={targets} onChange={setTargets} />
         <ConditionList people={people} value={conditions} onChange={setConditions} />
         {create.error ? <ProblemBanner error={create.error} /> : null}
         <div className="ws8c-row">
@@ -137,6 +141,139 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
         </div>
       </div>
     </form>
+  );
+}
+
+const OPERATORS: { value: OutcomeTargetInput['operator']; label: string }[] = [
+  { value: 'gte', label: 'At least (≥)' },
+  { value: 'lte', label: 'At most (≤)' },
+  { value: 'eq', label: 'Exactly (=)' },
+  { value: 'qualitative', label: 'Qualitative' },
+];
+
+const slugOf = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/^(\d)/, 'm_$1')
+    .slice(0, 60) || 'measure';
+
+/**
+ * Pilot thresholds pre-registered with the request (D-102): frozen into the first G2 snapshot and
+ * never moved afterwards. A number is optional only for qualitative or placeholder thresholds.
+ */
+function ThresholdList({
+  value,
+  onChange,
+}: {
+  value: OutcomeTargetInput[];
+  onChange: (v: OutcomeTargetInput[]) => void;
+}) {
+  const [name, setName] = useState('');
+  const [text, setText] = useState('');
+  const [operator, setOperator] = useState<OutcomeTargetInput['operator']>('gte');
+  const [num, setNum] = useState('');
+  const [unit, setUnit] = useState('');
+  const [windowText, setWindowText] = useState('');
+  const base = useId();
+  const numOk = num === '' || /^\d+(\.\d+)?$/.test(num);
+  const add = () => {
+    if (!name.trim() || !text.trim() || !numOk) return;
+    onChange([
+      ...value,
+      {
+        metricKey: slugOf(name),
+        name: name.trim(),
+        thresholdText: text.trim(),
+        operator,
+        thresholdValue: operator === 'qualitative' || num === '' ? null : num,
+        unit: unit.trim() || (operator === 'qualitative' ? 'text' : 'count'),
+        windowText: windowText.trim() || 'Pilot window',
+      },
+    ]);
+    setName('');
+    setText('');
+    setNum('');
+    setUnit('');
+    setWindowText('');
+  };
+  return (
+    <fieldset className="gos-field" style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend style={{ marginBottom: 6 }}>
+        Pilot thresholds · pre-registered{' '}
+        <span className="gos-field__hint">(they never move after submission)</span>
+      </legend>
+      {value.length ? (
+        <ul className="gos-list-plain ws8c-stack" style={{ marginBottom: 8 }} aria-label="Pilot thresholds">
+          {value.map((t, i) => (
+            <li key={t.metricKey} className="ws8c-row">
+              <b style={{ fontWeight: 600 }}>{t.name}</b> {t.thresholdText}
+              <span className="ws8c-muted">· {t.windowText}</span>
+              <button
+                type="button"
+                className="gos-ibtn"
+                aria-label={`Remove threshold: ${t.name}`}
+                onClick={() => onChange(value.filter((_, j) => j !== i))}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="ws8c-form__grid">
+        <Field label="Measure" value={name} onChange={setName} />
+        <Field
+          label="Threshold"
+          hint="as written, e.g. 4 of 4 pilot customers"
+          value={text}
+          onChange={setText}
+        />
+      </div>
+      <div className="ws8c-form__grid">
+        <label className="gos-field" htmlFor={`${base}-op`}>
+          Rule
+          <select
+            id={`${base}-op`}
+            className="gos-select"
+            value={operator}
+            onChange={(e) => setOperator(e.target.value as OutcomeTargetInput['operator'])}
+          >
+            {OPERATORS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Field
+          label="Threshold value"
+          hint="number; leave empty if not stated"
+          value={num}
+          onChange={setNum}
+        />
+        <Field label="Unit" value={unit} onChange={setUnit} />
+        <Field
+          label="Measured over"
+          hint="window, e.g. 1 Dec – 28 Feb"
+          value={windowText}
+          onChange={setWindowText}
+        />
+      </div>
+      {!numOk ? <span className="gos-field__error">The threshold value must be a number.</span> : null}
+      <div>
+        <Button
+          variant="secondary"
+          icon="plus"
+          onClick={add}
+          disabled={!name.trim() || !text.trim() || !numOk}
+          disabledReason="Name the measure and its threshold first."
+        >
+          Add threshold
+        </Button>
+      </div>
+    </fieldset>
   );
 }
 

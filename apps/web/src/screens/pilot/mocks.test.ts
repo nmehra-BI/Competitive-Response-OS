@@ -63,7 +63,7 @@ describe('S11 pilot mocks', () => {
     session.signIn(people.jonas.id);
     const v = await api(API.pilot.get, { params: { caseRef } });
     expect(v.status).toBe('ready');
-    expect(v.activationBlockers.map((b) => b.key)).toEqual(['task_owner_missing', 'condition_open']);
+    expect(v.activationBlockers.map((b) => b.key)).toEqual(['all_tasks_owned', 'blocking_conditions_met']);
     expect(v.taskSet!.tasks[1]!.owner).toBeNull();
     expect(v.messageDrafts[0]!.notice).toBe('Draft — not authorized to send');
     expect(await codeOf(api(API.pilot.activate, { params: { caseRef }, idempotencyKey: key() }))).toBe(

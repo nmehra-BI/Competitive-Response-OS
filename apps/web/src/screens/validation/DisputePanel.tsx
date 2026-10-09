@@ -34,6 +34,9 @@ export function DisputePanel({
   const [resolution, setResolution] = useState('');
   const sendReply = useCommand(API.assumptions.replyToChallenge, { onSuccess: () => setReply('') });
   const resolve = useCommand(API.assumptions.resolveChallenge, { onSuccess: () => setResolving(false) });
+  // The disputing reviewer can sign their own words as dissent; it is carried into every later
+  // decision package (gates.recordDissent, acceptance step 17, D-101). Never paraphrased.
+  const dissent = useCommand(API.gates.recordDissent);
   useEffect(() => {
     if (focusOnOpen) heading.current?.focus();
   }, [assumption.key, focusOnOpen]);
@@ -95,6 +98,7 @@ export function DisputePanel({
           <>
             <TextAreaField label="Reply" value={reply} onChange={setReply} rows={2} />
             {sendReply.error ? <ProblemBanner error={sendReply.error} /> : null}
+            {dissent.error ? <ProblemBanner error={dissent.error} /> : null}
             {resolving ? (
               <div className="ws8c-form">
                 <TextAreaField
@@ -133,6 +137,27 @@ export function DisputePanel({
               >
                 Reply
               </Button>
+              {viewer?.id === dispute.raisedBy.id ? (
+                dissent.isSuccess ? (
+                  <span role="status" className="ws8c-secondary" style={{ fontSize: 12.5 }}>
+                    Signed as dissent · carried into every decision package
+                  </span>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    disabled={dissent.isPending}
+                    disabledReason="Signing…"
+                    onClick={() =>
+                      dissent.mutate({
+                        params: { caseRef: assumption.caseId },
+                        body: { statement: dispute.statement, scopeText: `Dispute · ${assumption.name}` },
+                      })
+                    }
+                  >
+                    Sign as dissent
+                  </Button>
+                )
+              ) : null}
               {!resolving ? (
                 <Button
                   variant="secondary"

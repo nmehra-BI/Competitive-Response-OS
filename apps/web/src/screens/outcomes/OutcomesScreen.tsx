@@ -131,7 +131,8 @@ function OutcomesView({
   const decision = v.decision;
   const rec = v.recommendation;
   const unmet = v.scaleGate.unmet;
-  const scaleReason = `G3 preconditions unmet: ${unmet.map((b) => b.message).join('; ')}`;
+  const scaleReason =
+    v.scaleGate.summary ?? `G3 preconditions unmet: ${unmet.map((b) => b.message).join('; ')}`;
   // After a reload the review carries the X request (D-068); an older API leaves only the X status.
   const xr = v.extensionRequest ?? null;
   const submittedExt =
@@ -430,7 +431,7 @@ function ActualCell({ r, canRecord, onRecord }: { r: Row; canRecord: boolean; on
       <b style={{ fontWeight: 700 }}>{o.valueText}</b>{' '}
       <KindTag kind="actual" detail={fmtPeriod(o.periodStart, o.periodEnd, true)} small />
       <div className="ws8d-sub" style={{ marginTop: 3, color: 'var(--text-secondary)' }}>
-        {o.sourceText}
+        {/^Source:/.test(o.sourceText) ? o.sourceText : `Source: ${o.sourceText}`}
       </div>
       {o.version > 1 ? (
         <div className="ws8d-sub">Version {o.version} · earlier values kept in history</div>
@@ -879,15 +880,21 @@ function DecisionDialog({
 function RecommendationForm({ caseKey, v }: { caseKey: string; v: View }) {
   const [outcome, setOutcome] = useState<DecideOutcome>('extend');
   const [text, setText] = useState('');
+  // Causal limitations are required before a decision (step 26): pre-filled from the package.
+  const [limits, setLimits] = useState(v.causalLimitations.join('\n'));
   const [err, setErr] = useState<unknown>(null);
   const cmd = useCommand(API.outcomes.saveReviewDraft);
+  const limitList = limits
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
   const submit = async () => {
     setErr(null);
     try {
       await cmd.mutateAsync({
         params: { caseRef: caseKey },
         ifMatch: v.rowVersion ?? v.version,
-        body: { recommendation: { outcome, text: text.trim() } },
+        body: { recommendation: { outcome, text: text.trim() }, causalLimitations: limitList },
       });
     } catch (e) {
       setErr(e);
@@ -912,14 +919,25 @@ function RecommendationForm({ caseKey, v }: { caseKey: string; v: View }) {
           </select>
         </Field>
         <TextAreaField label="Why" required value={text} onChange={setText} />
+        <TextAreaField
+          label="Causal limitations"
+          hint="one per line; required before a decision"
+          required
+          value={limits}
+          onChange={setLimits}
+        />
       </div>
       {err ? <ProblemBanner error={err} /> : null}
       <div className="ws8d-row">
         <Button
           variant="primary"
-          disabled={!text.trim() || cmd.isPending || v.status === 'incomplete'}
+          disabled={!text.trim() || !limitList.length || cmd.isPending || v.status === 'incomplete'}
           disabledReason={
-            v.status === 'incomplete' ? 'Record every actual first.' : 'Explain the recommendation.'
+            v.status === 'incomplete'
+              ? 'Record every actual first.'
+              : !limitList.length
+                ? 'State at least one causal limitation.'
+                : 'Explain the recommendation.'
           }
           onClick={submit}
         >
@@ -955,13 +973,15 @@ function ExtensionForm({
   const [err, setErr] = useState<unknown>(null);
   const cmd = useCommand(API.outcomes.requestExtension);
   const chosen = EXT_SCOPE.filter((_, i) => scope[i]);
-  const capOk = DECIMAL.test(capText.trim());
-  const daysOk = /^\d+$/.test(days.trim()) && Number(days) > 0;
+  // Empty cap / duration = the PRD placeholders €[cap] and [duration] days (PQ-2, D-071): the request
+  // can be submitted, never approved, until the PM states them. A stated cap must be positive.
+  const capOk = capText.trim() === '' || (DECIMAL.test(capText.trim()) && Number(capText) > 0);
+  const daysOk = days.trim() === '' || (/^\d+$/.test(days.trim()) && Number(days) > 0);
   const ready = capOk && daysOk && !!owner && chosen.length > 0;
   const reason = !capOk
-    ? 'Enter the spend cap (placeholder €[cap] until the PM confirms it).'
+    ? 'Enter a positive spend cap, or leave it empty for the €[cap] placeholder.'
     : !daysOk
-      ? 'Enter the duration in days.'
+      ? 'Enter the duration in whole days, or leave it empty for the placeholder.'
       : !owner
         ? 'Choose an accountable owner.'
         : 'Choose at least one scope item.';
@@ -972,9 +992,9 @@ function ExtensionForm({
         params: { caseRef: caseKey },
         body: {
           parentGateRequestId: parentGateId,
-          spendCap: capText.trim(),
+          spendCap: capText.trim() === '' ? null : capText.trim(),
           currency: 'EUR',
-          durationDays: Number(days),
+          durationDays: days.trim() === '' ? null : Number(days),
           ownerId: owner!,
           scopeItems: chosen,
         },
@@ -1040,7 +1060,7 @@ function ExtensionForm({
       {err ? <ProblemBanner error={err} /> : null}
       <div className="ws8d-row">
         <Button variant="primary" disabled={!ready || cmd.isPending} disabledReason={reason} onClick={submit}>
-          {`Submit extension request ${capOk ? formatBudget(capText.trim(), 'EUR') : '€[cap]'}`}
+          {`Submit extension request ${capOk && capText.trim() ? formatBudget(capText.trim(), 'EUR') : '€[cap]'}`}
         </Button>
         <Button variant="ghost" onClick={onCancel}>
           Cancel

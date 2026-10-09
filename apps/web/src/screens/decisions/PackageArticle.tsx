@@ -25,6 +25,7 @@ import {
 import { useId, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { dayMonth, dayTime, fullDate } from './dates';
+import { usePeople } from '../overview/shared';
 
 export const GATE_KIND: Record<GateCode, string> = {
   G0: 'Mandate',
@@ -99,7 +100,9 @@ export function PackageArticle({
   const s = pkg.snapshot;
   const c = s.content;
   const req = pkg.gateRequest;
-  const people = peopleIn(pkg);
+  // People named in the package, then the tenant directory (the pilot owner may have no position yet).
+  const directory = usePeople();
+  const people = new Map([...directory.people.map((p) => [p.id, p] as const), ...peopleIn(pkg)]);
   const ref = useRef<HTMLElement>(null);
   useFocusableScroll(ref, [pkg]);
   const nameOf = (id: string | null) => (id ? (people.get(id)?.displayName ?? 'Owner on file') : '—');

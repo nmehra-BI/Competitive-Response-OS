@@ -8,6 +8,7 @@
  */
 import {
   API,
+  REVIEWER_POSITION_LABELS,
   SCENARIO_LABELS,
   type Assumption,
   type EconomicsOutput,
@@ -45,6 +46,7 @@ import { api, buildPath, queryKey } from '../../lib/api-client';
 import { usePublishAutosave, useDraft, type Versioned } from '../../lib/drafts';
 import { useApiQuery, useCommand } from '../../lib/query';
 import { useViewer } from '../../lib/session';
+import { FinanceReviewRequest, FinanceSignForm } from './FinanceReview';
 import '../sizing/assessment.css';
 import {
   DRIVER_FIELDS,
@@ -956,7 +958,6 @@ export default function EconomicsScreen() {
 
   const local = useLocalResult(draftV, draft.value);
   const commit = useCommand(API.economics.commit);
-  const finance = useCommand(API.economics.requestFinanceReview);
 
   if (q.isPending) {
     return (
@@ -1090,31 +1091,11 @@ export default function EconomicsScreen() {
           ) : null}
           <MoneyCards result={result} scenario={scenario} values={values} />
           <div className="as-actions">
-            <Button
-              variant="secondary"
-              icon="send"
-              disabled={!current || finance.isPending || finance.isSuccess}
-              disabledReason={
-                finance.isSuccess
-                  ? 'Finance review requested'
-                  : !current
-                    ? 'Commit a snapshot first'
-                    : 'Sending…'
-              }
-              onClick={() =>
-                current &&
-                finance.mutate({
-                  params: { caseRef: caseKey },
-                  body: {
-                    economicsVersion: current.version,
-                    reviewerId: data.financeReview?.reviewer.id ?? viewerId!,
-                    dueOn: data.financeReview?.dueOn ?? null,
-                  },
-                })
-              }
-            >
-              Request finance review
-            </Button>
+            <FinanceReviewRequest
+              caseKey={caseKey}
+              economicsVersion={current?.version ?? null}
+              requested={data.financeReview}
+            />
             {!readOnly && draftV ? (
               <Button
                 variant="primary"
@@ -1192,6 +1173,19 @@ export default function EconomicsScreen() {
                 </div>
                 {data.financeReview.notCheckedItems.join(' · ') || '—'}
               </div>
+              {data.financeReview.signedAt ? (
+                <div style={{ fontSize: 12.5 }}>
+                  <b>{REVIEWER_POSITION_LABELS[data.financeReview.position]}</b>
+                  {` · signed ${fmtDay(data.financeReview.signedAt)}`}
+                  {data.financeReview.statement ? ` · ${data.financeReview.statement}` : ''}
+                </div>
+              ) : viewerId === data.financeReview.reviewer.id ? (
+                <FinanceSignForm review={data.financeReview} />
+              ) : (
+                <div style={{ fontSize: 12.5 }} className="as-faint">
+                  Not signed yet
+                </div>
+              )}
               {adoption?.openDispute &&
               adoption.openDispute.raisedBy.id === data.financeReview.reviewer.id ? (
                 <a href="#dispute" className="as-flag" style={{ fontSize: 12.5 }}>

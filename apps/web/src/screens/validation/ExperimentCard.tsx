@@ -272,6 +272,9 @@ function ExperimentActions({
   setMode: (m: 'amend' | 'result' | 'decision' | null) => void;
 }) {
   const hasResult = e.results.length > 0;
+  // Locked by G1 → the owner starts fieldwork (experiments.start re-checks the G1 approval, D-099);
+  // results can be recorded once it runs.
+  const start = useCommand(API.experiments.start);
   if (mode === 'amend') return <AmendForm experiment={e} onDone={() => setMode(null)} />;
   if (mode === 'result') return <ResultForm experiment={e} onDone={() => setMode(null)} />;
   if (mode === 'decision') return <DecisionForm experiment={e} onDone={() => setMode(null)} />;
@@ -282,9 +285,22 @@ function ExperimentActions({
           <Button variant="secondary" icon="pencil" onClick={() => setMode('amend')}>
             Amend plan
           </Button>
-          <Button variant="primary" icon="flag" onClick={() => setMode('result')}>
-            Record results
-          </Button>
+          {e.lifecycle === 'locked' ? (
+            <Button
+              variant="primary"
+              icon="flag"
+              disabled={start.isPending}
+              disabledReason={start.isPending ? 'Starting…' : undefined}
+              onClick={() => start.mutate({ params: { id: e.id } })}
+            >
+              Start fieldwork
+            </Button>
+          ) : (
+            <Button variant="primary" icon="flag" onClick={() => setMode('result')}>
+              Record results
+            </Button>
+          )}
+          {start.error ? <ProblemBanner error={start.error} /> : null}
         </>
       ) : (
         <>

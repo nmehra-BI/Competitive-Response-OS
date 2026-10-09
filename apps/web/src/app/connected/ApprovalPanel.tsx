@@ -7,10 +7,12 @@
 import { API, GATE_STATUS_LABELS, type DecisionPackageView, type PersonRef } from '@growth-os/contracts';
 import { ApprovalPanelView, Skeleton, type ApprovalPanelProps } from '@growth-os/ui';
 import { useApiQuery, useCommand } from '../../lib/query';
+import { usePeople } from '../../lib/people';
 import { ProblemBanner } from '../shell/ProblemBanner';
 
-function people(pkg: DecisionPackageView): PersonRef[] {
+function people(pkg: DecisionPackageView, directory: PersonRef[]): PersonRef[] {
   const all = [
+    ...directory,
     ...pkg.positions.map((p) => p.reviewer),
     ...pkg.gateRequest.conditions.map((c) => c.owner),
     ...pkg.panel.chain.map((c) => c.approver),
@@ -42,6 +44,8 @@ export function decidedNoteFor(pkg: DecisionPackageView): string | null {
 export function ApprovalPanel({ gateRequestId, snapshotId, snapshotHash }: ApprovalPanelProps) {
   const pkg = useApiQuery(API.gates.package, { params: { id: gateRequestId }, query: {} });
   const decide = useCommand(API.gates.decide);
+  // Condition owners: anyone in the tenant directory who can own work, plus the package's people.
+  const directory = usePeople();
   if (pkg.isPending) return <Skeleton height={420} />;
   if (pkg.error || !pkg.data) return <ProblemBanner error={pkg.error} />;
   const d = pkg.data;
@@ -67,7 +71,8 @@ export function ApprovalPanel({ gateRequestId, snapshotId, snapshotHash }: Appro
       snapshotVersion={s.version}
       fingerprint={s.fingerprint}
       expiresText={
-        d.gateRequest.expiresAt && !d.approvals.length
+        // Shown with the approval (acceptance step 20): an unused approval expires on this date.
+        d.gateRequest.expiresAt && (status === 'approved' || status === 'approved_with_conditions')
           ? `If unused by ${formatDate(d.gateRequest.expiresAt)}`
           : null
       }
@@ -76,7 +81,7 @@ export function ApprovalPanel({ gateRequestId, snapshotId, snapshotHash }: Appro
       doesNotAuthorize={d.gateRequest.scope.doesNotAuthorize}
       panel={d.panel}
       disabledReason={d.panel.canDecide ? disabledReason : null}
-      people={people(d)}
+      people={people(d, directory.people)}
       busy={decide.isPending}
       error={decide.error ? <ProblemBanner error={decide.error} /> : null}
       decidedNote={decidedNoteFor(d)}

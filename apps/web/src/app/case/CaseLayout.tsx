@@ -15,7 +15,8 @@ import {
   type CaseTab,
 } from '@growth-os/ui';
 import { Link, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
-import { useApiQuery } from '../../lib/query';
+import { useApiQuery, useCommand } from '../../lib/query';
+import { useViewer } from '../../lib/session';
 import { CASE_TABS } from '../routes';
 import { ProblemBanner } from '../shell/ProblemBanner';
 
@@ -57,6 +58,35 @@ export function NextDecisionBlock({ next }: { next: CaseHeaderVM['nextDecision']
           <Icon name="chevr" size={13} />
         </Link>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Discovery → Assessment (cases.transition `start_assessment`, acceptance step 6). Only the case owner
+ * may start it, and the server refuses until the market boundary is defined; its reason is shown.
+ */
+function StartAssessment({ caseRef, ownerId }: { caseRef: string; ownerId: string }) {
+  const viewer = useViewer();
+  const start = useCommand(API.cases.transition);
+  if (viewer.data?.user.id !== ownerId) return null;
+  return (
+    <div>
+      <Button
+        variant="primary"
+        icon="arrowr"
+        disabled={start.isPending}
+        disabledReason={start.isPending ? 'Starting…' : undefined}
+        onClick={() =>
+          start.mutate({
+            params: { caseRef },
+            body: { command: 'start_assessment', rationale: 'Market boundary defined; assessment starts.' },
+          })
+        }
+      >
+        Start assessment
+      </Button>
+      {start.error ? <ProblemBanner error={start.error} /> : null}
     </div>
   );
 }
@@ -149,7 +179,10 @@ export function CaseHeader({ caseRef, activeTab }: CaseHeaderProps) {
             </span>
           </div>
         </div>
-        <NextDecisionBlock next={h.nextDecision} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <NextDecisionBlock next={h.nextDecision} />
+          {c.stage === 'discovery' ? <StartAssessment caseRef={c.key} ownerId={c.owner.id} /> : null}
+        </div>
       </div>
       <div className="case-rail">
         <GateRail

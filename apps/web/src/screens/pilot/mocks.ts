@@ -208,14 +208,14 @@ function blockers(): Blocker[] {
   const out: Blocker[] = [];
   if (!s.task2OwnerId) {
     out.push({
-      key: 'task_owner_missing',
+      key: 'all_tasks_owned',
       message: '“Install monitoring at 4 sites” has no accountable owner. Assign one to activate the plan.',
       href: `/me/cases/${ME104.key}/pilot?task=${pilotTasks[1].id}`,
     });
   }
   if (!s.c1Evidence) {
     out.push({
-      key: 'condition_open',
+      key: 'blocking_conditions_met',
       message:
         'Condition C1 blocks execution until met: Pilot limited to 4 sites as signed by the specialist.',
       gate: 'G2',

@@ -832,7 +832,13 @@ export default function SizingScreen() {
         ifMatch: draftRowVersion,
         body: {
           inputs: [
-            { inputKey: row.inputKey, value, unit: row.unit, sourceId: null, assumptionId: row.assumptionId },
+            {
+              inputKey: row.inputKey,
+              value,
+              unit: row.unit,
+              sourceId: row.basis.source?.sourceId ?? null,
+              assumptionId: row.assumptionId,
+            },
           ],
         },
       },
@@ -860,7 +866,7 @@ export default function SizingScreen() {
               inputKey: row.inputKey,
               value: lastUndo.from,
               unit: row.unit,
-              sourceId: null,
+              sourceId: row.basis.source?.sourceId ?? null,
               assumptionId: row.assumptionId,
             },
           ],

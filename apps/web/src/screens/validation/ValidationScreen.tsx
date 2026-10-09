@@ -121,6 +121,7 @@ export default function ValidationScreen() {
               items={items}
               experiments={experiments}
               selectedKey={showDispute ? selectedKey : null}
+              canChangeValues={isCaseOwner}
               onOpenDispute={(key) => {
                 setClosed(false);
                 setFocusDispute(true);
