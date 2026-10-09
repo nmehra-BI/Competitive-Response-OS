@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { API, endpoint, ProblemDetails } from '@growth-os/contracts';
-import { withTenant } from '@growth-os/db';
+import { sql, withTenant } from '@growth-os/db';
 import { roleAllows, signedIn } from './authz';
 import { beginIdempotent } from './idempotency';
 import { assertIfMatch, command, query, type HandlerMap } from './pipeline';
@@ -181,7 +181,7 @@ async function countRows(
     const r = await tx
       .selectFrom('platform.analytics_event')
       .select((eb) => eb.fn.countAll<string>().as('n'))
-      .where(({ eb, ref }) => eb(ref('envelope', '->>').key('correlationId'), '=', where.correlationId!))
+      .where(sql<string>`envelope->>'correlationId'`, '=', where.correlationId!)
       .executeTakeFirstOrThrow();
     return Number(r.n);
   });
