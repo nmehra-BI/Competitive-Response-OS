@@ -93,6 +93,11 @@ export interface Checkpoint {
   lastQuestion: string | null;
   pendingAnswer: string | null;
   output: { proposalIds: string[] } | null;
+  /**
+   * The output envelope besides proposals: summary, unknowns and "what the analysis did not check".
+   * Kept with the run (the frozen AnalysisRun has no field for it yet: CR-WS5-2).
+   */
+  outputMeta: { summary: string; unknowns: string[]; notChecked: string[] } | null;
 }
 
 export interface StepRow {
@@ -183,6 +188,7 @@ function emptyCheckpoint(context: ContextBlock[], now: number): Checkpoint {
     lastQuestion: null,
     pendingAnswer: null,
     output: null,
+    outputMeta: null,
   };
 }
 
@@ -207,6 +213,7 @@ export function nextAttempt(cp: Checkpoint, now: number): Checkpoint {
     failedToolSteps: [],
     repairUsed: false,
     output: null,
+    outputMeta: null,
   };
 }
 
@@ -740,7 +747,15 @@ export function createHarness(deps: HarnessDeps): AnalysisHarness {
               { detail: null, finished: true, needsInput: null, error: null },
             );
         if ('refused' in t) throw new Error(t.refused);
-        const next: Checkpoint = { ...advanced, seq: cp.seq + 3 };
+        const next: Checkpoint = {
+          ...advanced,
+          seq: cp.seq + 3,
+          outputMeta: {
+            summary: checked.output.summary,
+            unknowns: checked.output.unknowns,
+            notChecked: checked.output.notChecked,
+          },
+        };
         const res = await commit(
           { transition: t, steps, usage, proposals: { skill: run.skill, output: checked.output } },
           next,

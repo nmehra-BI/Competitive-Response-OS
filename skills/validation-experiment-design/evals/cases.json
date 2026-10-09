@@ -1,0 +1,12 @@
+[
+  {
+    "id": "ved-default",
+    "skill": "validation-experiment-design",
+    "subject": "ME-104",
+    "suites": ["falsifiable-experiments", "material-unknowns", "provenance-coverage"],
+    "expect": {
+      "status": "completed",
+      "proposalTypes": ["experiment_design", "claim"]
+    }
+  }
+]

@@ -166,6 +166,15 @@ importers:
       '@growth-os/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
+      '@growth-os/domain':
+        specifier: workspace:*
+        version: link:../packages/domain
+      '@growth-os/fixtures-aster':
+        specifier: workspace:*
+        version: link:../fixtures/aster
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
 
   fixtures/aster:
     dependencies:

@@ -108,7 +108,6 @@ export function readProviderConfig(env: NodeJS.ProcessEnv = process.env): Provid
     provider,
     apiKey: env.ANTHROPIC_API_KEY,
     model: env.ANALYSIS_MODEL,
-    fixtureDir: env.ANALYSIS_FIXTURE_DIR,
     requestTimeoutMs: timeout && Number.isFinite(timeout) ? timeout : undefined,
   };
 }
