@@ -49,4 +49,31 @@ status=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/me")
   echo "GET /me without a session returned $status (expected 401)" >&2
   exit 1
 }
-echo "API smoke OK: personas, dev-login, /me (illustrative tenant), 401 without session"
+echo "$me" | grep -q "\"timeZone\":\"Europe/Berlin\"" || {
+  echo "$me" >&2
+  echo "GET /me did not return the tenant time zone" >&2
+  exit 1
+}
+
+# Wave 3 reads the screens use first (aster-demo has ME-104; aster-start answers 404 for the case).
+for path in /me/overview /people /me/scope-options; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE$path")
+  [ "$code" = "200" ] || {
+    echo "GET $path returned $code (expected 200)" >&2
+    exit 1
+  }
+done
+case_code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE/me/cases/ME-104")
+if [ "$case_code" = "200" ]; then
+  for path in /me/cases/ME-104/pilot-plan /me/cases/ME-104/sizing /me/cases/ME-104/economics; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE$path")
+    [ "$code" = "200" ] || {
+      echo "GET $path returned $code (expected 200)" >&2
+      exit 1
+    }
+  done
+elif [ "$case_code" != "404" ]; then
+  echo "GET /me/cases/ME-104 returned $case_code" >&2
+  exit 1
+fi
+echo "API smoke OK: personas, dev-login, /me (illustrative tenant, time zone), 401 without session, overview, directory, case reads ($case_code)"
