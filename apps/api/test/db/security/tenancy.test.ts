@@ -244,11 +244,9 @@ const WS4A_GROUPS = [
 
 describe('tenancy for every WS4a endpoint', () => {
   it('covers all 65 WS4a endpoints', () => {
-    // Wave 4 additions (D-132) answer "Not implemented" until their stream lands them; that stream adds
-    // its endpoint to the table above and removes it from this list (WAVE4.md, E2).
-    const WAVE4_PENDING = new Set<string>([]);
+    // Every Wave 4 addition has a handler and a row above (WAVE4_PENDING retired at integration, D-142).
     const all = WS4A_GROUPS.flatMap((g) => Object.values(API[g]) as EndpointDef[]).filter(
-      (d) => d.id !== 'opportunities.requestDiscovery' && !WAVE4_PENDING.has(d.id),
+      (d) => d.id !== 'opportunities.requestDiscovery',
     );
     const covered = new Set([...table().map((c) => c.def.id), ...LISTS.map((d) => d.id)]);
     expect(all).toHaveLength(65);
