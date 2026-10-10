@@ -1565,6 +1565,9 @@ fixes the mapping through `admin.setMapping` (step 23). PQ-15 — tests assert `
 
 ### Release readiness summary
 
+> Updated 2026-10-10: see "Release readiness summary (Wave 4 integrated)" in the stage "Build — Wave 4
+> integration" (D-158); the PQ table below carries a status-in-code column.
+
 **Done.** All 148 registry endpoints have handlers. The web app runs on the real stack (API, worker, Postgres, MSW
 off). The 30-step Aster journey passes end to end from `aster-start` with UI, API, audit, analytics and axe
 assertions, with analysis on and off. Every alternate path passes on the real stack: missing data, restricted
@@ -1586,31 +1589,31 @@ clock and simulator routes exist only with `AUTH_MODE=dev`.
 (€[limit], €[cap], [duration], [hours per site]), add the S14 mapping editor (PQ-11), and settle hosting,
 residency, SSO/SCIM, backups and a pen test (PRD §13).
 
-| PQ | Question | Interim behaviour | Owner |
-|---|---|---|---|
-| PQ-1 | G3 message: two or four blockers | All four unmet preconditions (D-039, D-103) | PM |
-| PQ-2 | Extension cap and duration | €[cap] / [duration] days placeholders: submittable, never approvable | PM with Finance |
-| PQ-3 | Upside adoption | 30% | PM |
-| PQ-4 | MD-21 v1 narrative wording | Seeded v1 = v2 minus the outreach exclusion | PM |
-| PQ-5 | Sizing/economics v1 in History | History shows committed versions only | PM |
-| PQ-6 | Thesis blocker wording | Next gate "Pending", later gate "Blocker" | PM |
-| PQ-7 | Assumption register order | Sensitivity, then weakest evidence | PM (design) |
-| PQ-8 | Restricted site-list owner | Maya Rao named; Jonas aggregate-only | PM |
-| PQ-9 | SAM > TAM state | Ladder values hidden while blocked | PM (design) |
-| PQ-10 | G3 note on the €400k investment | Not named in the G3 reason | PM |
-| PQ-11 | Missing prototype actions (mapping editor, budget entries, …) | Mapping fixed through `admin.setMapping` | PM |
-| PQ-12 | G2 stop rules and milestones | Taken from committed versions; thresholds on S10 (D-102) | PM |
-| PQ-13 | Who writes validation tasks | Drafted at G1 from the plan (D-090); no editor | PM (design) |
-| PQ-14 | Investment committee persona | None; tests grant the role | PM |
-| PQ-15 | Retried task key | Next free `PIL-n`; exactly six issues | PM |
-| PQ-16 | Two acceptances for an AI claim | Two steps (proposal → draft → accepted fact) | PM (design) |
-| PQ-17 | Data entry for a new case | API entry (D-095) | PM (design) |
-| PQ-18 | SAM "Used by" | Honest empty "Used by" | PM with Eng |
-| PQ-19 | Snapshot numbering | Per case | PM |
-| PQ-20 | Pilot measure catalogue | Free text with derived keys | PM |
-| — | Approval ceilings, committees, expiry days | Policy placeholders (€[limit], 14 days) editable in S14 | Finance |
-| — | Licensed intelligence rights, model provider data terms | Uploads + licence table; fixture provider | Legal |
-| — | Real Jira edition and auth | Simulated connector | Eng |
+| PQ | Question | Interim behaviour | Owner | Status in code (2026-10-10) |
+|---|---|---|---|---|
+| PQ-1 | G3 message: two or four blockers | All four unmet preconditions (D-039, D-103) | PM | Closed in code (E3, D-141) |
+| PQ-2 | Extension cap and duration | €[cap] / [duration] days placeholders: submittable, never approvable | PM with Finance | Closed in code (E3, D-141) |
+| PQ-3 | Upside adoption | 30% | PM | Decided; no code change (D-118) |
+| PQ-4 | MD-21 v1 narrative wording | Seeded v1 = v2 minus the outreach exclusion | PM | Closed (fixture, D-125) |
+| PQ-5 | Sizing/economics v1 in History | History shows committed versions only | PM | Decided; no code change (D-118) |
+| PQ-6 | Thesis blocker wording | Next gate "Pending", later gate "Blocker" | PM | Closed in code (E4, D-141) |
+| PQ-7 | Assumption register order | Sensitivity, then weakest evidence | PM (design) | Decided; no code change (D-119) |
+| PQ-8 | Restricted site-list owner | Maya Rao named; Jonas aggregate-only | PM | Decided; no code change (D-119) |
+| PQ-9 | SAM > TAM state | Ladder values hidden while blocked | PM (design) | Decided; no code change (D-119) |
+| PQ-10 | G3 note on the €400k investment | Not named in the G3 reason | PM | Closed in code (E3, D-141) |
+| PQ-11 | Missing prototype actions (mapping editor, budget entries, …) | Mapping fixed through `admin.setMapping` | PM | Closed in code (E4, E2, D-141) |
+| PQ-12 | G2 stop rules and milestones | Taken from committed versions; thresholds on S10 (D-102) | PM | Closed in code (E3, E2, D-141) |
+| PQ-13 | Who writes validation tasks | Drafted at G1 from the plan (D-090); no editor | PM (design) | Closed in code (E4, D-141) |
+| PQ-14 | Investment committee persona | None; tests grant the role | PM | Closed in code (D-125, E3 D-141, D-148) |
+| PQ-15 | Retried task key | Next free `PIL-n`; exactly six issues | PM | Closed (fixture D-125, E4) |
+| PQ-16 | Two acceptances for an AI claim | Two steps (proposal → draft → accepted fact) | PM (design) | Closed in code (E4, D-141) |
+| PQ-17 | Data entry for a new case | API entry (D-095) | PM (design) | Closed in code (E1, E2, D-149) |
+| PQ-18 | SAM "Used by" | Honest empty "Used by" | PM with Eng | Closed in code (E4, D-141) |
+| PQ-19 | Snapshot numbering | Per case | PM | Closed in code (E4, E3, D-141) |
+| PQ-20 | Pilot measure catalogue | Free text with derived keys | PM | Closed in code (E3, D-141) |
+| — | Approval ceilings, committees, expiry days | Policy placeholders (€[limit], 14 days) editable in S14 | Finance | Engine in code (E3, D-141); real values from Finance |
+| — | Licensed intelligence rights, model provider data terms | Uploads + licence table; fixture provider | Legal | Fail closed in code (E3, D-146); documents from Legal |
+| — | Real Jira edition and auth | Simulated connector | Eng | Jira Cloud adapter vs mock (E5, D-143); real site untested |
 
 **Status of these questions (2026-10-09, Head of PM).** Every PQ above and the three policy and contract items are
 now decided in the stage "Product decisions — open questions resolved" below. PQ-1 → D-111 · PQ-2 → D-110 ·
@@ -2232,3 +2235,273 @@ lands the handler. No never-rule is relaxed. The engineering brief is `docs/mark
 | PA-W4-7 | Gate-paired labels, lineage relation | **Added** | D-137 |
 
 None rejected. The CR-PD list in the Product decisions stage is closed by this register.
+
+---
+
+## Stage: Build — Wave 4 integration (2026-10-10)
+
+The Principal Engineer merged the five Wave 4 streams (E1–E5, `docs/market-expansion/build/WAVE4.md`) into
+`claude/zen-euler-ph3oag`, fixed the cross-stream follow-ups and the issues found in a live local run, decided every
+change request in the stream notes (`docs/market-expansion/build/notes/W4-E1.md` … `W4-E5.md`), and ran the full CI
+on `growth_os_pe`. Additive contract and migration changes went through D-031 and landed as migration
+`0007_wave4_integration.sql`. No never-rule is relaxed.
+
+### D-141 — Merge order, conflicts and what each stream delivered
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: merged `--no-ff` in the WAVE4 §4 order E1 → E2 → E3 → E4 → E5, all branched from `b1d540b`. E1, E2 and
+  E3 merged cleanly. E4: `AdminScreen.tsx` imports (kept E3's committee, licences and live-analysis sections and
+  E4's mapping section). E5: `modules/index.ts` (kept `...mappingHandlers` and `...connectionHandlers`, both spread
+  after `adminHandlers`), the `taskSync.preview` connector ref (one `ConnectionRef` with `tenantId`, now part of
+  E5's type, so E4's `ConnectionRef & { tenantId }` cast went too), `AdminScreen.tsx` (every section kept). S09
+  `ValidationScreen.tsx` merged without conflict: E2's `AddAssumptionForm` and E4's draft editor (in
+  `ValidationTasks`) both render. The lockfile needed no change (`pnpm install`: up to date).
+- Delivered: **E1** S06 sizing editor and S08 economics editor (ticket 1); **E2** S09 add assumption, S07 add
+  dimension, S11 plan editor, stop-rule trips, record spend with reversals (tickets 1, 7 trip side, 9); **E3**
+  matrix routing, G3 committee quorum with the finance seat and lapse on a stale snapshot, per-gate expiry, the X
+  rule, licences fail closed with the expiry job, live-analysis gate, stop rules and measure types on S10, the G3
+  investment wording (tickets 3, 4, 6, 7 request side, 12, 13); **E4** validation draft tasks, S14 task mapping
+  editor with "Check with Jira" and the material-impact dialog, gate-paired labels, one-step "Accept as fact",
+  the reachable-pool upper-bound check (tickets 5, 8, 11, 14, 15); **E5** Jira Cloud adapter (OAuth 2.0 3LO,
+  encrypted tokens, reconcile by label and entity property), the S14 Jira panel and a local mock Jira server
+  (ticket 2).
+
+### D-142 — Replaced handlers removed; pending list retired; file names normalised
+- Decision: `admin.setMapping` (replaced by E4's `admin/mapping.ts`) and `admin.connections`,
+  `admin.testConnection`, `admin.reconnect` (replaced by E5's `admin/connections.ts`) are removed from
+  `admin/index.ts` with their now-unused helpers. All 165 registry endpoints have exactly one handler.
+  `WAVE4_PENDING` in the tenancy coverage test was already empty (E2) and is removed. Stream notes are
+  `notes/W4-E<n>.md` (E2–E5 were `notes/E<n>.md`); the Jira IT guide is `integrations/JIRA_CLOUD.md` (was
+  `JIRA_CLOUD_SETUP.md`), as WAVE4 names them.
+
+### D-143 — Jira Cloud is on only with `TASK_CONNECTOR=jira`; the real e2e runs the Jira spec (CR-E5-3, CR-E5-2)
+- Context: E5 widened D-135 so that a complete Jira configuration also turned the adapter on, because the shared
+  real-e2e config hard-coded `TASK_CONNECTOR=simulated` and the Jira spec needed exported variables.
+- Decision: the real-e2e config (`apps/web/e2e/support/real-env.ts` `REAL.jiraEnv`) gives every API and worker
+  process `TASK_CONNECTOR=jira` and test-only Jira values pointing at the mock server the spec starts (port
+  `E2E_JIRA_PORT`, default API port + 2; a token key derived from a fixed label so API and worker share it). The
+  Jira spec reads the same values and runs in the normal suite. With that, the strict D-135 rule is restored:
+  `jiraRequested()` is true only for `TASK_CONNECTOR=jira`; secrets alone never switch a process to a live tool.
+  Simulated connections are served whatever the setting (the provider decides). CR-E5-2 accepted:
+  `.env.example` lists `JIRA_AUTH_BASE_URL`, `JIRA_TIMEOUT_MS` and `CONNECTOR_TOKEN_KEY_PREVIOUS`.
+- Consequence: a deployment sets `TASK_CONNECTOR` the same for API and worker (documented in `.env.example`).
+  Test: `packages/connectors/src/jira/oauth.test.ts` (configuration alone → off).
+
+### D-144 — Worker call sites pass the tenant to connectors (CR-E5-4)
+- Decision: the outbox dispatcher and `reconcilePausedWrite` pass the message's tenant on the `ConnectionRef`, so
+  the Jira adapter reads its credential in that tenant without probing `list_tenant_ids()`. Test:
+  `apps/api/test/connector-faults/tenant-ref.test.ts` (send, reconcile-before-retry and the sweep's search).
+
+### D-145 — One draft save at a time, in the shared hook
+- Context: E1 found two sizing PATCHes running at once (409 on the unique input row): `useDraft` let a blur flush and
+  the debounced save both wait on one in-flight save and then both send. E1 queued saves inside its two editors.
+- Decision: `apps/web/src/lib/drafts.ts` queues every save per draft (debounce, blur, pagehide, unmount, conflict
+  resolution); a queued save re-reads dirty state, the latest value and the row version the previous save left,
+  and does nothing while a conflict is open. Every screen on the hook (S02, S05, S06, S08) gets it; E1's per-editor
+  queues are removed. Test: `lib/hooks.test.tsx` (fails on the old hook with three sends).
+
+### D-146 — Model context needs a confirmed, unexpired licence in the worker too; tests stop using Priya
+- Decision: the worker's `evidence.get` tool puts passages in model context only when the licence allows it **and**
+  has a written confirmation and no expiry (`licenceAllowsModelContext`, CR-E3-3), so a licence row written before
+  the NOT VALID 0006 constraint also fails closed. Test: `gateway.db.test.ts` recreates such a row (drop, write,
+  re-add the constraint) and the tool returns aggregate only. `cases.db.test.ts` uses Katrin Vogel (fixture
+  committee role) instead of granting Priya the committee role (CR-E3-2, D-109 §5).
+
+### D-147 — CR-W4-E1-2 accepted: the opex scope note has its own field
+- Decision: column `me.economics_version.opex_scope_note` (0007, nullable, 1–500 chars) and optional
+  `EconomicsVersion.opexScopeNote`. The API writes the column, copies it into the next draft and no longer puts a
+  marker into `exclusions_text` (drafts saved before 0007 are still read). The S08 editor reads the field first.
+  Committed versions stay immutable through the existing whole-row guard. Test: `economics.db.test.ts`.
+
+### D-148 — CR-E3-1 accepted: the database refuses a forged committee seat
+- Decision: an AFTER INSERT trigger on `platform.approval` (0007) refuses `committee_seat` unless the approver holds
+  a live seat of that kind in the gate request's business unit on the decision date (tenant-local, the API's
+  rule): `COMMITTEE_SEAT_NOT_HELD`. AFTER, so a second decision in one seat still meets
+  `approval_one_per_seat_idx` first. Cheap (one indexed lookup per committee decision). Test:
+  `governance-security.db.test.ts` (a non-member forging a free seat).
+
+### D-149 — S01 "New case"; PQ-17 closed in the UI; D-095 superseded for operators
+- Context: E1 noted `cases.createDirect` had no S01 form, so an operator still needed the API to start a case.
+- Decision: S01 and the case list get "New case" (`screens/overview/NewCaseForm.tsx`): title, business unit,
+  product, segment and geography from `catalogue.scopeOptions`, currency and horizon; the case opens at its thesis
+  at Draft mandate (owner the viewer, sponsor by the server rule). `real/w4-e1-editors.spec.ts` now creates the
+  case on S01, types the nine model assumptions into S09 "Add assumption" and builds sizing v1 (SAM €40m/year,
+  500 unique sites) and economics v1 (four scenario rows, €400k one-time apart) in the editors; the API is only
+  read. `real/w4-e2-plan-and-spend.spec.ts` walks S07 and S11 in the UI. **PQ-17 is closed in code.**
+- Found on the way: S09 registered delivery capacity in `sites`; the engines and S08's link check read
+  `customers` (ASM-08), so a capacity typed in the UI could not be linked. Fixed (D-154).
+- D-095: the 30-step journey keeps its fixture-exact setup helper (`support/journey.ts`) for steps 6 and 21 — it
+  enters the PRD §6 register with each fixture owner and the six PRD tasks so the later steps' assertions stay
+  exact, and it keeps the journey within its time budget twice (analysis on and off). It is test setup now, not a
+  product gap: every editor it stands in for exists and is proven in the UI by the two specs above.
+
+### D-150 — CR-PE-W4-1: aster-demo seeds a committed thesis v1 for ME-104 (fixture)
+- Context: the live run showed "No thesis yet" on S05 for ME-104 in aster-demo; E4's real spec created a draft
+  through the API to work around it.
+- Decision (fixture change under D-031): `fixtures/aster` `thesisV1` (the approved S05 copy: proposition, intended
+  customer, why now, three reasons to win linked to ASM-05/07/08, four alternatives including No entry, the G1
+  recommendation; no claims), seeded by aster-demo only, committed 14 Oct by Maya. The golden values allow it: no
+  snapshot pins a thesis version and the seeded snapshots are built explicitly, so no hash or golden number moves.
+  E4's spec drops its workaround and asserts the seeded thesis. Test: `packages/db/test/seed.test.ts`.
+
+### D-151 — Compare reads the comparison's own TAM and SAM, never a case's sizing
+- Context: the live run showed TAM "Unknown" for OPP-07 on S04 while ME-104 reads €100m/year.
+- Investigation: S04 renders the comparison's cells, recorded at discovery (8 Oct) on the comparison's common unit.
+  ME-104's sizing came later (13 Oct) on the case's own boundary. Reading the case's sizing into a past comparison
+  would rewrite what the reviewers compared, give one candidate a measured value next to unmeasured ones, and mix
+  a case boundary into a cross-candidate table. The read is correct; the seed simply had no TAM/SAM cells although
+  the approved prototype shows them.
+- Decision: the fixture comparison carries the prototype's indicative cells (OPP-07 TAM €100m/year "5,000 sites ×
+  €20k" with SRC-014; SAM €40m/year "2,000 unique sites"; OPP-14/16 "Not sized"; OPP-09 "Not comparable until
+  normalized"), and an empty TAM/SAM cell reads Unknown, never 0. They are never ranked or totalled (never-rule 4).
+  Test: `comparisons.db.test.ts`.
+
+### D-152 — A result reads against its target: "Met · 9 interviews (target 8)"
+- Context: S09, S10 and the brief read "Met · 9 of 8", which reads as a share.
+- Decision: one formatter, `formatAgainstTarget` (`packages/ui/format`), following UX research §6 "(target 4 of
+  4)": S09 shows "Met · 9 interviews (target 8)"; new snapshots carry "Met · 9 interviews (target 8) · Met · 4
+  commitments (target 4)" for S10 and the brief (rows joined with " · " so the package splits them into glyph
+  rows; older "; " joins still split). The aster-demo seed, mocks, history copy and the BUILD_PLAN §8 step 14 text
+  follow. Tests: `format.test.ts`, `common.test.ts`, `PackageArticle.test.ts`, screen and journey assertions.
+
+### D-153 — Fixes from the live local run
+- Opportunities overflowed by 4 px at 1440 px: a nowrap source chip in the S03 detail panel ("Food and beverage
+  process-water trade survey 2026 · 2 Sep", 364 px) widened the page. `.gos-chip` now shrinks to its container
+  and ellipsizes the label (tooltip with the full title; the accessible name is unchanged). Every route in
+  `real/a11y.spec.ts` now also asserts no horizontal page scroll at 1440 px (all 15 routes checked by hand too).
+- Favicon: `apps/web/public/favicon.svg` (the app switcher's compass on the accent colour) linked from
+  `index.html`; `real/a11y` asserts it is served and that nothing 404s for it.
+- `scripts/smoke-api.sh` killed only the `npx` PID and left the API listening; it now starts the API in its own
+  process group (`setsid`) and signals the group (verified: the old script left the API answering, the new one
+  leaves nothing).
+- README fault-injection example: the dev login labelled "Jonas" used `…000000000005` (Priya); it is `…004`.
+
+### D-154 — CR-E2-2 accepted: S09 and S11 label maps live in the contracts
+- Decision (additive): `VALUE_UNIT_LABELS`, `MODEL_INPUTS` / `MODEL_INPUT_LABELS` (each model input with the unit
+  the engines read and the ledger label) and `TASK_FUNCTION_LABELS`. S09 "Add assumption" and the S11 plan editor
+  render from them; capacity is `customers`. Contract tests cover every enum key and the capacity unit.
+
+### D-155 — Test robustness: the flaky step 24 and the screen-test timeouts
+- Flaky mock e2e step 24 ("Checking, then Confirmed"), root cause: on S11, "Preview tasks" set `view=preview` in the
+  URL, and the deep-link effect for `view=preview` then started a **second** preview. The second replaced the first,
+  so "Create 6 tasks in Jira" with the preview on screen was sometimes refused as "not current" (about one run in
+  five). The real API also wrote two previews per click. Any preview now marks the deep link handled. Unit test
+  counts preview requests (2 before, 1 after); step 24 passed 15 of 15 repeats.
+- Screen-test timeouts: the streams saw 5 s jsdom timeouts at load 15–24 on 4 cores. On the quiet machine the full
+  unit suite passes and the Wave 4 screen tests take 1.3–3.9 s; profiling S11 showed role queries at 7–14 ms and
+  about 1 s of cold first render, so the cause was CPU contention, not the tests. The eleven uncommented 20–30 s
+  per-test timeouts Wave 4 added are removed. Two tests wait on real polling (S11 step 24: reconcile ≥ 1.5 s plus a
+  2 s poll; S09 Sending… then Confirmed on the next 2 s poll) and keep 10 s with a comment; S11's full steps 21–23
+  journey keeps its commented 20 s. No assertion was weakened or skipped.
+
+### D-156 — CR-W4-E4-3 (pin the pilot plan in the G2 snapshot): not pinned; mapping pin deferred
+- Context: E4 asked to pin the pilot plan version at G2 so a destination change before activation stales the
+  approval; E3 deferred it and suggested pinning the connector mapping instead.
+- Decision: the plan version is **not** pinned at G2. At submit the plan is a draft that S11 keeps editing after
+  approval (owners, tasks, milestones; journey steps 21–23), so pinning would make every task edit a material
+  change. It is pinned at activation, and from then on a destination change is `plan_destination_changed`
+  (E4's impact dialog). Pinning the mapping is **deferred**: the G2 package does not show the destination, so the
+  approval is not bound to it (never-rule 2 concerns what the approver read); before activation nothing can be
+  sent; a mapping change is audited (`admin.mapping_set`) and every send shows the destination in its preview.
+  Revisit if the package starts showing the destination.
+
+### D-157 — Change requests deferred or rejected (Wave 4 notes)
+- **CR-W4-E1-1** `economics_driver.source_id` — deferred: a driver links to an assumption, and the assumption
+  carries its evidence (E2's basis link); the API refuses a source link with a clear message. Revisit with CR-E2-1.
+- **CR-W4-E1-3** `draftChecks` on the sizing and economics views — deferred: the editors derive the missing list
+  from the ledger and the server's 422 names the check; a server-side list is a convenience.
+- **CR-E2-1** an assumption-source table — deferred: the evidence-claim link works (chips, quality); the gap is
+  that lineage "used by" does not see it. Schedule with the next lineage work.
+- **CR-E2-3** an analytics event for stop-rule trips — rejected for now: PRD §17 owns the analytics catalogue and
+  lists none; the audit event `stop_rule.tripped` and the sponsor review record every trip. Product may add it.
+- **CR-W4-E4-1** citation chips on proposals — deferred: the confirm dialog says how many citations open for the
+  viewer; chips are additive later.
+- **CR-W4-E4-2** simulator project membership — deferred: simulator-only; the fault-rule bridge in
+  `admin/mapping.ts` gives the same Not found result.
+- **CR-E5-1** a disconnect endpoint — deferred to the pre-pilot backlog: `revokeCredential` exists; until the
+  endpoint lands the IT guide tells admins to revoke the app in Atlassian, which expires the connection.
+- **CR-E5-5** retarget a task set to another connection — deferred (product question): retargeting unsent task sets
+  is a `plan_destination_changed` material change; product decides whether adding a Jira connection offers it.
+  The Jira e2e keeps its one owner-SQL setup step.
+
+### D-158 — CI of this stage
+- Decision: full CI on `growth_os_pe` (reset, migrate 0001–0007), sequential: `pnpm install` (lockfile up to
+  date), typecheck, lint and format pass; unit **77 files / 2,272 tests**; db:migrate (0007 applied); test:db **67
+  files / 494 tests**; evals:smoke **14 suites** pass; web build; API smoke OK (and no API left running after it);
+  mock e2e **41 passed**; real e2e **67 passed** in 11.7 min — the 30-step journey with analysis on and again in the
+  `real-ai-down` project, every alternate path, axe and the 1440 px overflow check on every route, p95, the Wave 4
+  specs (E1 UI-only from S01, E2, E3, E4) and the Jira Cloud spec against the mock server, now in the normal suite
+  (D-143). Ports 4770/5770/4771/5771 (+ mock Jira 4772); the developer's servers on 4600/4601/5600 and database
+  `growth_os` were not touched. No test is skipped or marked `fixme`.
+
+### Change-request register — Wave 4 integration
+
+| CR | Request | Decision | Record |
+|---|---|---|---|
+| CR-W4-E1-1 | `economics_driver.source_id` | **Deferred** (assumption carries the evidence) | D-157 |
+| CR-W4-E1-2 | `EconomicsVersion.opexScopeNote` | **Accepted** (0007 column) | D-147 |
+| CR-W4-E1-3 | `draftChecks` on model views | **Deferred** | D-157 |
+| CR-E2-1 | Assumption-source table | **Deferred** | D-157 |
+| CR-E2-2 | Unit, model-input and task-function labels in contracts | **Accepted** | D-154 |
+| CR-E2-3 | Analytics event for stop-rule trips | **Rejected for now** (PRD §17; audit records trips) | D-157 |
+| CR-E3-1 | DB guard against forged committee seats | **Accepted** (0007 trigger) | D-148 |
+| CR-E3-2 | Replace Priya in `cases.db.test.ts` | **Done** (Katrin) | D-146 |
+| CR-E3-3 | Rights check in the worker evidence tool | **Done** | D-146 |
+| CR-W4-E4-1 | Proposal citation chips | **Deferred** | D-157 |
+| CR-W4-E4-2 | Simulator project membership | **Deferred** | D-157 |
+| CR-W4-E4-3 | Pin the pilot plan in the G2 snapshot | **Rejected** (plan); mapping pin **deferred** | D-156 |
+| CR-E5-1 | Disconnect endpoint | **Deferred** (pre-pilot backlog) | D-157 |
+| CR-E5-2 | `.env.example` Jira variables | **Accepted** | D-143 |
+| CR-E5-3 | Jira env in the shared real-e2e config | **Accepted**; strict activation restored | D-143 |
+| CR-E5-4 | Worker call sites pass `tenantId` | **Accepted** | D-144 |
+| CR-E5-5 | Retarget a task set to another connection | **Deferred** (product question) | D-157 |
+| CR-PE-W4-1 | ME-104 thesis v1 in aster-demo | **Accepted** (fixture) | D-150 |
+
+### PQ status in code (2026-10-10)
+
+Every product question decided on 2026-10-09 is now in code except where noted; the table under "Release
+readiness summary" (Build — End-to-end stage) carries the same status per row.
+
+| PQ | Closed in code by | Notes |
+|---|---|---|
+| PQ-1, PQ-10 | E3 (D-141) | Four G3 blockers; the fourth names "economics vN carries €400k one-time scale-entry investment" |
+| PQ-2 | E3 (D-141) | X rule enforced; X1 €30k · 45 days approvable; null cap refused in real tenants |
+| PQ-3, PQ-5, PQ-7, PQ-8, PQ-9 | — | Interim confirmed by D-118/D-119; no code change needed |
+| PQ-4, PQ-15 | Fixture (D-125) | MD-21 v1 wording; retried task takes the next free key |
+| PQ-6, PQ-19 | E4, E3 (D-141) | "Pending · G2" / "Blocker · G3"; "G2 · Snapshot v3" labels |
+| PQ-11 | E4, E2 (D-141) | S14 task mapping editor; S11 record spend |
+| PQ-12 | E3, E2 (D-141) | Stop rules on S10, frozen with G2; trips ask the sponsor; milestones in the plan editor |
+| PQ-13 | E4 (D-141) | S09 "Validation tasks · Draft" |
+| PQ-14 | Fixture (D-125), E3 (D-141), D-148 | Committee personas, quorum 2 of 3 with finance, DB seat guard |
+| PQ-16 | E4 (D-141) | One-step "Accept as fact" for unedited, cited claims |
+| PQ-17 | E1, E2 (D-141), D-149 | S01 New case + five editors, walked in the UI only |
+| PQ-18 | E4 (D-141) | Reachable pool upper-bound check in lineage |
+| PQ-20 | E3 (D-141) | Measure types on S10; G3 reads the Demand type |
+| Policy ceilings, committee, expiry | E3 (D-141) | Engine and defaults in code; real values need the customer's Finance (D-109) |
+| Licence rights, model-provider terms | E3 (D-141), D-146 | Fail closed, expiry job, live-analysis gate; documents need Legal (D-120) |
+| Jira edition and auth | E5 (D-141), D-143 | Jira Cloud 3LO adapter against a local mock; untested against a real site |
+
+### Release readiness summary (Wave 4 integrated, 2026-10-10)
+
+**Done.** All 165 registry endpoints have handlers. An operator can start a case alone in the UI (S01 New case,
+S09, S06, S08, S07, S11), and every product decision D-109…D-121 is in code: matrix routing and the G3 committee
+quorum with lapse on a stale snapshot (database seat guard), per-gate expiry, the extension rule, stop rules and
+measure types, record spend with reversals, validation draft tasks, the S14 mapping editor, one-step "Accept as
+fact", licences that fail closed (API, worker and database) with an expiry job, the tenant live-analysis gate, and
+a Jira Cloud adapter (OAuth 2.0 3LO integration account, encrypted tokens, reconcile before retry) proven against a
+local mock Jira server, including the full connector fault suite. CI below.
+
+**Still simulated.** Jira: the default connector is the simulator; the Jira Cloud adapter has run only against the
+local mock (no real Atlassian site). Analysis: the deterministic fixture provider; a live provider stays off per
+tenant until the addendum and an eval run are recorded. Login: dev persona picker (no SSO). Dev clock and simulator
+routes exist only with `AUTH_MODE=dev`.
+
+**External questions still open.** Customer Finance: the real ceilings, committee members and DoA references
+(the Aster values are illustrative, D-109). Legal: written licence confirmations per source and the model-provider
+data addendum (D-120). Customer IT: a Jira Cloud site, the OAuth app and the integration account (JIRA_CLOUD.md),
+then a first run against it. Product: CR-E5-5 (retarget task sets), CR-E2-3 (trip analytics). Platform: hosting,
+residency, SSO/SCIM, backups and a pen test (PRD §13).
+
+**Before a design-partner pilot.** (1) Run the Jira adapter against a real Jira Cloud site with the customer's
+integration account; (2) the disconnect endpoint (CR-E5-1); (3) customer Finance values for ceilings and the
+committee entered in S14; (4) licence confirmations entered for every licensed source; (5) SSO and the hosting items
+above. Nothing in the product workflow itself blocks a pilot any more.
