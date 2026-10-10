@@ -5,7 +5,8 @@
  */
 import { API, type CaseListRow, type CaseStage } from '@growth-os/contracts';
 import type { HttpHandler } from 'msw';
-import { caseListRows, overview } from '../../mocks/data';
+import { people } from '@growth-os/fixtures-aster';
+import { caseListRows, overview, personRef } from '../../mocks/data';
 import { mock } from '../../mocks/define';
 import { g0DecisionsFor } from '../mandate/mocks';
 import { mergeCaseRows } from '../opportunities/mocks';
@@ -21,7 +22,31 @@ function byStage(rows: CaseListRow[]): { stage: CaseStage; count: number }[] {
   return [...m.entries()].map(([stage, count]) => ({ stage, count }));
 }
 
+let directCases = 0;
+
 export const handlers: HttpHandler[] = [
+  // S01 "New case" (D-149): a direct case at Draft mandate; the owner is the viewer, the sponsor Elena.
+  mock(API.cases.createDirect, ({ body, viewerId }) => {
+    const now = new Date().toISOString();
+    directCases += 1;
+    return {
+      id: `00000000-0000-4000-8000-0000000c${String(directCases).padStart(4, '0')}`,
+      key: `ME-${130 + directCases}`,
+      appType: 'market_expansion' as const,
+      title: body.title,
+      businessUnitId: body.businessUnitId,
+      mandateId: '00000000-0000-4000-8000-0000000d0001',
+      owner: personRef(body.mandate.ownerId ?? viewerId!),
+      sponsor: personRef(body.mandate.sponsorId ?? people.elena.id),
+      stage: 'draft_mandate' as const,
+      heldFromStage: null,
+      originType: 'direct' as const,
+      originId: null,
+      rowVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }),
   mock(API.overview.portfolio, ({ viewerId }) => {
     const base = overview(viewerId);
     const cases = mergeCaseRows(base.cases);

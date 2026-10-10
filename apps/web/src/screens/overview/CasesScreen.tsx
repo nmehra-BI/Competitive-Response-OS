@@ -4,7 +4,9 @@
  */
 import { API, CASE_STAGE_LABELS, CaseStage } from '@growth-os/contracts';
 import { Button, EmptyState } from '@growth-os/ui';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { NewCaseForm } from './NewCaseForm';
 import { useApiQuery } from '../../lib/query';
 import { CaseTable, ErrorPage, LoadingPage, PageHeader, useDocumentTitle } from './shared';
 
@@ -13,6 +15,7 @@ const UUID = /^[0-9a-f-]{36}$/i;
 export default function CasesScreen() {
   useDocumentTitle('Expansion cases');
   const [params, setParams] = useSearchParams();
+  const [newCase, setNewCase] = useState(false);
   const stageParam = CaseStage.safeParse(params.get('stage'));
   const stage = stageParam.success ? stageParam.data : undefined;
   const owner = params.get('owner');
@@ -57,9 +60,13 @@ export default function CasesScreen() {
             <Button variant="secondary" icon="compass" href="/me/opportunities">
               Opportunities
             </Button>
+            <Button variant="secondary" icon="plus" onClick={() => setNewCase(true)}>
+              New case
+            </Button>
           </>
         }
       />
+      {newCase ? <NewCaseForm onCancel={() => setNewCase(false)} /> : null}
       <p className="dx-small dx-muted" style={{ margin: 0 }}>
         Market sizes are not totalled across cases. Each case has its own market boundary, unit and year.
       </p>
@@ -76,7 +83,7 @@ export default function CasesScreen() {
             </Button>
           }
         >
-          Cases start from a shortlisted opportunity under an approved mandate.
+          Cases start from a shortlisted opportunity under an approved mandate, or directly with “New case”.
         </EmptyState>
       )}
     </div>

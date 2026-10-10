@@ -18,9 +18,10 @@ import {
   formatBudget,
   formatNotAvailable,
 } from '@growth-os/ui';
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApiQuery } from '../../lib/query';
+import { NewCaseForm } from './NewCaseForm';
 import {
   CaseTable,
   ErrorPage,
@@ -139,6 +140,7 @@ function SpendCard({ spend }: { spend: PortfolioOverview['spend'] }) {
 
 export default function OverviewScreen() {
   const [params, setParams] = useSearchParams();
+  const [newCase, setNewCase] = useState(false);
   const view: View = params.get('view') === 'operator' ? 'operator' : 'portfolio';
   const bu = params.get('bu');
   const title = view === 'operator' ? 'Operator overview' : 'Portfolio overview';
@@ -191,6 +193,9 @@ export default function OverviewScreen() {
               ))}
             </select>
           </label>
+          <Button variant="secondary" icon="plus" onClick={() => setNewCase(true)}>
+            New case
+          </Button>
           <Button variant="primary" icon="plus" href="/me/mandates/new">
             Create mandate
           </Button>
@@ -198,11 +203,13 @@ export default function OverviewScreen() {
       }
     />
   );
+  const newCaseForm = newCase ? <NewCaseForm onCancel={() => setNewCase(false)} /> : null;
 
   if (d.cases.length === 0) {
     return (
       <div className="app-page dx-page">
         {header}
+        {newCaseForm}
         <div className="dx-empty-center" style={{ padding: '64px 24px' }}>
           <span className="dx-muted">
             <Icon name="compass" size={22} />
@@ -226,6 +233,7 @@ export default function OverviewScreen() {
   return (
     <div className="app-page dx-page">
       {header}
+      {newCaseForm}
       {finance ? (
         <Banner
           tone="warn"
