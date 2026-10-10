@@ -9,6 +9,7 @@ import {
   type AnalysisRun,
   type Challenge,
   type Claim,
+  type Proposal,
   type ReviewRequest,
   type RunStatus,
   type ThesisFields,
@@ -307,7 +308,92 @@ export function claims(): Claim[] {
       }),
     );
   }
-  return list;
+  return [...list, ...claimsFromProposals()];
+}
+
+// ---------------------------------------------------------------------------
+// AI claim proposals (D-116, D-131): one cited (one-step "Accept as fact" offered), one uncited
+// ---------------------------------------------------------------------------
+
+const PROPOSAL_IDS = [1, 2].map((n) => wsId(38, n));
+const PROPOSAL_CLAIM_IDS = [1, 2].map((n) => wsId(39, n));
+/** Decisions taken in this browser session (module state: a page load starts fresh). */
+const proposalDecisions = new Map<string, { status: Proposal['status']; asFact: boolean; by: string }>();
+export function resetProposalMocks(): void {
+  proposalDecisions.clear();
+}
+
+const PROPOSED_CLAIMS = [
+  {
+    statement: 'About 5,000 food-processing sites in Germany operate a process-water treatment step.',
+    kind: 'evidence' as const,
+    evidenceIds: [sourceChip('SRC-014').sourceId],
+    source: 'SRC-014',
+  },
+  {
+    statement: 'Plants with a water-reuse target buy monitoring before the regulator asks.',
+    kind: 'inference_ai' as const,
+    evidenceIds: [] as string[],
+    source: null,
+  },
+];
+
+export function claimProposals(viewerId: string | null): Proposal[] {
+  return PROPOSED_CLAIMS.map((c, i) => {
+    const id = PROPOSAL_IDS[i]!;
+    const d = proposalDecisions.get(id);
+    const owner = viewerId === people.maya.id;
+    const oneStepAccept = d
+      ? { available: false, reason: 'This proposal has already been decided.' }
+      : !owner
+        ? { available: false, reason: 'Your role does not accept AI claims.' }
+        : c.evidenceIds.length === 0
+          ? { available: false, reason: 'No citation: add it as a draft, then decide.' }
+          : { available: true, reason: null };
+    return {
+      id,
+      caseId: CASE_ID,
+      runId: RUN_ID,
+      skill: 'bottom-up-sizing',
+      payload: {
+        type: 'claim',
+        claim: { statement: c.statement, kind: c.kind, evidenceIds: c.evidenceIds, confidenceNote: null },
+      },
+      targetType: d && d.status !== 'rejected' ? 'claim' : null,
+      targetId: d && d.status !== 'rejected' ? PROPOSAL_CLAIM_IDS[i]! : null,
+      status: d?.status ?? 'proposed',
+      decidedBy: d ? personRef(d.by) : null,
+      decidedAt: d ? '2026-10-14T11:05:00+02:00' : null,
+      createdAt: RUN_DONE,
+      oneStepAccept,
+    };
+  });
+}
+
+/** Claims written by accepted proposals: an AI draft, or a fact accepted in one step. */
+function claimsFromProposals(): Claim[] {
+  return PROPOSED_CLAIMS.flatMap((c, i) => {
+    const d = proposalDecisions.get(PROPOSAL_IDS[i]!);
+    if (!d || d.status === 'rejected') return [];
+    return [
+      {
+        id: PROPOSAL_CLAIM_IDS[i]!,
+        caseId: CASE_ID,
+        statement: c.statement,
+        kind: c.kind === 'evidence' && c.evidenceIds.length === 0 ? ('unknown' as const) : c.kind,
+        kindDetail: null,
+        origin: 'ai' as const,
+        agentRunId: RUN_ID,
+        status: d.asFact ? ('accepted' as const) : ('proposed' as const),
+        acceptedBy: d.asFact ? d.by : null,
+        acceptedAt: d.asFact ? '2026-10-14T11:05:00+02:00' : null,
+        sources: c.source ? [sourceChip(c.source)] : [],
+        disputed: false,
+        createdAt: '2026-10-14T11:05:00+02:00',
+        createdBy: people.analysisAgent.id,
+      },
+    ];
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +546,36 @@ export const handlers: HttpHandler[] = [
   mock(API.analysis.get, ({ params }) => {
     if (params.id !== RUN_ID) throw notFound();
     return { run: analysisRun(), steps: [] };
+  }),
+
+  mock(API.analysis.proposals, ({ params, query, viewerId }) => {
+    requireMe104(params.caseRef);
+    const all = claimProposals(viewerId);
+    const want = query.status ?? 'proposed';
+    return {
+      items: all.filter((p) =>
+        want === 'accepted'
+          ? p.status === 'accepted' || p.status === 'edited_and_accepted'
+          : p.status === want,
+      ),
+    };
+  }),
+
+  mock(API.analysis.decideProposal, ({ params, body, viewerId }) => {
+    const p = claimProposals(viewerId).find((x) => x.id === params.id);
+    if (!p) throw notFound();
+    if (viewerId !== people.maya.id)
+      throw new MockProblem('FORBIDDEN', 'Your role does not allow this action.');
+    if (p.status !== 'proposed')
+      throw new MockProblem('INVALID_TRANSITION', 'This proposal has already been decided.');
+    if (body.acceptAsFact && (body.decision !== 'accept' || !p.oneStepAccept?.available))
+      throw new MockProblem('VALIDATION_FAILED', p.oneStepAccept?.reason ?? 'Not available.');
+    proposalDecisions.set(p.id, {
+      status: body.decision === 'reject' ? 'rejected' : 'accepted',
+      asFact: body.acceptAsFact === true,
+      by: viewerId,
+    });
+    return claimProposals(viewerId).find((x) => x.id === p.id)!;
   }),
 
   mock(API.analysis.start, ({ params }) => {

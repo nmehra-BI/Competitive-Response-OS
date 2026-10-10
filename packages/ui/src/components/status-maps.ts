@@ -4,6 +4,7 @@
  * the glyph and the tone (ported from common.py: RES, AST, SYNC, CONN, FRESH, RUN, REV, EVQ, DIA).
  */
 import type {
+  AssigneeMappingStatus,
   AssumptionStatus,
   CaseStage,
   ConditionStatus,
@@ -17,6 +18,7 @@ import type {
   RunStatus,
   SyncStatus,
   TaskStatus,
+  ThesisBlockerStatus,
 } from '@growth-os/contracts';
 import type { IconName } from './icon-paths';
 
@@ -161,6 +163,20 @@ export const TASK_STATUS_GLYPH: Record<TaskStatus, Glyph> = {
   in_progress: { icon: 'progress', fg: INFO },
   blocked: { icon: 'alert', fg: WARN },
   done: { icon: 'checkcircle', fg: OK },
+};
+
+/** Thesis blockers name the gate (D-119, PQ-6): "Pending · G2" in progress; "Blocker · G3" later gate. */
+export const THESIS_BLOCKER_GLYPH: Record<ThesisBlockerStatus, Glyph> = {
+  pending: { icon: 'dashcircle', fg: NEUTRAL },
+  blocker: { icon: 'alert', fg: WARN },
+  resolved: { icon: 'checkcircle', fg: OK },
+};
+
+/** S14 task mapping (D-114 §1): Mapped / Unmapped / Not found. */
+export const ASSIGNEE_MAPPING_GLYPH: Record<AssigneeMappingStatus, Glyph> = {
+  mapped: { icon: 'checkcircle', fg: OK },
+  unmapped: { icon: 'dashcircle', fg: NEUTRAL },
+  not_found: { icon: 'alert', fg: WARN },
 };
 
 export const CROSS_CHECK_GLYPH: Record<CrossCheckResult, Glyph> = {

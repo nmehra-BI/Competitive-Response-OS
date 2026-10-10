@@ -36,6 +36,7 @@ import {
   Skeleton,
   SourceChip,
   TextAreaField,
+  ThesisBlockerTag,
 } from '@growth-os/ui';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -47,6 +48,7 @@ import { pollWhile, RUN_IN_FLIGHT, useApiQuery, useCommand } from '../../lib/que
 import { useViewer } from '../../lib/session';
 import { useQueryClient } from '@tanstack/react-query';
 import '../sizing/assessment.css';
+import { ClaimProposals } from './ClaimProposals';
 
 type EditableFields = {
   proposition: string;
@@ -528,6 +530,11 @@ export default function ThesisScreen() {
             </ul>,
           )}
 
+          <ClaimProposals
+            caseKey={caseKey}
+            canDecide={!!viewer.data && header.data?.case.owner.id === viewer.data.person.id}
+          />
+
           {section(
             'Reasons to win',
             'Tied to the core product, not to market size',
@@ -668,14 +675,11 @@ export default function ThesisScreen() {
                 .filter((b) => b.status !== 'resolved')
                 .map((b) => (
                   <div key={b.id} className="as-blocker">
-                    {/* The server's status (D-068); without it, items for the upcoming G1 are pending
-                      reviews and items for a later gate block it. */}
-                    <ReviewStatusTag
-                      status={
-                        (b.status ?? (b.gate === 'G1' ? 'pending' : 'blocker')) === 'pending'
-                          ? 'pending'
-                          : 'declined'
-                      }
+                    {/* The server's status (D-068) names the gate (D-119, PQ-6): "Pending · G2" is
+                      needed for the next gate; "Blocker · G3" is for a later gate. */}
+                    <ThesisBlockerTag
+                      status={b.status ?? (b.gate === 'G1' ? 'pending' : 'blocker')}
+                      gate={b.gate}
                     />
                     <span className="as-blocker__text">{b.text}</span>
                     <Person
