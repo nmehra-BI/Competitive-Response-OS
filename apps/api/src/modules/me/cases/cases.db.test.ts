@@ -11,20 +11,6 @@ import { analyticsFor, api, auditFor, inTenant, world, type World } from './test
 let w: World;
 beforeAll(async () => {
   w = await world({ demo: 'aster-demo', b: 'aster-start' });
-  // An investment-committee member in BU Water (the fixture has none).
-  const s = w.tenants.demo!;
-  await inTenant(w, s, (tx) =>
-    tx
-      .insertInto('platform.role_assignment')
-      .values({
-        tenant_id: s.tenantId,
-        user_id: s.user('priya'),
-        role: 'investment_committee',
-        business_unit_id: s.id(businessUnits[0].id),
-        granted_by: s.user('admin'),
-      })
-      .execute(),
-  );
 });
 afterAll(() => w.close());
 
@@ -116,7 +102,8 @@ describe('cases', () => {
     });
     expect(elena.statusCode).toBe(200);
     expect(CaseHeader.parse(elena.json()).case.stage).toBe('stopped');
-    const ic = await api(w, API.cases.transition, await w.cookie('demo', 'priya'), {
+    // Katrin Vogel holds the investment-committee role in BU Water (fixture, D-109 §5).
+    const ic = await api(w, API.cases.transition, await w.cookie('demo', 'katrin'), {
       params: { caseRef: 'ME-102' },
       body: { command: 'stop', rationale: 'Committee stops the brewery case' },
     });
