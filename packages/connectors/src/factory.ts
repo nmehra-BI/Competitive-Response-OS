@@ -3,8 +3,8 @@
  *
  *   jira_simulated  the simulated task tool in the `sim` schema — always available, the default
  *   jira_cloud      the Jira Cloud adapter (OAuth 2.0 3LO integration account) when Jira is on for
- *                   this process: `TASK_CONNECTOR=jira`, or the complete Jira configuration in the
- *                   environment (see `jiraRequested`), or a `jira` block passed by tests
+ *                   this process: `TASK_CONNECTOR=jira` (strict, see `jiraRequested`), or a `jira`
+ *                   block passed by tests
  *   anything else   an always-unavailable adapter (callers pause and offer CSV export)
  *
  * Call sites pass `{ id, provider }` (frozen); `tenantId` is optional and saves the Jira adapter a

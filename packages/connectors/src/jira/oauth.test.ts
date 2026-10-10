@@ -135,11 +135,12 @@ describe('configuration', () => {
     CONNECTOR_TOKEN_KEY: Buffer.alloc(32, 7).toString('base64'),
   };
 
-  it('is off by default and on with TASK_CONNECTOR=jira or a complete configuration', () => {
+  it('is on only with TASK_CONNECTOR=jira (D-135 strict), never by the configuration alone', () => {
     expect(jiraRequested({})).toBe(false);
     expect(jiraRequested({ TASK_CONNECTOR: 'simulated' })).toBe(false);
     expect(jiraRequested({ TASK_CONNECTOR: 'jira' })).toBe(true);
-    expect(jiraRequested({ TASK_CONNECTOR: 'simulated', ...full })).toBe(true);
+    expect(jiraRequested({ TASK_CONNECTOR: 'simulated', ...full })).toBe(false);
+    expect(jiraRequested({ ...full })).toBe(false);
     expect(jiraRequested({ ...full, CONNECTOR_TOKEN_KEY: '' })).toBe(false);
   });
 

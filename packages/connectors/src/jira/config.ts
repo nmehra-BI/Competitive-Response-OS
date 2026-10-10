@@ -91,12 +91,10 @@ export function jiraConfigFromEnv(env: Readonly<Record<string, string | undefine
 }
 
 /**
- * Is the Jira Cloud adapter on for this process? `TASK_CONNECTOR=jira` turns it on (D-135). A
- * process started with the default (`simulated` or unset) also serves EXISTING `jira_cloud`
- * connections when the complete Jira configuration is present, so one process started with the
- * default never pauses a tenant's live Jira connection that another process created (W4-E5 notes).
+ * Is the Jira Cloud adapter on for this process? Only `TASK_CONNECTOR=jira` turns it on (D-135, strict;
+ * decisions.md D-143). A deployment sets the same value for the API and the worker; the Jira
+ * configuration alone never turns it on, so a stray secret cannot switch a process to a live tool.
  */
 export function jiraRequested(env: Readonly<Record<string, string | undefined>>): boolean {
-  if (env.TASK_CONNECTOR === 'jira') return true;
-  return Boolean(env.JIRA_CLIENT_ID && env.JIRA_CLIENT_SECRET && env.CONNECTOR_TOKEN_KEY);
+  return env.TASK_CONNECTOR === 'jira';
 }

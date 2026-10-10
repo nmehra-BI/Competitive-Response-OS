@@ -19,7 +19,8 @@ const common = {
   ...REAL.dbEnv,
   AUTH_MODE: 'dev',
   ANALYSIS_PROVIDER: 'fixture',
-  TASK_CONNECTOR: 'simulated',
+  // TASK_CONNECTOR=jira against the local mock Jira server (CR-E5-3); simulated connections unchanged.
+  ...REAL.jiraEnv,
   OBJECT_STORE_DIR: resolve(root, '.data/objects-e2e'),
   NODE_ENV: 'development',
   // The dev session cookie is Secure; browsers accept that on http://127.0.0.1 as a potentially

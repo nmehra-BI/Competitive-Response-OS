@@ -6,16 +6,8 @@
  *   · Jonas previews and sends the pilot tasks → six issues in Jira, "6 of 6 tasks confirmed in Jira",
  *     every key exactly as Jira returned it, one issue per idempotency key
  *
- * The API and worker processes of the real project read the Jira configuration from the environment,
- * so run the project with it exported (test values only; the mock listens on the API base URL's port):
- *
- *   export JIRA_CLIENT_ID=e2e-client JIRA_CLIENT_SECRET=e2e-secret \
- *     JIRA_API_BASE_URL=http://127.0.0.1:4762 \
- *     JIRA_REDIRECT_URI=http://127.0.0.1:$E2E_WEB_PORT/admin/connections \
- *     CONNECTOR_TOKEN_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
- *
- * With the complete Jira configuration present, every process serves `jira_cloud` connections while
- * the simulated connector stays the default for everything else (W4-E5 notes).
+ * The real project's API and worker processes run with `TASK_CONNECTOR=jira` and the Jira test
+ * configuration from `support/real-env.ts` (`REAL.jiraEnv`, CR-E5-3); the mock listens on its API base URL.
  */
 import pg from 'pg';
 import { expect, test } from '../support/fixtures';
@@ -29,24 +21,8 @@ const NAME = 'Jira Cloud · PIL, ME-VAL';
 let mock: MockJira;
 
 function jiraEnv() {
-  const e = process.env;
-  const missing = [
-    'JIRA_CLIENT_ID',
-    'JIRA_CLIENT_SECRET',
-    'JIRA_API_BASE_URL',
-    'JIRA_REDIRECT_URI',
-    'CONNECTOR_TOKEN_KEY',
-  ].filter((k) => !e[k]);
-  if (missing.length)
-    throw new Error(
-      `The Jira e2e needs the Jira test environment exported (missing ${missing.join(', ')}); see the header.`,
-    );
-  expect(e.JIRA_REDIRECT_URI).toBe(`${REAL.webUrl}/admin/connections`);
-  return {
-    clientId: e.JIRA_CLIENT_ID!,
-    clientSecret: e.JIRA_CLIENT_SECRET!,
-    base: new URL(e.JIRA_API_BASE_URL!),
-  };
+  const e = REAL.jiraEnv;
+  return { clientId: e.JIRA_CLIENT_ID, clientSecret: e.JIRA_CLIENT_SECRET, base: new URL(e.JIRA_API_BASE_URL) };
 }
 
 /** Owner SQL in the Aster tenant (RLS applies), for the one setup step the UI has no screen for. */

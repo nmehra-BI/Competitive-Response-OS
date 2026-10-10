@@ -3,6 +3,8 @@
  * (4000/5173) and other agents keep theirs. The database defaults to `growth_os_pe`; CI uses
  * `growth_os_e2e`. Both names pass the e2e-reset guard (`*_pe` or `*e2e*`).
  */
+import { createHash } from 'node:crypto';
+
 const db = process.env.E2E_DB_NAME ?? 'growth_os_pe';
 const host = process.env.E2E_DB_HOST ?? 'localhost:5432';
 
@@ -12,11 +14,31 @@ export const REAL = {
   webPort: Number(process.env.E2E_WEB_PORT ?? 5710),
   aiDownApiPort: Number(process.env.E2E_AIDOWN_API_PORT ?? 4711),
   aiDownWebPort: Number(process.env.E2E_AIDOWN_WEB_PORT ?? 5711),
+  /** The local mock Jira Cloud server that `real/w4-e5-jira.spec.ts` starts (there is no network to Jira). */
+  jiraMockPort: Number(
+    process.env.E2E_JIRA_PORT ?? Number(process.env.E2E_API_PORT ?? 4710) + 2,
+  ),
   get webUrl() {
     return `http://127.0.0.1:${this.webPort}`;
   },
   get aiDownWebUrl() {
     return `http://127.0.0.1:${this.aiDownWebPort}`;
+  },
+  /**
+   * Jira Cloud against the local mock (CR-E5-3): every API and worker process of the real project runs
+   * with `TASK_CONNECTOR=jira` (D-135), so the Jira spec runs in the normal suite. Test values only; the
+   * token key is derived from a fixed label so the API and the worker decrypt each other's tokens.
+   * Simulated connections are served as before (the provider decides, not the setting).
+   */
+  get jiraEnv() {
+    return {
+      TASK_CONNECTOR: 'jira',
+      JIRA_CLIENT_ID: 'e2e-client',
+      JIRA_CLIENT_SECRET: 'e2e-secret',
+      JIRA_API_BASE_URL: `http://127.0.0.1:${this.jiraMockPort}`,
+      JIRA_REDIRECT_URI: `${this.webUrl}/admin/connections`,
+      CONNECTOR_TOKEN_KEY: createHash('sha256').update('growth-os e2e connector token key').digest('base64'),
+    };
   },
   dbEnv: {
     DATABASE_URL: `postgres://me_app:me_app_dev@${host}/${db}`,

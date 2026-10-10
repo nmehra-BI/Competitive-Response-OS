@@ -449,7 +449,7 @@ export async function reconcilePausedWrite(
   let found: ExternalTaskRef | null;
   try {
     found = await deps
-      .connectors({ id: l.connection.id, provider: l.connection.provider })
+      .connectors({ id: l.connection.id, provider: l.connection.provider, tenantId })
       .findByIdempotencyKey(l.msg.idempotency_key);
   } catch (e) {
     if (e instanceof ConnectorError) return { status: 'skipped', reason: `search failed: ${e.kind}` };
@@ -575,7 +575,11 @@ export async function processOutboxMessage(
   const { mode, l, attemptsBefore } = claim.go;
 
   // ---- 2. call the task tool (outside any transaction) ----------------------------------------
-  const connector = deps.connectors({ id: l.connection.id, provider: l.connection.provider });
+  const connector = deps.connectors({
+    id: l.connection.id,
+    provider: l.connection.provider,
+    tenantId: l.msg.tenant_id, // CR-E5-4: the Jira credential is read in this tenant, no probe
+  });
   const payload = l.msg.payload as ExternalTaskInput;
   const input: ExternalTaskInput = { ...payload, idempotencyKey: l.msg.idempotency_key };
   let outcome: Outcome | null = null;
