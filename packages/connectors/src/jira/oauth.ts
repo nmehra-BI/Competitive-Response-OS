@@ -169,3 +169,28 @@ export function normaliseSiteUrl(url: string): string {
     return url.replace(/\/+$/, '').toLowerCase();
   }
 }
+
+/** The account the grant acts as (`/myself`): the dedicated integration account (D-121 §2). */
+export async function integrationAccount(
+  config: JiraConfig,
+  fetchImpl: FetchLike,
+  accessToken: string,
+  cloudId: string,
+): Promise<{ accountId: string; displayName: string | null }> {
+  let res;
+  try {
+    res = await httpRequest(
+      fetchImpl,
+      `${config.apiBaseUrl}/ex/jira/${encodeURIComponent(cloudId)}/rest/api/3/myself`,
+      { method: 'GET', headers: { authorization: `Bearer ${accessToken}` } },
+      config.timeoutMs,
+    );
+  } catch (e) {
+    if (e instanceof JiraTransportError) throw new OAuthUnavailableError();
+    throw e;
+  }
+  if (res.status === 401 || res.status === 403) throw new OAuthGrantError();
+  const b = (res.body ?? {}) as { accountId?: unknown; displayName?: unknown };
+  if (res.status !== 200 || typeof b.accountId !== 'string') throw new OAuthUnavailableError();
+  return { accountId: b.accountId, displayName: typeof b.displayName === 'string' ? b.displayName : null };
+}

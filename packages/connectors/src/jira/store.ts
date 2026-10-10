@@ -306,16 +306,20 @@ export async function resolveConnectionTenant(
     // The API role cannot enumerate tenants (by design); callers there pass the tenant.
     throw new TenantUnresolvedError();
   }
-  for (const tenantId of tenants) {
-    const found = await inTenantTx(db, tenantId, (trx) =>
-      q<{ id: string }>(trx, 'SELECT id FROM platform.connection WHERE id = $1', [connectionId]),
-    );
-    if (found.length) {
-      tenantCache.set(connectionId, tenantId);
-      return tenantId;
+  // One read-only transaction; the tenant context is switched per probe (RLS applies to each).
+  const owner = await db.transaction().execute(async (trx) => {
+    for (const tenantId of tenants) {
+      await q(trx, `SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+      const [hit] = await q<{ id: string }>(trx, 'SELECT id FROM platform.connection WHERE id = $1', [
+        connectionId,
+      ]);
+      if (hit) return tenantId;
     }
-  }
-  throw new TenantUnresolvedError();
+    return null;
+  });
+  if (!owner) throw new TenantUnresolvedError();
+  tenantCache.set(connectionId, owner);
+  return owner;
 }
 
 export function createPgCredentialStore(opts: {

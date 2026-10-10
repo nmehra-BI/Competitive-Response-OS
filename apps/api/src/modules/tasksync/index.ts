@@ -137,6 +137,7 @@ export const taskSyncHandlers: HandlerMap = {
       const connector = createConnectorFactory({ sim: ctx.deps.db })({
         id: s.connection!.id,
         provider: s.connection!.provider,
+        tenantId: ctx.tenantId, // W4-E5: the Jira adapter reads the credential in this tenant
       });
       let connectionStatus: ConnectorStatus = s.connection!.status;
       const problems: Blocker[] = [];
