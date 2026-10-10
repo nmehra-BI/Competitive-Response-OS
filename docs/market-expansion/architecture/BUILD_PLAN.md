@@ -196,7 +196,7 @@ analytics. Times follow the fixture journey moments.
 | 11 | Elena | Reviews › Awaiting: "Approve validation €15k" | Authorizes / does not authorize boxes; approve with rationale → stage Validation; EXP-03 plan locked; `validation_authorized`, `gate_approved` |
 | 12 | Maya | Preview validation tasks → create 5 tasks in Jira (ME-VAL) | Preview shows destination, assignees, permission; then "Confirmed · VAL-1…VAL-5" |
 | 13 | Maya | Amend EXP-03 window to 20 Nov (reason) | Amendment 1; original window struck through as "Original (pre-registered)" |
-| 14 | Maya | Record results 9 interviews / 4 commitments with period and source | Met · 9 of 8; Met · 4 of 4; limitations shown; `experiment_completed` |
+| 14 | Maya | Record results 9 interviews / 4 commitments with period and source | Met · 9 interviews (target 8); Met · 4 commitments (target 4); limitations shown; `experiment_completed` |
 | 15 | Lena | Sign specialist review "pilot only: up to 4 sites, 90 days" | Feasibility row Signed · pilot scope; G2 blocker resolved |
 | 16 | Daniel | Sign finance review (checked / not checked lists) | Finance supports with conditions |
 | 17 | Maya | Prepare G2 package (pilot €120k, 90 days, Jonas owner, stop rules, C1 proposed); submit | Snapshot v3 with fingerprint; dissent section shows Daniel's words; stage Pilot approval pending; `gate_submitted` |

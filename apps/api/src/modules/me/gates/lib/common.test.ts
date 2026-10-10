@@ -47,6 +47,21 @@ describe('snapshot display copy', () => {
         { metricKey: 'a', observedText: '9', result: 'met' },
         { metricKey: 'b', observedText: '—', result: null },
       ]),
-    ).toBe('Met · 9; Too early to read · b');
+    ).toBe('Met · 9 · Too early to read · b');
+  });
+
+  it('reads each result against its pre-registered target, never "9 of 8" (D-152)', () => {
+    expect(
+      resultSummary(
+        [
+          { metricKey: 'completed_interviews', observed: '9', observedText: '9', result: 'met' },
+          { metricKey: 'paid_commitments', observed: '3', observedText: '3', result: 'not_met' },
+        ],
+        [
+          { metric_key: 'completed_interviews', threshold_value: '8.00', unit: 'interviews' },
+          { metric_key: 'paid_commitments', threshold_value: '4', unit: 'commitments' },
+        ],
+      ),
+    ).toBe('Met · 9 interviews (target 8) · Not met · 3 commitments (target 4)');
   });
 });

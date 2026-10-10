@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { expectedDisplay, expectedEconomics, expectedSizing } from '@growth-os/fixtures-aster';
 import {
+  formatAgainstTarget,
   formatContributionK,
   formatCount,
   formatExact,
@@ -50,5 +51,15 @@ describe('display rules render the Aster fixture exactly as the prototype', () =
     expect(formatNotAvailable('finance source unavailable')).toBe(
       'Not available — finance source unavailable',
     );
+  });
+});
+
+describe('results against a pre-registered target (D-152)', () => {
+  it('reads "9 interviews (target 8)", never "9 of 8"', () => {
+    expect(formatAgainstTarget('9', '8', 'interviews')).toBe('9 interviews (target 8)');
+    expect(formatAgainstTarget('4', '4', 'commitments')).toBe('4 commitments (target 4)');
+    expect(formatAgainstTarget('9', '8')).toBe('9 (target 8)');
+    expect(formatAgainstTarget('22', '16', 'hours_per_site')).toBe('22 hours per site (target 16)');
+    expect(formatAgainstTarget('Yes', null, 'text')).toBe('Yes');
   });
 });

@@ -58,7 +58,7 @@ function g2Input(): SnapshotBuildInput {
       {
         experimentId: exp03.id,
         resultVersionId: fid('experiment', 103),
-        summary: 'Met · 9 of 8; Met · 4 of 4',
+        summary: 'Met · 9 interviews (target 8) · Met · 4 commitments (target 4)',
         limitations: exp03.result.limitations,
       },
     ],

@@ -114,7 +114,7 @@ function baseline(): JourneyAudit[] {
       'experiment_result',
       exp03.id,
       1,
-      'Recorded EXP-03 results: Met · 9 of 8, Met · 4 of 4',
+      'Recorded EXP-03 results: Met · 9 interviews (target 8) · Met · 4 commitments (target 4)',
       'experiment.record',
     ),
     base(

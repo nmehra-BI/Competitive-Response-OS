@@ -92,6 +92,15 @@ export function formatExact(amount: string, currency: string): string {
   return `${sign}${symbol(currency)}${group(i)}${f === '00' ? '' : `.${f}`}`;
 }
 
+/**
+ * An observed count against its pre-registered target (UX research §6, "(target 4 of 4)"; D-152):
+ * "9 interviews (target 8)", or "9 (target 8)" without a unit. Never "9 of 8", which reads as a share.
+ */
+export function formatAgainstTarget(observed: string, target: string | null, unit?: string | null): string {
+  const u = unit && unit !== 'text' ? ` ${unit.replace(/_/g, ' ')}` : '';
+  return target === null ? `${observed}${u}` : `${observed}${u} (target ${target})`;
+}
+
 /** "x of y" for threshold ratios: "3 of 4". */
 export function formatOf(x: number, y: number): string {
   return `${x} of ${y}`;

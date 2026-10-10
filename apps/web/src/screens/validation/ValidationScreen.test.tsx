@@ -70,7 +70,7 @@ describe('S09 Validation', () => {
     expect(within(table).getByRole('button', { name: /^Disputed by Daniel Weber/ })).toBeTruthy();
   });
 
-  it('EXP-03: thresholds locked at G1, Amendment 1 with the original struck through, Met · 9 of 8', async () => {
+  it('EXP-03: thresholds locked at G1, Amendment 1 with the original struck through, Met · 9 interviews (target 8)', async () => {
     session.signIn(people.maya.id);
     renderAt('/me/cases/ME-104/validation?experiment=EXP-03');
     const c = await card();
@@ -79,8 +79,8 @@ describe('S09 Validation', () => {
     expect(c.querySelector('del')?.textContent).toBe('19 Oct – 13 Nov');
     expect(c.textContent).toContain('Original (pre-registered)');
     expect(c.textContent).toContain('Amendment 1');
-    expect(c.textContent).toContain('Met · 9 of 8');
-    expect(c.textContent).toContain('Met · 4 of 4');
+    expect(c.textContent).toContain('Met · 9 interviews (target 8)');
+    expect(c.textContent).toContain('Met · 4 commitments (target 4)');
     expect(c.textContent).toContain('20 selected sites are not a random sample.');
     expect(c.textContent).toContain('Prepare G2 pilot request · Maya Rao · 20 Nov');
     expect(await screen.findByText('5 of 5 tasks confirmed in Jira')).toBeTruthy();
@@ -111,9 +111,9 @@ describe('S09 Validation', () => {
     fireEvent.change(within(c).getByLabelText(/Interpretation/), { target: { value: 'Mixed.' } });
     fireEvent.change(within(c).getByLabelText(/Limitations/), { target: { value: 'Not a random sample.' } });
     fireEvent.click(within(c).getByRole('button', { name: 'Record results' }));
-    await waitFor(() => expect(c.textContent).toContain('Met · 9 of 8'));
+    await waitFor(() => expect(c.textContent).toContain('Met · 9 interviews (target 8)'));
     // A failed threshold is shown as such, never hidden.
-    expect(c.textContent).toContain('Not met · 3 of 4');
+    expect(c.textContent).toContain('Not met · 3 commitments (target 4)');
   });
 
   it('validation tasks: preview writes nothing; create shows Sending… then Confirmed with keys', async () => {

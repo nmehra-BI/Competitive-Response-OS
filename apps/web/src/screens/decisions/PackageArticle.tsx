@@ -66,11 +66,14 @@ function Section({ n, title, children }: { n: number; title: string; children: R
 const RESULT_RE = /^(Met|Not met|Inconclusive) · (.+)$/;
 const RESULT_KEY = { Met: 'met', 'Not met': 'not_met', Inconclusive: 'inconclusive' } as const;
 
-/** "Met · 9 interviews (threshold 8) · Met · 4 paid commitments (threshold 4)" → glyph rows. */
+/**
+ * "Met · 9 interviews (target 8) · Met · 4 commitments (target 4)" → glyph rows (D-152). Older
+ * snapshots joined rows with "; ", which also splits.
+ */
 export function splitResultSummary(
   summary: string,
 ): { result: 'met' | 'not_met' | 'inconclusive' | null; text: string }[] {
-  return summary.split(/\s·\s(?=(?:Met|Not met|Inconclusive)\s·)/).map((part) => {
+  return summary.split(/(?:\s·\s|;\s)(?=(?:Met|Not met|Inconclusive|Too early to read)\s·)/).map((part) => {
     const m = RESULT_RE.exec(part.trim());
     return m
       ? { result: RESULT_KEY[m[1] as keyof typeof RESULT_KEY], text: m[2]! }

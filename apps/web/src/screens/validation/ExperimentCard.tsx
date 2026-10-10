@@ -17,7 +17,7 @@ import {
   DataTable,
   Eyebrow,
   formatBudget,
-  formatOf,
+  formatAgainstTarget,
   Icon,
   KindTag,
   Mono,
@@ -74,9 +74,10 @@ function resultCell(m: ExperimentMetric, latest: ExperimentResultVersion | undef
   if (!o || o.result === null) {
     return <ResultGlyph result={e.lifecycle === 'draft' ? 'planned' : 'running'} />;
   }
+  // "Met · 9 interviews (target 8)" (D-152): the observed count against its pre-registered target.
   const extra =
     o.observed !== null && m.thresholdValue !== null
-      ? formatOf(Number(o.observed), Number(m.thresholdValue))
+      ? formatAgainstTarget(String(Number(o.observed)), String(Number(m.thresholdValue)), m.unit)
       : o.observedText;
   return <ResultGlyph result={o.result} extra={extra} />;
 }

@@ -167,8 +167,8 @@ test.describe('S09 Validation', () => {
         'Interviews do not validate conversion or full-market demand. 20 selected sites are not a random sample.',
       );
     await card.getByRole('button', { name: 'Record results' }).click();
-    await expect(card.locator('[data-status="Met"]').first()).toContainText('Met · 9 of 8');
-    await expect(card.locator('[data-status="Met"]').nth(1)).toContainText('Met · 4 of 4');
+    await expect(card.locator('[data-status="Met"]').first()).toContainText('Met · 9 interviews (target 8)');
+    await expect(card.locator('[data-status="Met"]').nth(1)).toContainText('Met · 4 commitments (target 4)');
     await expect(card).toContainText('19 Oct–20 Nov · partner log and signed commitments');
     await expect(card).toContainText('20 selected sites are not a random sample');
     await expect(page.getByRole('heading', { name: 'Next: G2 pilot request' })).toBeVisible();

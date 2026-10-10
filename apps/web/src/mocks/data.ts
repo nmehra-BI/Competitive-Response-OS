@@ -399,7 +399,7 @@ function g2Snapshot(): DecisionSnapshot {
         {
           experimentId: exp03.id,
           resultVersionId: fid('experiment', 103),
-          summary: 'Met · 9 interviews (threshold 8) · Met · 4 paid commitments (threshold 4)',
+          summary: 'Met · 9 interviews (target 8) · Met · 4 commitments (target 4)',
           limitations: exp03.result.limitations,
         },
       ],
@@ -975,7 +975,7 @@ export function activity(): ActivityItem[] {
       id: mockId(3),
       at: J.validationResults,
       actor: P('maya'),
-      title: 'Recorded EXP-03 results: Met · 9 of 8, Met · 4 of 4',
+      title: 'Recorded EXP-03 results: Met · 9 interviews (target 8) · Met · 4 commitments (target 4)',
       detail: 'Experiment result v1',
       keyDecision: false,
       href: '/me/cases/ME-104/validation?experiment=EXP-03',

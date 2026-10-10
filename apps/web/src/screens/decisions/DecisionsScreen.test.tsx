@@ -62,7 +62,7 @@ describe('S10 Decisions · package', () => {
     expect(t).toContain('€120k · approved budget ceiling · one-time pilot spend');
     expect(t).toContain('90 days · 1 Dec 2026 – 28 Feb 2027');
     expect(t).toContain('No entry.');
-    expect(t).toContain('Met · 9 interviews (threshold 8)');
+    expect(t).toContain('Met · 9 interviews (target 8)');
     expect(t).toContain('€0k (break-even)');
     expect(t).toContain('Signed for pilot only: up to 4 sites, 90 days');
     expect(t).toContain('Approved budget ceiling €120k.');

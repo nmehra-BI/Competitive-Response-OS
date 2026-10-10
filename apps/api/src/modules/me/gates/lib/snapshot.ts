@@ -7,6 +7,7 @@
  */
 import { STOP_RULE_CONSEQUENCE_LABELS, type SnapshotContent, type StopRule } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
+import { formatAgainstTarget } from '@growth-os/ui/format';
 import {
   createSnapshot,
   ME_GATES,
@@ -319,11 +320,21 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
         state: 'committed',
       });
       const carried = prev?.validationResults.find((r) => r.resultVersionId === res.id);
+      // The targets the results are read against: the metrics of the plan in force (amendments included).
+      const metrics = carried
+        ? []
+        : await tx
+            .selectFrom('me.experiment_metric as m')
+            .innerJoin('me.experiment_plan_version as p', 'p.id', 'm.plan_version_id')
+            .select(['m.metric_key', 'm.threshold_value', 'm.unit'])
+            .where('p.experiment_id', '=', e.id)
+            .where('p.version', '=', e.current_plan_version)
+            .execute();
       validationResults.push(
         carried ?? {
           experimentId: e.id,
           resultVersionId: res.id,
-          summary: resultSummary(res.observations),
+          summary: resultSummary(res.observations, metrics),
           limitations: res.limitations,
         },
       );
@@ -438,15 +449,34 @@ function defaultAsk(
   }
 }
 
-export function resultSummary(observations: unknown): string {
-  const obs = (observations as { metricKey: string; observedText: string; result: string | null }[]) ?? [];
+/**
+ * Validation results as S10 and the brief read them (D-152): "Met · 9 interviews (target 8) · Met · 4
+ * commitments (target 4)". Rows are joined with " · " so the package splits them into glyph rows; a
+ * metric without a recorded result reads "Too early to read", never a value.
+ */
+export function resultSummary(
+  observations: unknown,
+  metrics: readonly { metric_key: string; threshold_value: string | null; unit: string }[] = [],
+): string {
+  const obs =
+    (observations as {
+      metricKey: string;
+      observed?: string | null;
+      observedText: string;
+      result: string | null;
+    }[]) ?? [];
   return obs
-    .map((o) =>
-      o.result === null
-        ? `Too early to read · ${o.metricKey}`
-        : `${o.result === 'met' ? 'Met' : o.result === 'not_met' ? 'Not met' : 'Inconclusive'} · ${o.observedText}`,
-    )
-    .join('; ');
+    .map((o) => {
+      if (o.result === null) return `Too early to read · ${o.metricKey}`;
+      const label = o.result === 'met' ? 'Met' : o.result === 'not_met' ? 'Not met' : 'Inconclusive';
+      const m = metrics.find((x) => x.metric_key === o.metricKey);
+      const text =
+        m && o.observed != null && m.threshold_value !== null
+          ? formatAgainstTarget(String(Number(o.observed)), String(Number(m.threshold_value)), m.unit)
+          : o.observedText;
+      return `${label} · ${text}`;
+    })
+    .join(' · ');
 }
 
 type SignOff = SnapshotContent['signOffs'][number];

@@ -984,7 +984,7 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
       {
         experimentId: expId,
         resultVersionId: resultId,
-        summary: 'Met · 9 of 8 interviews; Met · 4 of 4 commitments',
+        summary: 'Met · 9 interviews (target 8) · Met · 4 commitments (target 4)',
         limitations: res.limitations,
       },
     ],
@@ -1294,7 +1294,7 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
     [
       'seed.experiment_result',
       'experiment',
-      'EXP-03 results recorded: Met · 9 of 8; Met · 4 of 4',
+      'EXP-03 results recorded: Met · 9 interviews (target 8) · Met · 4 commitments (target 4)',
       res.recordedAt,
     ],
     [

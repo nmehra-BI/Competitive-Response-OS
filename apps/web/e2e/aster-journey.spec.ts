@@ -398,8 +398,8 @@ test('steps 13–16: amend the window, record results, specialist and finance si
       'Interviews do not validate conversion or full-market demand. 20 selected sites are not a random sample.',
     );
   await card.getByRole('button', { name: 'Record results' }).click();
-  await expect(card.locator('[data-status="Met"]').first()).toContainText('Met · 9 of 8');
-  await expect(card.locator('[data-status="Met"]').nth(1)).toContainText('Met · 4 of 4');
+  await expect(card.locator('[data-status="Met"]').first()).toContainText('Met · 9 interviews (target 8)');
+  await expect(card.locator('[data-status="Met"]').nth(1)).toContainText('Met · 4 commitments (target 4)');
   await expect(card).toContainText('20 selected sites are not a random sample');
   expect(await analytics('experiment_completed')).toHaveLength(1);
   await expectAccessible();
