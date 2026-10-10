@@ -79,7 +79,13 @@ describe('LineageDrawer', () => {
     render(
       <MemoryRouter>
         <AppProviders client={createQueryClient()}>
-          <LineageDrawer caseRef="ME-104" model="sizing" nodeKey="sizing.sam.value" onClose={() => {}} />
+          <LineageDrawer
+            caseRef="ME-104"
+            model="sizing"
+            nodeKey="sizing.sam.value"
+            version={2}
+            onClose={() => {}}
+          />
         </AppProviders>
       </MemoryRouter>,
     );
