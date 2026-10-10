@@ -22,7 +22,11 @@ let mock: MockJira;
 
 function jiraEnv() {
   const e = REAL.jiraEnv;
-  return { clientId: e.JIRA_CLIENT_ID, clientSecret: e.JIRA_CLIENT_SECRET, base: new URL(e.JIRA_API_BASE_URL) };
+  return {
+    clientId: e.JIRA_CLIENT_ID,
+    clientSecret: e.JIRA_CLIENT_SECRET,
+    base: new URL(e.JIRA_API_BASE_URL),
+  };
 }
 
 /** Owner SQL in the Aster tenant (RLS applies), for the one setup step the UI has no screen for. */

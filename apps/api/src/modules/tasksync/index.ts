@@ -5,11 +5,7 @@
  * re-checks authorization at send time; this module never calls `createTask`.
  */
 import { randomUUID } from 'node:crypto';
-import {
-  ConnectorError,
-  createConnectorFactory,
-  type ExternalTaskInput,
-} from '@growth-os/connectors';
+import { ConnectorError, createConnectorFactory, type ExternalTaskInput } from '@growth-os/connectors';
 import { API, type Blocker, type ConnectorStatus, type TaskSyncPreview } from '@growth-os/contracts';
 import { sql, type Tx } from '@growth-os/db';
 import { syncMachine, type ApplyResult, type WorkflowFacts } from '@growth-os/domain';

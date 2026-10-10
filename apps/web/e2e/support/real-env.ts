@@ -15,9 +15,7 @@ export const REAL = {
   aiDownApiPort: Number(process.env.E2E_AIDOWN_API_PORT ?? 4711),
   aiDownWebPort: Number(process.env.E2E_AIDOWN_WEB_PORT ?? 5711),
   /** The local mock Jira Cloud server that `real/w4-e5-jira.spec.ts` starts (there is no network to Jira). */
-  jiraMockPort: Number(
-    process.env.E2E_JIRA_PORT ?? Number(process.env.E2E_API_PORT ?? 4710) + 2,
-  ),
+  jiraMockPort: Number(process.env.E2E_JIRA_PORT ?? Number(process.env.E2E_API_PORT ?? 4710) + 2),
   get webUrl() {
     return `http://127.0.0.1:${this.webPort}`;
   },

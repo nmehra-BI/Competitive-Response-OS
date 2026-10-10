@@ -6,14 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EconomicsOutput, SizingOutput, ThesisFields } from '@growth-os/contracts';
 import { ECONOMICS_ENGINE_VERSION, SIZING_ENGINE_VERSION } from '@growth-os/domain';
-import {
-  expectedSizing,
-  gates,
-  mandate as md21,
-  people,
-  sources,
-  thesisV1,
-} from '@growth-os/fixtures-aster';
+import { expectedSizing, gates, mandate as md21, people, sources, thesisV1 } from '@growth-os/fixtures-aster';
 import { createDb, sql, withTenant, type Db } from '../src';
 import { AlreadySeededError, randomRemap, seedAster, type SeedResult } from '../src/seed';
 import { economicsGoldenMismatches, sizingGoldenMismatches } from '../src/seed/outputs';
@@ -279,7 +272,11 @@ describe('aster-demo', () => {
       expect(t.claimIds).toEqual([]);
       // Linked assumptions resolve in this tenant (ids remapped like every other row).
       const linked = t.reasonsToWin.map((r) => r.linkedAssumptionId!);
-      const found = await tx.selectFrom('platform.assumption').select('id').where('id', 'in', linked).execute();
+      const found = await tx
+        .selectFrom('platform.assumption')
+        .select('id')
+        .where('id', 'in', linked)
+        .execute();
       expect(found).toHaveLength(3);
     });
     // aster-start has no ME-104, so no thesis.

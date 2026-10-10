@@ -471,7 +471,7 @@ export function resultSummary(
       const label = o.result === 'met' ? 'Met' : o.result === 'not_met' ? 'Not met' : 'Inconclusive';
       const m = metrics.find((x) => x.metric_key === o.metricKey);
       const text =
-        m && o.observed != null && m.threshold_value !== null
+        m && o.observed !== null && o.observed !== undefined && m.threshold_value !== null
           ? formatAgainstTarget(String(Number(o.observed)), String(Number(m.threshold_value)), m.unit)
           : o.observedText;
       return `${label} · ${text}`;
