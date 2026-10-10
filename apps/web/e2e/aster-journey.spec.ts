@@ -521,8 +521,15 @@ test('steps 17–18: Maya prepares and submits G2; the package carries dissent; 
   await form
     .getByLabel('What this does not authorize')
     .fill('Not market entry\nNot scale\nNot prospect outreach\nNot spend above €120k');
-  // Pre-registered pilot thresholds (D-102): frozen with the first G2 snapshot.
+  // Pre-registered pilot thresholds (D-102), each with its measure type (D-115): frozen with the first
+  // G2 snapshot. G3 reads the Demand type, never the name.
+  const measureTypes: Record<string, string> = {
+    'Paid use and continuation': 'demand',
+    'Deployment effort per site': 'delivery_effort',
+    'Buyer fit': 'buyer_fit',
+  };
   for (const t of PILOT_THRESHOLDS) {
+    await form.getByLabel('Measure type').selectOption(measureTypes[t.name]!);
     await form.getByLabel('Measure', { exact: true }).fill(t.name);
     await form.getByLabel(/^Threshold \(as written/).fill(t.text);
     await form.getByLabel('Rule').selectOption(t.operator);
@@ -532,6 +539,18 @@ test('steps 17–18: Maya prepares and submits G2; the package carries dissent; 
     await form.getByRole('button', { name: 'Add threshold' }).click();
   }
   await expect(form.getByRole('list', { name: 'Pilot thresholds' }).getByRole('listitem')).toHaveCount(3);
+  // Stop rules pre-registered with the request (D-112): trigger, consequence and owner.
+  await form.getByLabel('Stop rule trigger').fill('Spend would exceed the approved €120k ceiling');
+  await form.getByLabel('Consequence').selectOption('pause_and_request_review');
+  await form.getByLabel('Stop rule owner').selectOption({ label: 'Jonas Klein' });
+  await form.getByRole('button', { name: 'Add stop rule' }).click();
+  await form.getByLabel('Trigger kind').selectOption('threshold');
+  await form.getByLabel('Watched threshold').selectOption({ label: 'Paid use and continuation' });
+  await form.getByLabel('Stop rule trigger').fill('Fewer than 2 of 4 pilot customers in paid use at day 45');
+  await form.getByLabel('Consequence').selectOption('recommend_stop');
+  await form.getByLabel('Stop rule owner').selectOption({ label: 'Jonas Klein' });
+  await form.getByRole('button', { name: 'Add stop rule' }).click();
+  await expect(form.getByRole('list', { name: 'Stop rules' }).getByRole('listitem')).toHaveCount(2);
   await form
     .getByLabel('Condition', { exact: true })
     .fill('Pilot limited to 4 sites as signed by the specialist');
@@ -567,6 +586,25 @@ test('steps 17–18: Maya prepares and submits G2; the package carries dissent; 
     'Deployment effort per site',
     'Paid use and continuation',
   ]);
+  // D-115: the measure types are stored with the thresholds and frozen into the snapshot.
+  const typed = await sqlRows<{ measure_type: string }>(
+    `SELECT measure_type FROM platform.outcome_target WHERE snapshot_id = $1 ORDER BY metric_key`,
+    [snaps[0]!.id],
+  );
+  expect(typed.map((t) => t.measure_type)).toEqual(['buyer_fit', 'delivery_effort', 'demand']);
+  // D-112: the stop rules are frozen into the first G2 snapshot and listed in the package.
+  const [frozen] = await sqlRows<{ rules: { key: string; consequence: string }[] }>(
+    `SELECT content->'stopRules' AS rules FROM platform.decision_snapshot WHERE id = $1`,
+    [snaps[0]!.id],
+  );
+  expect(frozen!.rules.map((r) => [r.key, r.consequence])).toEqual([
+    ['SR1', 'pause_and_request_review'],
+    ['SR2', 'recommend_stop'],
+  ]);
+  await expect(pkg).toContainText(
+    'SR2 · Fewer than 2 of 4 pilot customers in paid use at day 45 → Recommend stop · owner Jonas Klein',
+  );
+  await expect(pkg).toContainText('G2 · Snapshot v2');
   expect((await analytics('gate_submitted')).map((e) => e.props)).toContainEqual(
     expect.objectContaining({ gate: 'G2' }),
   );
@@ -633,7 +671,10 @@ test('steps 19–20: a Base adoption change makes v2 stale; refresh creates v3; 
   // 20 · Elena approves "Approve pilot €120k · 90 days" on v3 with C1 (blocks) and C2 (monitor).
   await loginAs('elena', `${CASE}/decisions?gate=G2`);
   await settled(page);
-  await expect(page.getByRole('article', { name: 'Decision package' })).toContainText('Snapshot v3');
+  await expect(page.getByRole('article', { name: 'Decision package' })).toContainText('G2 · Snapshot v3');
+  // D-109: the panel names the decided ceiling ("Your authority: up to €150k · BU Water").
+  await expect(panel).toContainText('Your authority');
+  await expect(panel).toContainText('Up to €150k · BU Water');
   await panel.getByRole('button', { name: G2_LABEL }).click();
   await panel
     .getByLabel(/Rationale/)
@@ -646,7 +687,14 @@ test('steps 19–20: a Base adoption change makes v2 stale; refresh creates v3; 
   await panel.getByRole('button', { name: G2_LABEL }).click();
   await expect(panel).toContainText(/Approved with conditions · 2 conditions/);
   await expect(panel).toContainText('Pilot approved for v3 only');
-  await expect(panel).toContainText(/If unused by \d{1,2} Dec 2026/);
+  // D-109 §4: an unused G2 approval expires 30 days after the decision.
+  const [exp] = await sqlRows<{ days: number; until: string }>(
+    `SELECT EXTRACT(EPOCH FROM (expires_at - decided_at)) / 86400 AS days,
+            to_char(expires_at AT TIME ZONE 'Europe/Berlin', 'FMDD Mon YYYY') AS until
+       FROM platform.gate_request WHERE gate_code = 'G2'`,
+  );
+  expect(Number(exp!.days)).toBe(30);
+  await expect(panel).toContainText(`If unused by ${exp!.until}`);
   await expect(page.getByRole('region', { name: 'Case header' })).toContainText('Pilot approved');
   const conditions = page.getByRole('region', { name: /Conditions/ });
   await expect(conditions).toContainText('Blocks execution until met');
@@ -821,6 +869,8 @@ test('steps 25–28: actuals, recommendation, decision and extension; scale stay
   await loginAs('maya', OUTCOMES);
   await settled(page);
   await page.getByRole('button', { name: 'Request extension €[cap]' }).click();
+  // D-110: the form states the rule applied to the €120k · 90-day pilot.
+  await expect(page.getByText(/Up to €30k \(25% of €120k\) · up to 45 days/)).toBeVisible();
   await page.getByPlaceholder('€[cap]').fill('30000');
   await page.getByPlaceholder('[duration] days').fill('45');
   await page.getByRole('button', { name: 'Submit extension request €30k' }).click();
@@ -830,12 +880,21 @@ test('steps 25–28: actuals, recommendation, decision and extension; scale stay
     `SELECT status, requested_amount, duration_days FROM platform.gate_request WHERE gate_code = 'X'`,
   );
   expect(x1).toEqual({ status: 'awaiting_decision', requested_amount: '30000.00', duration_days: 45 });
+  // X1 is approvable by Elena (€120k + €30k = her €150k pilot ceiling) and stays awaiting here.
+  await loginAs('elena', `${CASE}/decisions?gate=X`);
+  await settled(page);
+  const xPanel = page.getByRole('complementary', { name: 'Approval panel' });
+  await expect(xPanel.getByRole('button', { name: 'Approve extension €30k · 45 days' })).toBeEnabled();
+  await expect(page.getByRole('article', { name: 'Decision package' })).toContainText('X · Snapshot v');
+  await loginAs('maya', OUTCOMES);
+  await settled(page);
 
   // 28 · "Request scale approval" is disabled with all four unmet G3 preconditions (D-039, PQ-1).
   await expect(page.getByRole('button', { name: 'Request scale approval' })).toBeDisabled();
+  // D-111: all four blockers; the fourth names the committed one-time investment (never a /year figure).
   await expect(
     page.getByText(
-      'G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget stated',
+      /^G3 preconditions unmet: demand threshold 3 of 4 \(4 of 4 required\); specialist scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget requested · economics v\d+ carries €400k one-time scale-entry investment$/,
     ),
   ).toBeVisible();
   const g3 = await apiCall<{ code: string; blockers: { key: string }[] }>(
@@ -864,7 +923,12 @@ test('steps 25–28: actuals, recommendation, decision and extension; scale stay
   );
   expect(g3.status).toBe(409);
   expect(g3.json.code).toBe('PRECONDITIONS_UNMET');
-  expect(g3.json.blockers).toHaveLength(4);
+  expect(g3.json.blockers.map((b) => b.key)).toEqual([
+    'pilot_actuals_vs_thresholds',
+    'readiness_reassessment',
+    'updated_economics_and_capacity',
+    'approved_scale_budget',
+  ]);
   await expectAccessible();
 });
 
@@ -881,6 +945,18 @@ test('steps 29–30: administration shows the authority gap and cannot approve; 
   await expect(
     authority.getByRole('cell', { name: 'No G3 approver in BU Water · Authority gap' }),
   ).toBeVisible();
+  await expect(
+    authority.getByRole('cell', { name: /DoA-2026-01 · BU Water · illustrative/ }).first(),
+  ).toBeVisible();
+  // D-109 §5: the committee is named, but no G3 grant exists — the gap stays visible.
+  const committee = page.getByRole('table', { name: 'Investment committee' });
+  for (const n of ['Elena Fischer', 'Katrin Vogel', 'Thomas Berger'])
+    await expect(committee).toContainText(n);
+  await expect(page.getByText('Committee named · G3 authority not granted').first()).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Licences' })).toContainText(
+    'Not confirmed in writing · metadata only',
+  );
+  await expect(page.getByText('Live analysis · Off')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Diagnostics' })).toContainText(
     'Traces show structured outputs and tool events, not hidden reasoning.',
   );

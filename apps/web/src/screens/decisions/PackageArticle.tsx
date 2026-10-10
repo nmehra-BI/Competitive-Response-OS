@@ -10,6 +10,8 @@ import {
   type GateCode,
   type PersonRef,
   type Scenario,
+  MEASURE_TYPE_LABELS,
+  snapshotLabel,
 } from '@growth-os/contracts';
 import {
   ConditionItem,
@@ -137,7 +139,7 @@ export function PackageArticle({
     <article ref={ref} aria-label="Decision package" className="ws8c-package">
       <div className="ws8c-package__sheet">
         <div className="ws8c-package__meta">
-          Decision package <Mono>{caseKey}</Mono> · {c.gateCode} · Snapshot v{s.version} ·{' '}
+          Decision package <Mono>{caseKey}</Mono> · {snapshotLabel(c.gateCode, s.version)} ·{' '}
           <Mono>{s.fingerprint}</Mono>
           <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
             <Icon name="lock" size={12} />
@@ -215,6 +217,7 @@ export function PackageArticle({
                 <dd>
                   {c.outcomeTargets.map((t) => (
                     <div key={t.metricKey}>
+                      {t.measureType ? `${MEASURE_TYPE_LABELS[t.measureType]} · ` : ''}
                       {t.name}: {t.thresholdText} · {t.window}
                     </div>
                   ))}

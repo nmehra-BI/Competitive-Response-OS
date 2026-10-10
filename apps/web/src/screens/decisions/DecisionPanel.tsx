@@ -48,6 +48,9 @@ export function decidedNote(pkg: DecisionPackageView): string | null {
   const req = pkg.gateRequest;
   const v = pkg.snapshot.version;
   if (req.status === 'withdrawn') return `v${v} was withdrawn by its author. Nothing can be decided on it.`;
+  // A committee request waits for its quorum (D-109 §3): seat decisions are shown in the seat list and
+  // each remaining seat holder still decides; the server says who already did.
+  if (req.status === 'awaiting_decision' && pkg.panel.committee) return null;
   // Only decisions on the snapshot on screen count (an earlier version's decision is history).
   const onSnapshot = pkg.approvals.filter((x) => x.snapshotId === pkg.snapshot.id);
   const a = onSnapshot.find((x) => x.disposition !== 'abstain') ?? onSnapshot[0];

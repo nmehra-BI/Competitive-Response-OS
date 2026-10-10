@@ -245,6 +245,7 @@ function OutcomesView({
         <ExtensionForm
           caseKey={caseKey}
           parentGateId={parentGateId}
+          limits={v.extensionLimits ?? null}
           people={people}
           defaultOwner={v.rows.find((r) => r.latest)?.latest?.recordedBy.id ?? null}
           onCancel={() => setExtOpen(false)}
@@ -277,6 +278,18 @@ function OutcomesView({
           <p className="ws8d-muted">
             A new authorization with its own cap. The original scale gate stays blocked.
           </p>
+          {xr ? (
+            <div className="ws8d-row">
+              <span className="ws8d-note">The approver’s action reads “{xr.buttonLabel}”.</span>
+              <Button
+                variant="ghost"
+                icon="arrowr"
+                href={`/me/cases/${encodeURIComponent(caseKey)}/decisions?gate=X`}
+              >
+                Open {xr.key} in Decisions
+              </Button>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -951,6 +964,7 @@ function RecommendationForm({ caseKey, v }: { caseKey: string; v: View }) {
 function ExtensionForm({
   caseKey,
   parentGateId,
+  limits,
   people,
   defaultOwner,
   onCancel,
@@ -958,6 +972,8 @@ function ExtensionForm({
 }: {
   caseKey: string;
   parentGateId: string;
+  /** D-110 §1: the rule applied to the approved pilot ("Up to €30k (25% of €120k) · up to 45 days"). */
+  limits: NonNullable<OutcomeReviewView['extensionLimits']> | null;
   people: PersonRef[];
   defaultOwner: string | null;
   onCancel: () => void;
@@ -977,14 +993,21 @@ function ExtensionForm({
   // can be submitted, never approved, until the PM states them. A stated cap must be positive.
   const capOk = capText.trim() === '' || (DECIMAL.test(capText.trim()) && Number(capText) > 0);
   const daysOk = days.trim() === '' || (/^\d+$/.test(days.trim()) && Number(days) > 0);
-  const ready = capOk && daysOk && !!owner && chosen.length > 0;
+  // The server enforces the rule; the form says it before submitting (one-time pilot money only).
+  const overCap = !!limits && capOk && capText.trim() !== '' && Number(capText) > Number(limits.maxAmount);
+  const overDays =
+    !!limits?.maxDurationDays && daysOk && days.trim() !== '' && Number(days) > limits.maxDurationDays;
+  const underDays = !!limits && daysOk && days.trim() !== '' && Number(days) < limits.minDurationDays;
+  const ready = capOk && daysOk && !overCap && !overDays && !underDays && !!owner && chosen.length > 0;
   const reason = !capOk
     ? 'Enter a positive spend cap, or leave it empty for the €[cap] placeholder.'
     : !daysOk
       ? 'Enter the duration in whole days, or leave it empty for the placeholder.'
-      : !owner
-        ? 'Choose an accountable owner.'
-        : 'Choose at least one scope item.';
+      : overCap || overDays || underDays
+        ? `Outside the extension rule: ${limits!.text}${underDays ? `; at least ${limits!.minDurationDays} days` : ''}.`
+        : !owner
+          ? 'Choose an accountable owner.'
+          : 'Choose at least one scope item.';
   const submit = async () => {
     setErr(null);
     try {
@@ -1013,9 +1036,16 @@ function ExtensionForm({
         <Field
           label="Spend cap (EUR, required)"
           hint={
-            <span style={{ color: 'var(--warning-fg)', fontSize: 12 }}>
-              Placeholder · confirm with PM. The PRD sets no amount.
-            </span>
+            limits ? (
+              <span style={{ fontSize: 12 }}>
+                {limits.text} · one extension per pilot ({limits.extensionsUsed} of {limits.extensionsAllowed}{' '}
+                used)
+              </span>
+            ) : (
+              <span style={{ color: 'var(--warning-fg)', fontSize: 12 }}>
+                Placeholder · confirm with PM. The PRD sets no amount.
+              </span>
+            )
           }
         >
           <input
@@ -1055,7 +1085,12 @@ function ExtensionForm({
       </fieldset>
       <AuthBoxes
         authorizes={['Extension work within €[cap] and the chosen scope', 'The existing 4 pilot sites']}
-        doesNotAuthorize={['Not scale', 'No new sites without a new gate', 'Does not unblock G3']}
+        doesNotAuthorize={[
+          'Not scale',
+          'No new sites without a new gate',
+          'No prospect outreach',
+          'Does not unblock G3',
+        ]}
       />
       {err ? <ProblemBanner error={err} /> : null}
       <div className="ws8d-row">

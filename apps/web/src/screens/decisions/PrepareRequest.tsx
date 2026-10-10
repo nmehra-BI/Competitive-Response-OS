@@ -1,16 +1,24 @@
 /**
  * Preparing a G2 request (acceptance step 17): the case owner states the scope (budget, duration,
- * sites, owner), what it authorizes and does not, and proposes conditions; then submits. Submit
+ * sites, owner), what it authorizes and does not, the pre-registered thresholds with their measure type
+ * (D-115) and stop rules (trigger, consequence, owner; D-112), and proposes conditions; then submits. Submit
  * checks the deterministic preconditions and freezes a hashed snapshot. The package itself is
  * assembled from committed versions by the server, never typed here.
  */
 import {
   API,
   GATE_STATUS_LABELS,
+  MEASURE_TYPE_LABELS,
+  MeasureType,
+  STOP_RULE_CONSEQUENCE_LABELS,
+  STOP_RULE_TRIGGER_KIND_LABELS,
+  StopRuleConsequence,
+  StopRuleTriggerKind,
   type ConditionInput,
   type GateRequest,
   type OutcomeTargetInput,
   type PersonRef,
+  type StopRuleInput,
 } from '@growth-os/contracts';
 import {
   AuthBoxes,
@@ -50,6 +58,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
   const [notAuthorizes, setNotAuthorizes] = useState('');
   const [conditions, setConditions] = useState<ConditionInput[]>([]);
   const [targets, setTargets] = useState<OutcomeTargetInput[]>([]);
+  const [stopRules, setStopRules] = useState<StopRuleInput[]>([]);
   const create = useCommand(API.gates.createRequest);
   const missing = [
     !amount && 'budget',
@@ -57,6 +66,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
     !owner && 'pilot owner',
     !lines(authorizes).length && 'what this authorizes',
     !lines(notAuthorizes).length && 'what this does not authorize',
+    !stopRules.length && 'at least one stop rule',
   ].filter(Boolean) as string[];
   return (
     <form
@@ -72,6 +82,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
             parentGateRequestId: null,
             proposedConditions: conditions,
             outcomeTargets: targets,
+            stopRules,
             scope: {
               amount: Number(amount).toFixed(2),
               currency: 'EUR',
@@ -127,6 +138,7 @@ export function PrepareG2Form({ caseKey, people }: { caseKey: string; people: Pe
           rows={3}
         />
         <ThresholdList value={targets} onChange={setTargets} />
+        <StopRuleList people={people} targets={targets} value={stopRules} onChange={setStopRules} />
         <ConditionList people={people} value={conditions} onChange={setConditions} />
         {create.error ? <ProblemBanner error={create.error} /> : null}
         <div className="ws8c-row">
@@ -176,10 +188,11 @@ function ThresholdList({
   const [num, setNum] = useState('');
   const [unit, setUnit] = useState('');
   const [windowText, setWindowText] = useState('');
+  const [measureType, setMeasureType] = useState<OutcomeTargetInput['measureType'] | ''>('');
   const base = useId();
   const numOk = num === '' || /^\d+(\.\d+)?$/.test(num);
   const add = () => {
-    if (!name.trim() || !text.trim() || !numOk) return;
+    if (!name.trim() || !text.trim() || !numOk || !measureType) return;
     onChange([
       ...value,
       {
@@ -190,8 +203,10 @@ function ThresholdList({
         thresholdValue: operator === 'qualitative' || num === '' ? null : num,
         unit: unit.trim() || (operator === 'qualitative' ? 'text' : 'count'),
         windowText: windowText.trim() || 'Pilot window',
+        measureType,
       },
     ]);
+    setMeasureType('');
     setName('');
     setText('');
     setNum('');
@@ -208,6 +223,7 @@ function ThresholdList({
         <ul className="gos-list-plain ws8c-stack" style={{ marginBottom: 8 }} aria-label="Pilot thresholds">
           {value.map((t, i) => (
             <li key={t.metricKey} className="ws8c-row">
+              <span className="ws8c-muted">{t.measureType ? MEASURE_TYPE_LABELS[t.measureType] : ''} ·</span>
               <b style={{ fontWeight: 600 }}>{t.name}</b> {t.thresholdText}
               <span className="ws8c-muted">· {t.windowText}</span>
               <button
@@ -223,6 +239,23 @@ function ThresholdList({
         </ul>
       ) : null}
       <div className="ws8c-form__grid">
+        <label className="gos-field" htmlFor={`${base}-mt`}>
+          Measure type
+          <select
+            id={`${base}-mt`}
+            className="gos-select"
+            required
+            value={measureType ?? ''}
+            onChange={(e) => setMeasureType(e.target.value as OutcomeTargetInput['measureType'] | '')}
+          >
+            <option value="">Choose…</option>
+            {MeasureType.options.map((m) => (
+              <option key={m} value={m}>
+                {MEASURE_TYPE_LABELS[m]}
+              </option>
+            ))}
+          </select>
+        </label>
         <Field label="Measure" value={name} onChange={setName} />
         <Field
           label="Threshold"
@@ -267,10 +300,166 @@ function ThresholdList({
           variant="secondary"
           icon="plus"
           onClick={add}
-          disabled={!name.trim() || !text.trim() || !numOk}
-          disabledReason="Name the measure and its threshold first."
+          disabled={!name.trim() || !text.trim() || !numOk || !measureType}
+          disabledReason="Choose the measure type, then name the measure and its threshold."
         >
           Add threshold
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Stop rules pre-registered with the G2 request (D-112, CR-PD-5): trigger, consequence and owner. They
+ * are frozen into the first snapshot like the thresholds; a change is a new request, never a silent
+ * edit (never-rule 12). A tripped rule asks the sponsor to review; it never acts alone (never-rule 7).
+ */
+function StopRuleList({
+  people,
+  targets,
+  value,
+  onChange,
+}: {
+  people: PersonRef[];
+  targets: OutcomeTargetInput[];
+  value: StopRuleInput[];
+  onChange: (v: StopRuleInput[]) => void;
+}) {
+  const base = useId();
+  const [kind, setKind] = useState<StopRuleInput['trigger']['kind']>('event');
+  const [metricKey, setMetricKey] = useState('');
+  const [text, setText] = useState('');
+  const [consequence, setConsequence] = useState<StopRuleInput['consequence']>('pause_and_request_review');
+  const [ownerId, setOwnerId] = useState(people[0]?.id ?? '');
+  const watched = kind === 'threshold' ? targets.find((t) => t.metricKey === metricKey) : undefined;
+  const ready = !!text.trim() && !!ownerId && (kind === 'event' || !!watched);
+  return (
+    <fieldset className="gos-field" style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend style={{ marginBottom: 6 }}>
+        Stop rules · pre-registered{' '}
+        <span className="gos-field__hint">
+          (a tripped rule asks the sponsor to review; it never acts alone)
+        </span>
+      </legend>
+      {value.length ? (
+        <ul className="gos-list-plain ws8c-stack" style={{ marginBottom: 8 }} aria-label="Stop rules">
+          {value.map((r, i) => (
+            <li key={`${r.trigger.text}-${i}`} className="ws8c-row">
+              <b style={{ fontWeight: 600 }}>SR{i + 1}</b> {r.trigger.text}
+              <span className="ws8c-muted">
+                → {STOP_RULE_CONSEQUENCE_LABELS[r.consequence]} · owner{' '}
+                {people.find((p) => p.id === r.ownerId)?.displayName ?? '—'}
+              </span>
+              <button
+                type="button"
+                className="gos-ibtn"
+                aria-label={`Remove stop rule SR${i + 1}: ${r.trigger.text}`}
+                onClick={() => onChange(value.filter((_, j) => j !== i))}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="ws8c-form__grid">
+        <label className="gos-field" htmlFor={`${base}-k`}>
+          Trigger kind
+          <select
+            id={`${base}-k`}
+            className="gos-select"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as StopRuleInput['trigger']['kind'])}
+          >
+            {StopRuleTriggerKind.options.map((k) => (
+              <option key={k} value={k}>
+                {STOP_RULE_TRIGGER_KIND_LABELS[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {kind === 'threshold' ? (
+          <label className="gos-field" htmlFor={`${base}-m`}>
+            Watched threshold
+            <select
+              id={`${base}-m`}
+              className="gos-select"
+              value={metricKey}
+              onChange={(e) => setMetricKey(e.target.value)}
+            >
+              <option value="">Choose…</option>
+              {targets.map((t) => (
+                <option key={t.metricKey} value={t.metricKey}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <Field
+        label="Stop rule trigger"
+        hint="e.g. fewer than 2 of 4 in paid use at day 45"
+        value={text}
+        onChange={setText}
+      />
+      <div className="ws8c-form__grid">
+        <label className="gos-field" htmlFor={`${base}-c`}>
+          Consequence
+          <select
+            id={`${base}-c`}
+            className="gos-select"
+            value={consequence}
+            onChange={(e) => setConsequence(e.target.value as StopRuleInput['consequence'])}
+          >
+            {StopRuleConsequence.options.map((c) => (
+              <option key={c} value={c}>
+                {STOP_RULE_CONSEQUENCE_LABELS[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="gos-field" htmlFor={`${base}-o`}>
+          Stop rule owner
+          <select
+            id={`${base}-o`}
+            className="gos-select"
+            value={ownerId}
+            onChange={(e) => setOwnerId(e.target.value)}
+          >
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div>
+        <Button
+          variant="secondary"
+          icon="plus"
+          disabled={!ready}
+          disabledReason={
+            kind === 'threshold' && !watched
+              ? 'Choose the pre-registered threshold the rule watches.'
+              : 'Describe the trigger and name the owner first.'
+          }
+          onClick={() => {
+            onChange([
+              ...value,
+              {
+                trigger: { kind, metricKey: kind === 'threshold' ? metricKey : null, text: text.trim() },
+                consequence,
+                ownerId,
+              },
+            ]);
+            setText('');
+            setMetricKey('');
+          }}
+        >
+          Add stop rule
         </Button>
       </div>
     </fieldset>

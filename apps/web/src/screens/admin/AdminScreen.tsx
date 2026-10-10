@@ -1,6 +1,7 @@
 /**
- * S14 Administration (prototype Admin.dc.html): delegated authority with €[limit] placeholders and
- * the authority gap, roles, gate policies, source entitlements, connections (Connected / Expired /
+ * S14 Administration (prototype Admin.dc.html): delegated authority from the Finance-signed DoA with
+ * the decided D-109 ceilings and the authority gap, the investment committee, licences with written
+ * rights, the live-analysis setting, roles, gate policies, source entitlements, connections (Connected / Expired /
  * Missing permission / Unavailable) with test and reconnect, run budget, and Diagnostics — the only
  * place that uses infrastructure terms. Administrators configure; they never approve gates.
  *
@@ -40,9 +41,15 @@ import { useApiQuery, useCommand } from '../../lib/query';
 import { useViewer } from '../../lib/session';
 import { fmtDateTime, fmtTime } from '../history/dates';
 import '../history/ws8d.css';
+import { CommitteeSection } from './CommitteeSection';
+import { LicencesSection } from './LicencesSection';
+import { LiveAnalysisSection } from './LiveAnalysisSection';
 
 const SECTIONS = [
   { id: 'authority', label: 'Roles and authority' },
+  { id: 'committee', label: 'Investment committee' },
+  { id: 'licences', label: 'Licences' },
+  { id: 'live-analysis', label: 'Live analysis' },
   { id: 'policies', label: 'Gate policies' },
   { id: 'entitlements', label: 'Source entitlements' },
   { id: 'connections', label: 'Connections' },
@@ -86,6 +93,8 @@ const PRECONDITION_LABELS: Record<string, string> = {
   parent_gate_reviewed: 'Parent gate reviewed',
   extension_cap_set: 'Extension cap set',
   accountable_owner: 'Accountable owner',
+  extension_within_rule: 'Within the extension rule',
+  one_extension_per_parent: 'One extension per pilot',
 };
 
 const OTHERS_SEE: Record<EntitlementAccess, string> = {
@@ -176,6 +185,9 @@ function AdminBody({ illustrative }: { illustrative: boolean }) {
         ))}
       </nav>
       <AuthoritySection illustrative={illustrative} />
+      <CommitteeSection />
+      <LicencesSection />
+      <LiveAnalysisSection />
       <RolesSection illustrative={illustrative} />
       <PoliciesSection />
       <EntitlementsSection />
@@ -213,20 +225,22 @@ function Loading({ q, children }: { q: { isPending: boolean; error: unknown }; c
 
 function ceilingText(g: Pick<AuthorityGrant, 'ceilingAmount' | 'currency'>, illustrative: boolean) {
   if (g.ceilingAmount === null) return 'No spend';
-  // Aster ceilings are policy placeholders: never display them as company policy.
-  return illustrative || !g.currency
-    ? 'up to €[limit]'
-    : `up to ${formatBudget(g.ceilingAmount, g.currency)}`;
+  if (!g.currency) return 'up to €[limit]';
+  // D-109: the decided default matrix. In an illustrative workspace the values are labelled as such.
+  return `up to ${formatBudget(g.ceilingAmount, g.currency)}${illustrative ? ' · illustrative' : ''}`;
 }
 
 function AuthoritySection({ illustrative }: { illustrative: boolean }) {
   const q = useApiQuery(API.admin.authority);
+  const committee = useApiQuery(API.admin.committee);
   const names = useNames();
+  const committeeNamed = (bu: string | null) =>
+    (committee.data?.gaps ?? []).find((g) => g.businessUnitId === bu && g.seat === null)?.message ?? null;
   return (
     <Section
       id="authority"
       title="Delegated authority"
-      subtitle="Gate × business unit × ceiling. Ceilings are policy placeholders; the PRD sets none."
+      subtitle="Gate × business unit × ceiling, from the Finance-signed delegation of authority (DoA). One-time EUR per request; grants run 12 months unless the DoA says otherwise."
     >
       <Loading q={q}>
         {() => {
@@ -288,7 +302,7 @@ function AuthoritySection({ illustrative }: { illustrative: boolean }) {
                             <span style={{ color: 'var(--warning-fg)', display: 'inline-flex' }}>
                               <Icon name="alert" size={14} />
                             </span>
-                            No approver above €[limit]
+                            No approver with authority
                           </span>
                         ),
                     },
@@ -298,21 +312,49 @@ function AuthoritySection({ illustrative }: { illustrative: boolean }) {
                       cell: (r) => (
                         <span style={{ whiteSpace: 'nowrap' }}>
                           <Mono size={12.5} strong>
-                            {r.grant ? ceilingText(r.grant, illustrative) : 'above €[limit]'}
+                            {r.grant ? ceilingText(r.grant, illustrative) : '—'}
                           </Mono>
                         </span>
                       ),
                     },
                     {
+                      key: 'doa',
+                      header: 'DoA reference',
+                      cell: (r) =>
+                        r.grant ? (
+                          <span>
+                            {r.grant.doaReference ? <Mono size={12}>{r.grant.doaReference}</Mono> : '—'}
+                            <span className="ws8d-sub">
+                              {' · '}
+                              {r.grant.validTo ? `until ${r.grant.validTo}` : 'open-ended'}
+                            </span>
+                          </span>
+                        ) : (
+                          '—'
+                        ),
+                    },
+                    {
                       key: 'notes',
                       header: 'Notes',
                       cell: (r) =>
-                        r.gap ??
-                        (r.gate === 'G0'
-                          ? 'Sponsor approves scope'
-                          : r.gate === 'G2'
-                            ? 'Finance and specialist sign-offs required'
-                            : 'Case owner cannot self-approve'),
+                        r.gap ? (
+                          r.gate === 'G3' && committeeNamed(r.bu) ? (
+                            <span>
+                              {r.gap}
+                              <span className="ws8d-sub"> · {committeeNamed(r.bu)}</span>
+                            </span>
+                          ) : (
+                            r.gap
+                          )
+                        ) : r.gate === 'G0' ? (
+                          'Sponsor approves scope'
+                        ) : r.gate === 'G2' ? (
+                          'Finance and specialist sign-offs required'
+                        ) : r.gate === 'X' ? (
+                          'Pilot plus extensions within the sponsor’s pilot ceiling'
+                        ) : (
+                          'Case owner cannot self-approve'
+                        ),
                     },
                   ]}
                 />
