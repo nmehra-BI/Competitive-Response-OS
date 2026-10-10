@@ -251,7 +251,15 @@ a.gos-link:hover {
   vertical-align: 1px;
   text-decoration: none;
   box-sizing: border-box;
+  /* A long source title never widens its container (S03 detail panel overflowed by 4px at 1440px). */
+  max-width: 100%;
+  min-width: 0;
   transition: border-color var(--motion-fast);
+}
+.gos-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 a.gos-chip:hover {
   border-color: var(--border-control);

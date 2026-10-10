@@ -46,6 +46,7 @@ export interface UiLinkProps {
   children: ReactNode;
   'aria-label'?: string;
   'aria-current'?: 'page' | 'true' | undefined;
+  title?: string;
   style?: CSSProperties;
 }
 export type UiLinkComponent = (props: UiLinkProps) => ReactNode;

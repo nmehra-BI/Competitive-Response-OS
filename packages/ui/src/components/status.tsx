@@ -429,9 +429,10 @@ export function SourceChip({ label, quality, href, restricted }: SourceChipProps
         href={href}
         className="gos-chip gos-chip--restricted"
         aria-label={`${label} (restricted source)`}
+        title={label}
       >
         <Icon name="lock" size={13} />
-        {label}
+        <span className="gos-chip__label">{label}</span>
       </UiLink>
     );
   }
@@ -441,11 +442,12 @@ export function SourceChip({ label, quality, href, restricted }: SourceChipProps
       href={href}
       className="gos-chip"
       aria-label={`${label} · evidence ${EVIDENCE_QUALITY_LABELS[quality]}`}
+      title={label}
     >
       <span style={{ color: TONE_FG[g.tone], display: 'inline-flex' }}>
         <Icon name={g.icon} size={13} />
       </span>
-      {label}
+      <span className="gos-chip__label">{label}</span>
     </UiLink>
   );
 }
