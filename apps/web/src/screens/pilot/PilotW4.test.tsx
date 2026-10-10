@@ -56,7 +56,7 @@ describe('S11 Wave 4', () => {
     ).toBeTruthy();
     fireEvent.click(within(form).getByRole('button', { name: 'Request scope change' }));
     expect(await screen.findByRole('dialog', { name: 'Request scope change' })).toBeTruthy();
-  }, 20_000);
+  });
 
   it('lists SR1–SR3; reporting SR2 asks the sponsor and changes nothing else', async () => {
     session.signIn(people.jonas.id);
@@ -75,7 +75,7 @@ describe('S11 Wave 4', () => {
     expect(
       (screen.getByRole('button', { name: 'Activate approved plan' }) as HTMLButtonElement).disabled,
     ).toBe(true);
-  }, 20_000);
+  });
 
   it('a finance reviewer sees spend and stop rules but cannot record or report', async () => {
     session.signIn(people.daniel.id);
@@ -103,5 +103,5 @@ describe('S11 Wave 4', () => {
     const list = screen.getByRole('list', { name: 'Milestones' });
     expect(within(list).getByText(/15 Jan 2027 · Evidence expected: Paid-use log/)).toBeTruthy();
     expect(screen.getByText('€8k one-time')).toBeTruthy();
-  }, 20_000);
+  });
 });

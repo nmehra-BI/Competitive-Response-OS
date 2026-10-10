@@ -123,9 +123,11 @@ describe('S09 Validation', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Preview tasks' }));
     expect(await screen.findByText('Preview · nothing sent yet')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Create 5 tasks in Jira' }));
+    // Real time on purpose: "Sending…" turns into Confirmed on S09's next poll (POLL_MS, 2 s), as the
+    // worker would. This test is genuinely long (~4 s); 10 s leaves room on a loaded machine.
     expect(await screen.findByText('5 of 5 tasks confirmed in Jira', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText(/VAL-1/)).toBeTruthy();
-  });
+  }, 10_000);
 
   it('after G1, Maya edits, adds and removes draft tasks before previewing (D-113)', async () => {
     preset('g1_approved');
@@ -163,7 +165,7 @@ describe('S09 Validation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview tasks' }));
     expect(await screen.findByRole('button', { name: 'Create 5 tasks in Jira' })).toBeTruthy();
     expect(within(list).queryByRole('button', { name: /^Edit task:/ })).toBeNull();
-  }, 30_000);
+  });
 
   it('a reviewer sees the tasks read-only (no draft editing)', async () => {
     preset('g1_approved');
@@ -172,7 +174,7 @@ describe('S09 Validation', () => {
     expect(await screen.findByRole('heading', { name: 'Validation tasks' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Edit task:/ })).toBeNull();
-  }, 30_000);
+  });
 
   it('before EXP-03: Maya creates the experiment and submits G1 (snapshot v1 fingerprint)', async () => {
     preset('start');

@@ -49,7 +49,7 @@ describe('S14 task mapping editor', () => {
     fireEvent.click(within(section).getByRole('button', { name: 'Save mapping' }));
     expect(await within(section).findByText('Saved: PIL · Task.')).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
-  }, 30_000);
+  });
 
   it('a project change shows the impact before saving, and saves only on confirmation', async () => {
     const { section } = await openPilotMapping();
@@ -63,5 +63,5 @@ describe('S14 task mapping editor', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save and pause unsent tasks' }));
     expect(await within(section).findByText('Saved: PIL2 · Task.')).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  }, 30_000);
+  });
 });

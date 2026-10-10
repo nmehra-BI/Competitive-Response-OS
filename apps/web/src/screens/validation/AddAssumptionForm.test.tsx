@@ -51,7 +51,7 @@ describe('S09 add assumption', () => {
     await waitFor(() => expect(submit().disabled).toBe(false));
     fireEvent.click(submit());
     expect(await screen.findByText('ASM-21 added to the register.')).toBeTruthy();
-  }, 20_000);
+  });
 
   it('a percentage above 100 is refused in the form (never sent)', async () => {
     session.signIn(people.maya.id);

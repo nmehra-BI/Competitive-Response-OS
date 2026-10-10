@@ -91,7 +91,7 @@ describe('S05 Thesis', () => {
       within(blockers).getByTitle('Unresolved for a later gate. It does not stop the next gate.'),
     ).toBeTruthy();
     expect(blockers.textContent).toContain('Needed for the next gate and in progress.');
-  }, 30_000);
+  });
 
   it('accepts a cited AI claim as fact in one step after a confirm dialog with claim, kind and citations', async () => {
     session.signIn(people.maya.id);
@@ -117,7 +117,7 @@ describe('S05 Thesis', () => {
       expect(claims.textContent).toContain('About 5,000 food-processing sites in Germany operate'),
     );
     await waitFor(() => expect(within(list).queryAllByRole('listitem')).toHaveLength(1));
-  }, 30_000);
+  });
 
   it('"Add as draft" leaves acceptance as a second step; others cannot decide', async () => {
     session.signIn(people.maya.id);
@@ -136,5 +136,5 @@ describe('S05 Thesis', () => {
     const forDaniel = await screen.findByRole('list', { name: 'AI claim proposals' });
     expect(within(forDaniel).queryByRole('button', { name: 'Accept as fact' })).toBeNull();
     expect(screen.getByText('The case owner decides these proposals.')).toBeTruthy();
-  }, 30_000);
+  });
 });
