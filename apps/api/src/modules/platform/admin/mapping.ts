@@ -297,8 +297,8 @@ async function connectorFor(
   tenantId: string,
   accounts: string[],
 ) {
-  // The tenant travels with the connection (E5: Jira credentials are row-level secured per tenant).
-  const ref: ConnectionRef & { tenantId: string } = { id: conn.id, provider: conn.provider, tenantId };
+  // The tenant travels with the connection (Jira credentials are row-level secured per tenant).
+  const ref: ConnectionRef = { id: conn.id, provider: conn.provider, tenantId };
   if (conn.provider !== SIMULATED_PROVIDER) return createConnectorFactory({ sim: db })(ref);
   const r = await sql<{ assignee: string }>`
     SELECT match->>'assignee' AS assignee FROM sim.fault_rule

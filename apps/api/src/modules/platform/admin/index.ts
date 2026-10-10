@@ -13,8 +13,6 @@ import {
   ROLE_LABELS,
   RUN_STATUS_LABELS,
   type AuthorityGrant,
-  type Connection,
-  type ConnectorMapping,
   type GateCode,
   type GatePolicyBody,
   type Policy,
@@ -22,7 +20,7 @@ import {
   type RoleCode,
 } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
-import { matchingRole, roleAllows } from '../../../platform/authz';
+import { roleAllows } from '../../../platform/authz';
 import type { Authorization, Identity } from '../../../platform/context';
 import { ApiError, forbidden, notFound } from '../../../platform/errors';
 import { command, query, type HandlerMap } from '../../../platform/pipeline';
@@ -119,46 +117,6 @@ const toPolicy = (p: PolicyRow): Policy => ({
   createdAt: isoDateTime(p.created_at),
 });
 
-type ConnRow = {
-  id: string;
-  kind: string;
-  provider: string;
-  name: string;
-  scope_text: string;
-  status: string;
-  last_success_at: Date | null;
-  last_checked_at: Date | null;
-  used_for: string;
-};
-const toConnection = (c: ConnRow): Connection => ({
-  id: c.id,
-  kind: c.kind as Connection['kind'],
-  provider: c.provider,
-  name: c.name,
-  scopeText: c.scope_text,
-  status: c.status as Connection['status'],
-  lastSuccessAt: isoDateTimeOrNull(c.last_success_at),
-  lastCheckedAt: isoDateTimeOrNull(c.last_checked_at),
-  usedFor: c.used_for,
-});
-
-type MappingRow = {
-  id: string;
-  connection_id: string;
-  purpose: string;
-  destination_project: string;
-  issue_type: string;
-  assignee_map: unknown;
-};
-const toMapping = (m: MappingRow): ConnectorMapping => ({
-  id: m.id,
-  connectionId: m.connection_id,
-  purpose: m.purpose as ConnectorMapping['purpose'],
-  destinationProject: m.destination_project,
-  issueType: m.issue_type,
-  assigneeMap: (m.assignee_map ?? {}) as Record<string, string>,
-});
-
 export async function humanUser(tx: Tx, userId: string): Promise<void> {
   const u = await tx
     .selectFrom('platform.app_user')
@@ -178,12 +136,6 @@ export async function activeRoles(tx: Tx, userId: string, exceptId?: string): Pr
     .where('revoked_at', 'is', null);
   if (exceptId) q = q.where('id', '<>', exceptId);
   return (await q.execute()).map((r) => r.role as RoleCode);
-}
-
-async function connectionRow(tx: Tx, id: string) {
-  const c = await tx.selectFrom('platform.connection').selectAll().where('id', '=', id).executeTakeFirst();
-  if (!c) throw notFound();
-  return c;
 }
 
 /**
@@ -543,118 +495,8 @@ export const adminHandlers: HandlerMap = {
     },
   }),
 
-  [API.admin.connections.id]: query(API.admin.connections, {
-    // Health rows are also shown on S03 and S11, so case roles may read them (no secrets in the shape).
-    authorize: (ctx) => {
-      const admin = configure(ctx.identity);
-      if (admin.allow) return admin;
-      const role = matchingRole(ctx.identity.subject, 'case.read', { businessUnitId: null, caseId: null });
-      return role ? { allow: true, rule: 'connections.health_read', authorityGrantId: null, role } : admin;
-    },
-    handle: async (_ctx, { tx }) => ({
-      items: (
-        await tx.selectFrom('platform.connection').selectAll().orderBy('created_at').orderBy('name').execute()
-      ).map(toConnection),
-      mappings: (
-        await tx.selectFrom('platform.connector_mapping').selectAll().orderBy('purpose').execute()
-      ).map(toMapping),
-    }),
-  }),
-
-  [API.admin.testConnection.id]: command(API.admin.testConnection, {
-    load: (ctx, tx) => connectionRow(tx, ctx.params.id),
-    authorize: (ctx) => configure(ctx.identity),
-    handle: async (ctx, t, c) => {
-      // Health is the stored connection state; a live probe through the TaskConnector (WS6) can
-      // replace this without changing the contract. A healthy check refreshes last success.
-      const healthy = c.status === 'connected';
-      const row = await t.tx
-        .updateTable('platform.connection')
-        .set({ last_checked_at: ctx.now, ...(healthy ? { last_success_at: ctx.now } : {}) })
-        .where('id', '=', c.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      await t.audit({
-        action: 'admin.connection_tested',
-        objectType: 'connection',
-        objectId: c.id,
-        summary: `Tested connection ${c.name}: ${c.status}`,
-        details: { status: c.status, kind: c.kind },
-      });
-      return toConnection(row);
-    },
-  }),
-
-  [API.admin.reconnect.id]: command(API.admin.reconnect, {
-    load: (ctx, tx) => connectionRow(tx, ctx.params.id),
-    authorize: (ctx) => configure(ctx.identity),
-    handle: async (ctx, t, c) => {
-      // Re-authorization is simulated in dev. Paused sync is NOT resumed here: the outbox (WS6)
-      // resumes paused rows only after its own reconcile and authorization re-check.
-      const row = await t.tx
-        .updateTable('platform.connection')
-        .set({ status: 'connected', last_checked_at: ctx.now, last_success_at: ctx.now })
-        .where('id', '=', c.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      await t.audit({
-        action: 'admin.connection_reconnected',
-        objectType: 'connection',
-        objectId: c.id,
-        summary: `Reconnected ${c.name}`,
-        details: { from: c.status, kind: c.kind },
-        before: { status: c.status },
-        after: { status: 'connected' },
-      });
-      return toConnection(row);
-    },
-  }),
-
-  [API.admin.setMapping.id]: command(API.admin.setMapping, {
-    authorize: (ctx) => configure(ctx.identity),
-    handle: async (ctx, t) => {
-      const b = ctx.body;
-      await connectionRow(t.tx, b.connectionId);
-      const existing = await t.tx
-        .selectFrom('platform.connector_mapping')
-        .selectAll()
-        .where('id', '=', ctx.params.id)
-        .executeTakeFirst();
-      const values = {
-        connection_id: b.connectionId,
-        purpose: b.purpose,
-        destination_project: b.destinationProject,
-        issue_type: b.issueType,
-        assignee_map: JSON.stringify(b.assigneeMap),
-      };
-      const row = existing
-        ? await t.tx
-            .updateTable('platform.connector_mapping')
-            .set(values)
-            .where('id', '=', ctx.params.id)
-            .returningAll()
-            .executeTakeFirstOrThrow()
-        : await t.tx
-            .insertInto('platform.connector_mapping')
-            .values({ id: ctx.params.id, tenant_id: ctx.tenantId, ...values })
-            .returningAll()
-            .executeTakeFirstOrThrow();
-      await t.audit({
-        action: 'admin.mapping_set',
-        objectType: 'connector_mapping',
-        objectId: row.id,
-        summary: `Set ${b.purpose.replace(/_/g, ' ')} destination to ${b.destinationProject}`.slice(0, 280),
-        details: {
-          connectionId: b.connectionId,
-          purpose: b.purpose,
-          assignees: Object.keys(b.assigneeMap).length,
-        },
-        before: existing ? toMapping(existing) : undefined,
-        after: toMapping(row),
-      });
-      return toMapping(row);
-    },
-  }),
+  // admin.connections, admin.testConnection and admin.reconnect live in ./connections.ts (Jira Cloud,
+  // W4-E5); admin.setMapping and admin.checkMapping in ./mapping.ts (W4-E4).
 
   [API.admin.runDiagnostics.id]: query(API.admin.runDiagnostics, {
     authorize: (ctx) => roleAllows(ctx.identity.subject, 'diagnostics.read'),
