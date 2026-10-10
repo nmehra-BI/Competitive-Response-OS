@@ -5,7 +5,18 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API } from '@growth-os/contracts';
-import { outcomeObservations, outcomeReview, outcomeTargets } from '@growth-os/fixtures-aster';
+import {
+  expectedExtension,
+  expectedScaleGate,
+  gates,
+  outcomeObservations,
+  outcomeReview,
+  outcomeTargets,
+} from '@growth-os/fixtures-aster';
+import { caseByRef } from '../gates/lib/common';
+import { caseGateState } from '../gates/lib/facts';
+import { cookiesFor, extendDecided, gateRow, x1Body } from '../gates/committeekit';
+import { inTenant } from '../gates/testkit';
 import {
   call,
   createTestApp,
@@ -343,5 +354,132 @@ describe('outcomes', () => {
     });
     const r = await review();
     expect(r.scaleGate.blocked).toBe(true);
+  });
+});
+
+describe('the extension rule and the G3 summary (D-110, D-111; tickets 4 and 13)', () => {
+  let s: SeededTenant;
+  let c: Awaited<ReturnType<typeof cookiesFor>>;
+  beforeAll(async () => {
+    s = await seedTenant(t.db, 'aster-demo');
+    await extendDecided(t, s);
+    // The journey activates the pilot on 1 Dec 2026, after economics v2 was committed (the test clock is
+    // real time, earlier than the fixture dates).
+    await inTenant(t, s, (tx) =>
+      tx
+        .updateTable('me.pilot_plan')
+        .set({ activated_at: new Date('2026-12-01T09:00:00+01:00') })
+        .where('case_id', '=', ids(s).case)
+        .execute(),
+    );
+    c = await cookiesFor(t, s, ['maya', 'elena', 'jonas', 'admin']);
+  });
+  const view = async (cookie: string) =>
+    API.outcomes.get.response.parse(
+      (await call(t.app, API.outcomes.get, { params: { caseRef: 'ME-104' }, cookie })).json(),
+    );
+
+  it('S12 shows the limits of the €120k · 90-day pilot: "Up to €30k (25% of €120k) · up to 45 days"', async () => {
+    const r = await view(c.maya);
+    expect(r.extensionLimits).toMatchObject({
+      parentGateRequestId: ids(s).g2,
+      parentAmount: '120000.00',
+      currency: 'EUR',
+      parentDurationDays: 90,
+      maxAmount: expectedExtension.maxAmount,
+      maxDurationDays: expectedExtension.maxDurationDays,
+      minDurationDays: 14,
+      extensionsUsed: 0,
+      extensionsAllowed: expectedExtension.extensionsAllowed,
+      cumulativeCeiling: expectedExtension.cumulativeCeiling,
+      text: expectedExtension.limitsText,
+    });
+    // Every amount here is one-time pilot money: no /year figure in the limits.
+    expect(r.extensionLimits!.text).not.toMatch(/year/);
+  });
+
+  it('the G3 summary lists the four blockers in D-039 order; the fourth names the €400k one-time investment', async () => {
+    const r = await view(c.maya);
+    expect(r.scaleGate.blocked).toBe(true);
+    expect(r.scaleGate.unmet.map((b) => b.key)).toEqual([...expectedScaleGate.blockerKeys]);
+    expect(r.scaleGate.unmet.at(-1)!.message).toBe(expectedScaleGate.scaleBudgetBlocker);
+    expect(r.scaleGate.summary).toContain(
+      'no scale budget requested · economics v2 carries €400k one-time scale-entry investment',
+    );
+    expect(r.scaleGate.summary).not.toMatch(/\/year|per year/);
+  });
+
+  it('a viewer who cannot read the committed economics gets no investment text', async () => {
+    const plain = await inTenant(t, s, async (tx) => {
+      const caseRow = (await caseByRef(tx, 'ME-104'))!;
+      return (await caseGateState(tx, caseRow, 'G3', { economicsReadable: false })).evaluation;
+    });
+    expect(plain.blockers.at(-1)!.message).toBe('Scale budget · not stated');
+    expect(plain.summary).not.toContain('€400k');
+  });
+
+  it('X1 at €30k · 45 days is within the rule; Elena approves it (€120k + €30k = her €150k ceiling)', async () => {
+    const res = await call(t.app, API.outcomes.requestExtension, {
+      params: { caseRef: 'ME-104' },
+      body: x1Body(s),
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const x1 = API.outcomes.requestExtension.response.parse(res.json());
+    expect(x1).toMatchObject({
+      key: 'ME-104-X1',
+      status: 'awaiting_decision',
+      buttonLabel: expectedExtension.buttonLabel,
+      route: 'sponsor',
+    });
+    expect(x1.scope).toMatchObject({
+      amount: '30000.00',
+      durationDays: 45,
+      windowStart: gates.x1.windowStart,
+      windowEnd: gates.x1.windowEnd,
+      maxSites: 4,
+    });
+    expect(x1.scope.doesNotAuthorize).toContain('No prospect outreach');
+    expect((await view(c.maya)).extensionLimits!.extensionsUsed).toBe(1);
+    const pkg = await currentPackage(t, c.elena, x1.id);
+    expect(pkg.panel.allowedDispositions).toContain('approve');
+    expect(pkg.snapshot.content.ask).toBeTruthy();
+    const ok = await call(t.app, API.gates.decide, {
+      params: { id: x1.id },
+      body: decideBody(pkg, { rationale: 'Bounded re-test of effort and the fourth site.' }),
+      cookie: c.elena,
+      idempotencyKey: true,
+    });
+    expect(ok.statusCode, ok.body).toBe(201);
+    expect(API.gates.decide.response.parse(ok.json()).gateRequest.status).toBe('approved');
+    const row = await gateRow(t, s, x1.id);
+    expect(row.expires_at!.getTime() - row.decided_at!.getTime()).toBe(14 * 86_400_000); // X: 14 days
+    // An approved extension never unblocks G3.
+    expect((await view(c.maya)).scaleGate.blocked).toBe(true);
+  });
+
+  it('a second X → refused; Daniel (no gate.submit) 403; another tenant 404', async () => {
+    const second = await call(t.app, API.outcomes.requestExtension, {
+      params: { caseRef: 'ME-104' },
+      body: x1Body(s, { spendCap: '5000.00', durationDays: 14 }),
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
+    expect(second.statusCode).toBe(409);
+    const daniel = await call(t.app, API.outcomes.requestExtension, {
+      params: { caseRef: 'ME-104' },
+      body: x1Body(s),
+      cookie: k.daniel,
+      idempotencyKey: true,
+    });
+    expect([403, 404]).toContain(daniel.statusCode);
+    const cross = await call(t.app, API.outcomes.requestExtension, {
+      params: { caseRef: ids(s).case },
+      body: x1Body(s),
+      cookie: k.elenaB,
+      idempotencyKey: true,
+    });
+    expect(cross.statusCode).toBe(404);
   });
 });

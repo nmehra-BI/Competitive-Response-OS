@@ -18,6 +18,7 @@ import type { Tx } from '@growth-os/db';
 import {
   createPolicyEngine,
   diffSnapshotContent,
+  formatMoneyShort,
   seatOf,
   staleBanner,
   type PolicySubject,
@@ -25,7 +26,7 @@ import {
 } from '@growth-os/domain';
 import { toFingerprint } from '@growth-os/contracts';
 import { isoDateTimeOrNull } from '../../../../platform/serialize';
-import { asOfDate, fmtMoneyShort, peopleOf, type CaseLite } from './common';
+import { asOfDate, peopleOf, type CaseLite } from './common';
 import { committeePanel, grantCeiling, loadGovernance } from './governance';
 import {
   approvalRows,
@@ -300,7 +301,7 @@ export async function buildPackage(
       ? null
       : viewerCeiling === null
         ? `No-spend gate · ${buName}`
-        : `Up to ${fmtMoneyShort(viewerCeiling, gate.currency ?? gov.policy.authority.currency)} · ${buName}`;
+        : `Up to ${formatMoneyShort(viewerCeiling, gate.currency ?? gov.policy.authority.currency)} · ${buName}`;
   const committeeBlock = committee ? await committeePanel(tx, gov, snap.id, viewerId) : null;
   const approverId = caseRow?.sponsorUserId ?? null;
   const approverDecision = approverId ? approvals.find((a) => a.approver_user_id === approverId) : undefined;

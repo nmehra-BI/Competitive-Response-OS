@@ -103,6 +103,10 @@ export function formatMoneyShort(amount: string, currency: string): string {
   const neg = amount.startsWith('-') ? '−' : '';
   const n = BigInt(intPart || '0');
   const cents = frac.replace(/0+$/, '');
+  if (cents === '' && n >= 1_000_000n && n % 100_000n === 0n) {
+    const m = n / 100_000n;
+    return `${neg}${symbol}${(m / 10n).toString()}${m % 10n === 0n ? '' : `.${(m % 10n).toString()}`}m`;
+  }
   if (cents === '' && n >= 1000n && n % 1000n === 0n) return `${neg}${symbol}${(n / 1000n).toString()}k`;
   const grouped = n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return `${neg}${symbol}${grouped}${cents ? `.${frac.padEnd(2, '0').slice(0, 2)}` : ''}`;
@@ -300,8 +304,18 @@ export function evaluateCommittee(i: CommitteeInput): CommitteeEvaluation {
       i.requiredSeats.length ? ` with the ${seatList(i.requiredSeats)}` : ''
     }`;
   } else if (outcome === 'not_approved') {
+    const why = (r: CommitteeSeat) => {
+      const st = seats.find((x) => x.seat === r)?.state;
+      return st === 'excluded'
+        ? `${seatText(r)} excluded (conflict)`
+        : st === 'vacant' || st === undefined
+          ? `no ${seatText(r)} named`
+          : st === 'abstained'
+            ? `${seatText(r)} abstained`
+            : `${seatText(r)} did not approve`;
+    };
     statusText = requiredLost.length
-      ? `Quorum cannot be reached · ${seatList(requiredLost)} did not approve`
+      ? `Quorum cannot be reached · ${requiredLost.map(why).join(' and ')}`
       : 'Quorum cannot be reached';
   } else {
     const missing = i.quorum - approved.length;

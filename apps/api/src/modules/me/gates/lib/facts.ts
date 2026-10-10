@@ -359,7 +359,17 @@ export async function tenantIllustrative(tx: Tx): Promise<boolean> {
   return t?.illustrative ?? false;
 }
 
-const ACTIVE_X = ['draft', 'awaiting_decision', 'stale', 'approved', 'approved_with_conditions'] as const;
+/** Extensions that count toward "one per pilot": every request except a withdrawn or refused one. */
+const ACTIVE_X = [
+  'draft',
+  'awaiting_decision',
+  'stale',
+  'returned_for_revision',
+  'approved',
+  'approved_with_conditions',
+  'invalidated',
+  'expired',
+] as const;
 
 /** Parent pilot facts and the extensions already asked of it (other than `excludeGateId`). */
 export async function extensionParentOf(tx: Tx, parentId: string, excludeGateId: string | null) {

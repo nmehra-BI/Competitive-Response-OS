@@ -48,7 +48,17 @@ export interface GateGovernance {
   businessUnitName: string;
 }
 
-const ACTIVE_X = ['draft', 'awaiting_decision', 'stale', 'approved', 'approved_with_conditions'];
+/** Extensions that count toward the cumulative rule: every request except a withdrawn or refused one. */
+const ACTIVE_X = [
+  'draft',
+  'awaiting_decision',
+  'stale',
+  'returned_for_revision',
+  'approved',
+  'approved_with_conditions',
+  'invalidated',
+  'expired',
+];
 
 /** Highest valid grant ceiling of a person for gate × BU on `asOf` (undefined = none; null = no-spend). */
 export async function grantCeiling(

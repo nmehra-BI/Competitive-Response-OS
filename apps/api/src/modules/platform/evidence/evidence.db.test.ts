@@ -422,3 +422,81 @@ describe('challenge, mark stale, replace, request access', () => {
     expect(res.json()).toEqual({ requested: true });
   });
 });
+
+describe('licence rights fail closed (D-120, D-129)', () => {
+  let s: SeededTenant;
+  let maya = '';
+  beforeAll(async () => {
+    s = await seedTenant(t.db, 'aster-demo');
+    maya = await login(t.app, s.user('maya'));
+  });
+
+  it('an excerpt entitlement on a licence without a written confirmation shows metadata only', async () => {
+    const upload = sources.find((x) => x.licenseId === licenses[2].id && x.passages.length > 0)!;
+    const before = SourceDetail.parse((await get(maya, upload.key)).json());
+    expect(before.viewerAccess).toBe('excerpt');
+    expect(before.passages.length).toBeGreaterThan(0);
+    // The confirmation is withdrawn: the database only allows that together with metadata-only rights.
+    await inTenant(s, (tx) =>
+      tx
+        .updateTable('platform.license')
+        .set({
+          rights_document_ref: null,
+          rights_confirmed_on: null,
+          max_excerpt_sentences: 0,
+          allow_model_context: false,
+          allow_export: false,
+        })
+        .where('id', '=', s.id(licenses[2].id))
+        .execute(),
+    );
+    const res = await get(maya, upload.key);
+    expect(res.statusCode).toBe(200);
+    const d = SourceDetail.parse(res.json());
+    expect(d.viewerAccess).toBe('aggregate_only');
+    expect(d.passages).toEqual([]);
+    expect(d.quotedFact).toBeNull();
+    expect(d.license).toMatchObject({ rightsStatus: 'unconfirmed', maxExcerptSentences: 0 });
+    // No excerpt text and no passage count anywhere in the response.
+    expect(res.body).not.toContain(upload.passages[0]!.excerpt);
+    expect(res.body).not.toMatch(/passageCount|"count"/);
+    expect(d.source.title).toBe(upload.title); // provenance metadata stays
+  });
+
+  it('after the licence term ends (the expiry job’s write) the excerpt disappears and provenance stays', async () => {
+    const census = s.id(licenses[0].id);
+    expect(SourceDetail.parse((await get(maya, 'SRC-014')).json()).passages).toHaveLength(1);
+    await inTenant(s, (tx) =>
+      tx
+        .updateTable('platform.license')
+        .set({
+          max_excerpt_sentences: 0,
+          allow_model_context: false,
+          allow_embeddings: false,
+          allow_export: false,
+          expired_at: new Date(),
+        })
+        .where('id', '=', census)
+        .execute(),
+    );
+    const res = await get(maya, 'SRC-014');
+    const d = SourceDetail.parse(res.json());
+    expect(d.viewerAccess).toBe('aggregate_only');
+    expect(d.passages).toEqual([]);
+    expect(res.body).not.toContain(excerptOf('SRC-014'));
+    expect(d.license).toMatchObject({ rightsStatus: 'expired' });
+    expect(d.license!.expiredAt).not.toBeNull();
+    expect(d.source.key).toBe('SRC-014');
+    expect(d.impact.map((i) => i.caseKey)).toEqual(['ME-104']);
+    // The passage rows are kept for audit; only the read is closed.
+    const kept = await inTenant(s, (tx) =>
+      sql<{ n: string }>`SELECT count(*) AS n FROM platform.evidence_passage p JOIN platform.source x
+        ON x.id = p.source_id WHERE x.license_id = ${census}`.execute(tx),
+    );
+    expect(Number(kept.rows[0]!.n)).toBeGreaterThan(0);
+  });
+
+  it('a source id of another tenant stays 404', async () => {
+    expect((await get(maya, src(demo, 'SRC-014'))).statusCode).toBe(404);
+  });
+});
