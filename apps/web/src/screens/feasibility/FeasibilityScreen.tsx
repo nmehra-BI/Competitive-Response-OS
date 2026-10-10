@@ -9,11 +9,11 @@
 import {
   API,
   FEASIBILITY_DIMENSION_LABELS,
+  FeasibilityDimension,
   REVIEWER_POSITION_LABELS,
   type GateCode,
   type ReviewerPosition,
   type FeasibilityAssessment,
-  type FeasibilityDimension,
   type ReviewArea,
 } from '@growth-os/contracts';
 import {
@@ -33,9 +33,11 @@ import {
 import { useId, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
+import { usePeople } from '../../lib/people';
 import { useApiQuery, useCommand } from '../../lib/query';
 import { useViewer } from '../../lib/session';
 import '../sizing/assessment.css';
+import { AddDimensionForm } from './AddDimensionForm';
 
 const AREA: Record<FeasibilityDimension, ReviewArea> = {
   product_fit: 'product',
@@ -268,6 +270,13 @@ export default function FeasibilityScreen() {
   });
   const resolve = useCommand(API.feasibility.resolveBlocker);
   const highlighted = sp.get('dimension');
+  const directory = usePeople();
+  const [adding, setAdding] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  // review.request: the case owner or the sponsor (the API re-checks the policy on the case).
+  const canRequest = !!viewer.data?.roles.some(
+    (r) => (r.role === 'case_owner' || r.role === 'sponsor') && !r.revokedAt,
+  );
 
   if (q.isPending) {
     return (
@@ -332,6 +341,28 @@ export default function FeasibilityScreen() {
         />
       ) : null}
       {signRow ? <SignForm row={signRow} caseKey={caseKey} onClose={() => setSignOn(null)} /> : null}
+      {adding ? (
+        <AddDimensionForm
+          caseKey={caseKey}
+          existing={data.rows.map((r) => r.dimension)}
+          people={directory.people}
+          onClose={() => setAdding(false)}
+          onDone={setNote}
+        />
+      ) : canRequest && data.rows.length < FeasibilityDimension.options.length ? (
+        <div className="as-row">
+          <Button variant="secondary" icon="plus" onClick={() => setAdding(true)}>
+            Add dimension
+          </Button>
+          <span role="status" className="as-muted" style={{ fontSize: 13 }}>
+            {note ?? ''}
+          </span>
+        </div>
+      ) : note ? (
+        <p role="status" className="as-muted" style={{ fontSize: 13, margin: 0 }}>
+          {note}
+        </p>
+      ) : null}
       {request.error ? <ProblemBanner error={request.error} /> : null}
       <Card>
         <DataTable<FeasibilityAssessment>

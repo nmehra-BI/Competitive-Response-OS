@@ -82,4 +82,32 @@ describe('S07 Feasibility', () => {
     expect(row('Specialist review').textContent).toContain('Signed for pilot only: up to 4 sites, 90 days');
     expect(row('Specialist review').textContent).not.toContain('Blocks G2 until signed');
   });
+
+  it('S07 add dimension (D-112 §4): a named reviewer, the question and the scope of review', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-102/feasibility');
+    fireEvent.click(await screen.findByRole('button', { name: 'Add dimension' }));
+    const form = await screen.findByRole('form', { name: 'Add dimension · request review' });
+    fireEvent.change(within(form).getByLabelText('Dimension'), { target: { value: 'operations' } });
+    fireEvent.click(within(form).getByRole('option', { name: /Priya Shah/ }));
+    fireEvent.change(within(form).getByLabelText(/^Question \(required\)/), {
+      target: { value: 'Can installers cover Austrian breweries?' },
+    });
+    fireEvent.change(within(form).getByLabelText(/^Scope of review/), {
+      target: { value: 'Two reference breweries' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Request review' }));
+    await screen.findByRole('table', { name: 'Readiness checklist' });
+    const r = row('Operations');
+    expect(r.textContent).toContain('Priya Shah');
+    expect(r.textContent).toContain('Two reference breweries');
+    expect(screen.getByRole('status').textContent).toBe('Operations added · Priya Shah is asked to review.');
+  });
+
+  it('a finance reviewer cannot add a dimension', async () => {
+    session.signIn(people.daniel.id);
+    renderAt('/me/cases/ME-104/feasibility');
+    await screen.findByRole('table', { name: 'Readiness checklist' });
+    expect(screen.queryByRole('button', { name: 'Add dimension' })).toBeNull();
+  });
 });
