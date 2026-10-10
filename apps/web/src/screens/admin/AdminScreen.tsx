@@ -10,6 +10,7 @@
  */
 import {
   API,
+  CONNECTOR_STATUS_LABELS,
   GATE_LABELS,
   GatePolicyBody,
   ROLE_LABELS,
@@ -533,8 +534,14 @@ function ConnectionsSection() {
     setErr(null);
     try {
       if (c.status === 'expired') {
-        await reconnect.mutateAsync({ params: { id: c.id } });
-        setNote(`${c.name} reconnected. Paused sync resumes only after a re-check.`);
+        const r = await reconnect.mutateAsync({ params: { id: c.id } });
+        // Jira Cloud (D-121): a revoked grant stays expired after a reconnect; say so honestly and
+        // point to the OAuth flow instead of claiming success. Simulated rows keep the old note.
+        if (c.provider === 'jira_cloud' && r.status !== 'connected')
+          setNote(
+            `${c.name}: still ${CONNECTOR_STATUS_LABELS[r.status].toLowerCase()}. Use “Connect as integration account” to authorize Jira again.`,
+          );
+        else setNote(`${c.name} reconnected. Paused sync resumes only after a re-check.`);
       } else {
         const r = await test.mutateAsync({ params: { id: c.id } });
         setTested((t) => ({ ...t, [c.id]: r.status === 'connected' }));
