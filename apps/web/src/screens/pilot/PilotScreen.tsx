@@ -196,20 +196,25 @@ function PilotView({
     setSearch(next, { replace: true });
   };
 
-  const openPreview = () =>
-    ts &&
-    run(previewCmd.mutateAsync({ params: { id: ts.id } }), (p) => {
-      setPreview(p);
-      setNote('Review destination, assignees and permissions.');
-      setView('preview');
-    });
-
-  // Deep link: view=preview opens the dry run (it writes nothing external).
+  // Deep link: view=preview opens the dry run (it writes nothing external) once. Any preview marks it
+  // handled: "Preview tasks" itself sets view=preview, which must not start a second preview (D-155:
+  // the second one replaced the first, so "Create" with the shown preview was refused as not current).
   const autoPreviewed = useRef(false);
+  const openPreview = () => {
+    autoPreviewed.current = true;
+    return (
+      ts &&
+      run(previewCmd.mutateAsync({ params: { id: ts.id } }), (p) => {
+        setPreview(p);
+        setNote('Review destination, assignees and permissions.');
+        setView('preview');
+      })
+    );
+  };
+
   useEffect(() => {
     if (autoPreviewed.current || search.get('view') !== 'preview') return;
     if (!ts || !canOperate || v.status !== 'active' || expired || anySent) return;
-    autoPreviewed.current = true;
     void openPreview();
   }, [search, ts?.id, canOperate, v.status, expired, anySent]);
 

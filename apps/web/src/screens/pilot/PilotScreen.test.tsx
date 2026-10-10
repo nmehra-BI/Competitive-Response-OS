@@ -71,6 +71,31 @@ describe('S11 Pilot', () => {
     // The journey renders S11 with its stop-rule and spend sections several times (jsdom role queries).
   }, 20_000);
 
+  it('"Preview tasks" runs one dry run; the view=preview it sets does not start a second (D-155)', async () => {
+    seedWs8d({ pilotVariant: 'timeout' });
+    session.signIn(people.jonas.id);
+    const previews: string[] = [];
+    const count = ({ request }: { request: Request }) => {
+      if (request.method === 'POST' && /\/task-sets\/[^/]+\/previews$/.test(request.url))
+        previews.push(request.url);
+    };
+    mockServer.events.on('request:start', count);
+    try {
+      const router = renderAt(URL);
+      fireEvent.click(await button('Preview tasks'));
+      expect(await screen.findByRole('heading', { name: 'Preview · nothing has been sent' })).toBeTruthy();
+      await waitFor(() => expect(router.state.location.search).toContain('view=preview'));
+      // Let any effect the URL change would trigger run, then count.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(previews).toHaveLength(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Create 6 tasks in Jira' }));
+      expect(await screen.findByText('5 of 6 tasks confirmed in Jira · 1 checking')).toBeTruthy();
+      expect(screen.queryByText('The preview is not current.')).toBeNull();
+    } finally {
+      mockServer.events.removeListener('request:start', count);
+    }
+  });
+
   it('timeout after success: Checking, then Confirmed after reconcile (step 24)', async () => {
     seedWs8d({ pilotVariant: 'timeout' });
     session.signIn(people.jonas.id);
@@ -79,6 +104,9 @@ describe('S11 Pilot', () => {
     fireEvent.click(await button('Create 6 tasks in Jira'));
     expect(await screen.findByText('5 of 6 tasks confirmed in Jira · 1 checking')).toBeTruthy();
     expect(screen.getAllByText('Checking').length).toBeGreaterThan(0);
+    // Real time on purpose: the mock reconciles a Checking task only on a read at least RECONCILE_MS
+    // (1.5 s) after the timeout, and S11 re-reads every POLL_MS (2 s) while a task is in flight, so
+    // Confirmed arrives after ~3.5 s. This test is genuinely long; 10 s leaves room on a loaded machine.
     expect(await screen.findByText('6 of 6 tasks confirmed in Jira', {}, { timeout: 6000 })).toBeTruthy();
     expect(screen.getByText('PIL-14')).toBeTruthy();
   }, 10_000);
