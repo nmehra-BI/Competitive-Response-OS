@@ -31,6 +31,7 @@ describe('worker task list', () => {
         JOBS.evidenceIngest,
         JOBS.timersApprovalExpiry,
         JOBS.timersPilotWindow,
+        JOBS.timersLicenseExpiry, // E3 (D-129)
         JOBS.outboxDispatch,
         JOBS.outboxReconcile,
         JOBS.outboxSweep,
@@ -43,6 +44,7 @@ describe('worker task list', () => {
         JOBS.timersPilotWindow,
         JOBS.evidenceFreshness,
         JOBS.outboxSweep,
+        JOBS.timersLicenseExpiry,
       ]),
     );
     await db.destroy();
