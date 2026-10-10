@@ -385,7 +385,8 @@ describe('delegated authority ceilings (fixture placeholders)', () => {
       resource('elena', { requestedAmount: '250000.01' }),
     );
     expect(d).toMatchObject({ allow: false, code: 'AUTHORITY_INSUFFICIENT' });
-    if (!d.allow) expect(d.reason).toContain('€[limit]');
+    // D-109: the copy names the decider's real ceiling (no €[limit] placeholder any more).
+    if (!d.allow) expect(d.reason).toBe('This request is above your delegated authority (up to €250k).');
   });
 
   it('accepts an amount equal to the ceiling', () => {

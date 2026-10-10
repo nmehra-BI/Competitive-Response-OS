@@ -76,9 +76,16 @@ export const ME_GATES: Readonly<Record<GateCode, GateDefinition>> = {
     name: 'Extension',
     decisionOwner: 'Sponsor within delegated authority',
     output: 'Scoped extension with its own cap',
-    preconditionKeys: ['parent_gate_reviewed', 'extension_cap_set', 'accountable_owner'],
+    preconditionKeys: [
+      'parent_gate_reviewed',
+      'extension_cap_set',
+      'accountable_owner',
+      'extension_within_rule',
+      'one_extension_per_parent',
+    ],
+    // D-110 §2 (pre-approved, D-122): the label carries the duration, "Approve extension €30k · 45 days".
     buttonLabel: (s, fmt) =>
-      `Approve extension ${s.amount && s.currency ? fmt(s.amount, s.currency) : '€[cap]'}`,
+      `Approve extension ${s.amount && s.currency ? fmt(s.amount, s.currency) : '€[cap]'}${s.durationDays ? ` · ${s.durationDays} days` : ''}`,
   },
 };
 

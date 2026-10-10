@@ -9,6 +9,7 @@ import {
   people,
   specialistSignOff,
 } from '@growth-os/fixtures-aster';
+import { DEFAULT_EXTENSION_RULE } from '../../platform/policy/governance';
 import { ME_GATES } from './definitions';
 import {
   createPreconditionEvaluator,
@@ -94,12 +95,39 @@ const g3Aster: G3Facts = {
   scope: { amount: '400000.00', currency: 'EUR' },
 };
 
+/** X1 within the D-110 rule: €30k · 45 days on the €120k · 90-day pilot, the 4 pilot sites only. */
+const x1Extension: NonNullable<XFacts['extension']> = {
+  context: {
+    rule: DEFAULT_EXTENSION_RULE,
+    parent: {
+      amount: gates.g2.amount,
+      currency: gates.g2.currency,
+      durationDays: gates.g2.durationDays,
+      maxSites: gates.g2.maxSites,
+    },
+    otherExtensions: 0,
+    illustrative: true,
+  },
+  request: {
+    amount: gates.x1.amount,
+    currency: gates.x1.currency,
+    durationDays: gates.x1.durationDays,
+    maxSites: gates.x1.maxSites,
+    scopeItems: gates.x1.authorizes,
+    retestTargets: [
+      { name: 'Paid use and continuation', result: 'not_met' },
+      { name: 'Deployment effort per site', result: 'not_met' },
+    ],
+  },
+};
+
 const x1: XFacts = {
   gateCode: 'X',
   parentGate: { gateCode: 'G2', status: 'approved_with_conditions' },
   outcomeDecision: 'extend',
   scope: { amount: gates.x1.amount, currency: null, ownerId: gates.x1.ownerId },
   capPlaceholder: true,
+  extension: x1Extension,
 };
 
 describe('PreconditionEvaluator', () => {
@@ -230,6 +258,105 @@ describe('PreconditionEvaluator', () => {
     expect(noCap.blockers.map((b) => b.key)).toEqual(['extension_cap_set']);
     const noDecision = evaluateGate({ ...x1, outcomeDecision: null });
     expect(noDecision.blockers.map((b) => b.key)).toEqual(['parent_gate_reviewed']);
+  });
+
+  it('X rule (D-110): €31k, 46 days, new sites or a second extension are outside the rule', () => {
+    const req = (over: Partial<NonNullable<XFacts['extension']>['request']>) =>
+      evaluateGate({ ...x1, extension: { ...x1Extension, request: { ...x1Extension.request, ...over } } });
+    expect(req({ amount: '31000.00' }).blockers).toEqual([
+      {
+        key: 'extension_within_rule',
+        gate: 'X',
+        message: 'The extension asks €31k; the rule allows up to €30k (25% of €120k).',
+      },
+    ]);
+    expect(req({ durationDays: 46 }).blockers[0]?.message).toBe(
+      'The extension asks 46 days; the rule allows up to 45 days (50% of the 90-day pilot).',
+    );
+    expect(req({ durationDays: 10 }).blockers[0]?.message).toBe('An extension runs at least 14 days.');
+    expect(req({ maxSites: 5 }).blockers.map((b) => b.key)).toEqual(['extension_within_rule']);
+    expect(req({ scopeItems: ['Outreach to two new prospects'] }).blockers[0]?.message).toContain(
+      'no new sites and no prospect outreach',
+    );
+    expect(req({ retestTargets: [{ name: 'Buyer fit', result: 'met' }] }).blockers[0]?.message).toBe(
+      'An extension re-tests unmet or inconclusive thresholds only (Buyer fit met).',
+    );
+    expect(req({ retestTargets: [] }).allMet).toBe(false);
+    const second = evaluateGate({
+      ...x1,
+      extension: { ...x1Extension, context: { ...x1Extension.context, otherExtensions: 1 } },
+    });
+    expect(second.blockers.map((b) => b.key)).toEqual(['one_extension_per_parent']);
+    // A real tenant states the cap; an illustrative tenant keeps the placeholder submittable.
+    const real = { ...x1Extension.context, illustrative: false };
+    expect(
+      evaluateGate({
+        ...x1,
+        extension: { context: real, request: { ...x1Extension.request, amount: null } },
+      }).blockers[0]?.message,
+    ).toBe('State the extension cap and duration');
+    expect(
+      evaluateGate({
+        ...x1,
+        extension: { ...x1Extension, request: { ...x1Extension.request, amount: null } },
+      }).allMet,
+    ).toBe(true);
+    // Not requested yet: fail closed.
+    expect(evaluateGate({ ...x1, extension: null }).allMet).toBe(false);
+  });
+
+  it('G3 names the €400k one-time scale-entry investment in its own blocker (D-111)', () => {
+    const facts: G3Facts = {
+      ...g3Aster,
+      scope: { amount: null, currency: null },
+      scaleInvestment: { economicsVersion: 2, amount: '400000.00', currency: 'EUR' },
+    };
+    const e = evaluateGate(facts);
+    expect(e.blockers.at(-1)).toEqual({
+      key: 'approved_scale_budget',
+      gate: 'G3',
+      message: 'No scale budget requested · economics v2 carries €400k one-time scale-entry investment',
+    });
+    expect(e.blockers.at(-1)!.message).not.toMatch(/year/);
+    // Omitted when the viewer cannot read the economics (no investment fact).
+    expect(evaluateGate({ ...facts, scaleInvestment: null }).blockers.at(-1)?.message).toBe(
+      'Scale budget · not stated',
+    );
+  });
+
+  it('G2 requested after D-122 needs at least one structured stop rule (D-112)', () => {
+    expect(evaluateGate({ ...g2, structuredStopRules: 3 }).allMet).toBe(true);
+    expect(evaluateGate({ ...g2, structuredStopRules: 0 }).blockers).toEqual([
+      {
+        key: 'budget_and_stop_rules',
+        gate: 'G2',
+        message: 'Pre-register at least one stop rule (trigger, consequence and owner).',
+      },
+    ]);
+    expect(evaluateGate({ ...g2, structuredStopRules: null }).allMet).toBe(true); // before D-122
+  });
+
+  it('the X button carries the duration (D-110 §2)', () => {
+    const fmt = (a: string) => `€${Number(a) / 1000}k`;
+    expect(
+      ME_GATES.X.buttonLabel(
+        {
+          amount: '30000.00',
+          currency: 'EUR',
+          durationDays: 45,
+          windowStart: null,
+          windowEnd: null,
+          countryCodes: [],
+          segmentLabel: null,
+          maxSites: 4,
+          milestones: [],
+          ownerId: null,
+          authorizes: [],
+          doesNotAuthorize: [],
+        },
+        fmt,
+      ),
+    ).toBe(gates.x1.buttonLabel);
   });
 
   it('task completion is never an input', () => {

@@ -16,6 +16,12 @@ import type {
   ThresholdResult,
 } from '@growth-os/contracts';
 import { ME_GATES, type PreconditionEvaluator, type PreconditionFacts } from './definitions';
+import {
+  checkExtensionRequest,
+  formatMoneyShort,
+  type ExtensionContext,
+  type ExtensionRequestFacts,
+} from '../../platform/policy/governance';
 
 // ---------------------------------------------------------------------------
 // Facts per gate
@@ -82,6 +88,12 @@ export type G2Facts = {
     ownerId: string | null;
   };
   stopRules: readonly string[];
+  /**
+   * D-112 / D-127: structured stop rules (trigger, consequence, owner) stored with the request. A G2
+   * requested after D-122 needs at least one; `null`/absent = a request from before structured rules
+   * (its readable stop-rule lines still count).
+   */
+  structuredStopRules?: number | null;
 };
 
 export type G3Facts = {
@@ -92,6 +104,12 @@ export type G3Facts = {
   economicsUpdatedAfterPilot: boolean;
   capacityReviewed: boolean;
   scope: { amount: string | null; currency: string | null };
+  /**
+   * D-111 (PQ-10): the one-time scale-entry investment of the committed economics, named in the
+   * scale-budget blocker. Null/absent when there is none or the viewer cannot read the economics. It is
+   * one-time money and is never put next to a /year figure.
+   */
+  scaleInvestment?: { economicsVersion: number; amount: string; currency: string } | null;
 };
 
 export type XFacts = {
@@ -106,6 +124,8 @@ export type XFacts = {
    * policy engine refuses a spend gate with no amount).
    */
   capPlaceholder?: boolean;
+  /** D-110: the extension rule, the parent pilot and this request (absent = not requested yet). */
+  extension?: { context: ExtensionContext; request: ExtensionRequestFacts } | null;
 };
 
 export type GateFacts = G0Facts | G1Facts | G2Facts | G3Facts | XFacts;
@@ -167,6 +187,8 @@ const LABELS: Readonly<Record<string, string>> = {
   parent_gate_reviewed: 'Parent gate reviewed',
   extension_cap_set: 'Extension cap set',
   accountable_owner: 'Accountable owner',
+  extension_within_rule: 'Within the extension rule',
+  one_extension_per_parent: 'One extension per pilot',
 };
 
 function signOffCovers(s: SignOffFact | null, gate: GateCode, sites: number | null, days: number | null) {
@@ -203,7 +225,7 @@ function targetDetail(t: TargetFact): { detail: string; short: string } {
   if (t.observedValue === null) {
     return { detail: `${t.name} · no data recorded`, short: `${t.name.toLowerCase()} has no data` };
   }
-  if (DEMAND_METRIC_KEYS.includes(t.metricKey) && t.thresholdValue !== null) {
+  if (isDemandTarget(t) && t.thresholdValue !== null) {
     const thr = t.thresholdValue;
     return {
       detail: `Demand threshold · ${t.observedValue} of ${thr} met; ${thr} of ${thr} required`,
@@ -275,6 +297,11 @@ export const PRECONDITION_KEYS: Readonly<Record<string, KeyFn>> = {
   budget_and_stop_rules: forGate<G2Facts>('G2', (f) => {
     if (!positiveAmount(f.scope.amount, f.scope.currency)) return no('State the pilot budget.');
     if (!f.stopRules.some(text)) return no('Add stop rules.');
+    if (f.structuredStopRules !== undefined && f.structuredStopRules !== null && f.structuredStopRules < 1)
+      return no(
+        'Pre-register at least one stop rule (trigger, consequence and owner).',
+        'no stop rule pre-registered',
+      );
     return ok();
   }),
   accountable_pilot_owner: forGate<G2Facts>('G2', (f) =>
@@ -312,11 +339,16 @@ export const PRECONDITION_KEYS: Readonly<Record<string, KeyFn>> = {
       return no('Capacity for scale · not reviewed', 'capacity for scale not reviewed');
     return ok();
   }),
-  approved_scale_budget: forGate<G3Facts>('G3', (f) =>
-    positiveAmount(f.scope.amount, f.scope.currency)
-      ? ok()
-      : no('Scale budget · not stated', 'no scale budget stated'),
-  ),
+  approved_scale_budget: forGate<G3Facts>('G3', (f) => {
+    if (positiveAmount(f.scope.amount, f.scope.currency)) return ok();
+    const inv = f.scaleInvestment;
+    // D-111: name the committed one-time investment, labelled one-time, in a sentence of its own.
+    if (inv && positiveAmount(inv.amount, inv.currency))
+      return no(
+        `No scale budget requested · economics v${inv.economicsVersion} carries ${formatMoneyShort(inv.amount, inv.currency)} one-time scale-entry investment`,
+      );
+    return no('Scale budget · not stated', 'no scale budget stated');
+  }),
 
   // --- X -------------------------------------------------------------------
   parent_gate_reviewed: forGate<XFacts>('X', (f) => {
@@ -334,6 +366,21 @@ export const PRECONDITION_KEYS: Readonly<Record<string, KeyFn>> = {
   accountable_owner: forGate<XFacts>('X', (f) =>
     text(f.scope.ownerId) ? ok() : no('Name the accountable owner.'),
   ),
+  // D-110 §1: share, duration, scope subset and re-tested thresholds; a real tenant states the cap.
+  extension_within_rule: forGate<XFacts>('X', (f) => {
+    if (!f.extension) return no('Request the extension to check it against the extension rule.');
+    const v = checkExtensionRequest(f.extension.context, f.extension.request).filter(
+      (x) => x.key !== 'one_extension_per_parent',
+    );
+    return v.length === 0 ? ok() : no(v.map((x) => x.message).join(' '), 'extension outside the rule');
+  }),
+  one_extension_per_parent: forGate<XFacts>('X', (f) => {
+    if (!f.extension) return no('Request the extension to check it against the extension rule.');
+    const v = checkExtensionRequest(f.extension.context, f.extension.request).find(
+      (x) => x.key === 'one_extension_per_parent',
+    );
+    return v ? no(v.message, 'a second extension of the same pilot') : ok();
+  }),
 };
 
 // ---------------------------------------------------------------------------
