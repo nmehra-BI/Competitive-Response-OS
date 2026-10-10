@@ -3,6 +3,7 @@ import { MaterialChangeType, MaterialityPolicyBody } from '@growth-os/contracts'
 import {
   createMaterialityEvaluator,
   DEFAULT_MATERIALITY_POLICY,
+  impactLines,
   invalidationNotice,
   shortDay,
   staleBanner,
@@ -193,5 +194,52 @@ describe('shortDay', () => {
     expect(shortDay('2026-11-26T00:30:00+01:00')).toBe('26 Nov');
     expect(shortDay('2026-10-05')).toBe('5 Oct');
     expect(shortDay(undefined)).toBeNull();
+  });
+});
+
+describe('impactLines (S14 task mapping editor, D-114 §1)', () => {
+  const destination = change({
+    changeType: 'plan_destination_changed',
+    objectType: 'pilot_plan_version',
+    objectId: 'plan-v1',
+    label: undefined,
+    decisionCritical: undefined,
+  });
+  const labelled = [
+    { snapshotId: 'snap-v3', gateRequestId: 'g2', gateCode: 'G2', snapshotVersion: 3 },
+    { snapshotId: 'snap-v4', gateRequestId: 'g2', gateCode: 'G2', snapshotVersion: 4 },
+  ];
+
+  it('an approved, unsent set: the approval needs re-approval and the unsent tasks pause', () => {
+    const out = ev.evaluate(destination, policy, [approvedV4]);
+    expect(out.classification).toBe('material');
+    expect(impactLines(out, labelled, 3)).toEqual([
+      'Approval G2 · Snapshot v4 needs re-approval',
+      '3 unsent tasks pause',
+    ]);
+    expect(impactLines(out, labelled, 1)).toEqual([
+      'Approval G2 · Snapshot v4 needs re-approval',
+      '1 unsent task pauses',
+    ]);
+  });
+
+  it('an awaiting snapshot goes out of date; nothing pauses without an approval', () => {
+    const out = ev.evaluate(destination, policy, [awaitingV3]);
+    expect(impactLines(out, labelled, 6)).toEqual([
+      'G2 · Snapshot v3 goes out of date · approval disabled until refreshed',
+    ]);
+  });
+
+  it('an uncertain change names who reviews it and leaves the approval in force', () => {
+    const out = ev.evaluate(destination, { rules: [], escalateTo: 'sponsor' }, [approvedV4]);
+    expect(impactLines(out, labelled, 2)).toEqual([
+      'The sponsor reviews this change; approval G2 · Snapshot v4 stays in force until then',
+    ]);
+  });
+
+  it('no pins, or a not-material change: no lines', () => {
+    expect(impactLines(ev.evaluate(destination, policy, []), labelled, 4)).toEqual([]);
+    const cosmetic = ev.evaluate(change({ changeType: 'comment_or_formatting' }), policy, [approvedV4]);
+    expect(impactLines(cosmetic, labelled, 4)).toEqual([]);
   });
 });

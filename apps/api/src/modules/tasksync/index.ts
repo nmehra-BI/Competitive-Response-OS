@@ -28,6 +28,7 @@ import {
 } from './store';
 import { tasksCsv } from './text';
 import { devHandlers } from './dev';
+import { draftEditableFor, taskDraftHandlers } from './drafts';
 
 /** A preview is valid for 30 minutes; after that, preview again before sending. */
 export const PREVIEW_TTL_MS = 30 * 60_000;
@@ -110,7 +111,8 @@ export const taskSyncHandlers: HandlerMap = {
   [API.taskSync.get.id]: query(API.taskSync.get, {
     load: (ctx, tx) => loadTaskSet(tx, ctx.params.id),
     authorize: (ctx, s) => caseVisible(ctx.identity.subject, s.kase),
-    handle: async (_ctx, _t, s) => toTaskSetView(s),
+    handle: async (ctx, { tx }, s) =>
+      toTaskSetView(s, { draftEditable: await draftEditableFor(tx, ctx.identity, s) }),
   }),
 
   // ---- POST /me/task-sets/:id/previews (dry run) -------------------------------------------------
@@ -415,7 +417,8 @@ export const taskSyncHandlers: HandlerMap = {
         previewId: preview!.id,
         taskIds: eligible.map((e) => e.task.id),
       });
-      return toTaskSetView(await loadTaskSet(t.tx, s.id));
+      const after = await loadTaskSet(t.tx, s.id);
+      return toTaskSetView(after, { draftEditable: await draftEditableFor(t.tx, ctx.identity, after) });
     },
   }),
 
@@ -520,7 +523,8 @@ export const taskSyncHandlers: HandlerMap = {
         summary: `Retry ${failed.length} failed task(s) · ${failed.map((f) => `Task ${f.ordinal}`).join(', ')}`,
         details: { tasks: failed.length, gateRequestId: s.gateRequestId },
       });
-      return toTaskSetView(await loadTaskSet(t.tx, s.id));
+      const after = await loadTaskSet(t.tx, s.id);
+      return toTaskSetView(after, { draftEditable: await draftEditableFor(t.tx, ctx.identity, after) });
     },
   }),
 
@@ -564,5 +568,6 @@ export const taskSyncHandlers: HandlerMap = {
     },
   }),
 
+  ...taskDraftHandlers,
   ...devHandlers,
 };
