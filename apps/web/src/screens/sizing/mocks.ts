@@ -115,7 +115,11 @@ export function usedByMeasures(nodes: readonly LineageNode[], nodeKey: string): 
   while (frontier.length > 0) {
     const next: string[] = [];
     for (const n of nodes) {
-      if (seen.has(n.nodeKey) || !n.inputs.some((k) => frontier.includes(k))) continue;
+      // Calculation inputs and upper-bound checks (D-117: the reachable pool is checked against SAM).
+      const depends =
+        n.inputs.some((k) => frontier.includes(k)) ||
+        (n.checks ?? []).some((c) => frontier.includes(c.nodeKey));
+      if (seen.has(n.nodeKey) || !depends) continue;
       for (const k of [n.nodeKey, ...(ALIASES[n.nodeKey] ?? [])]) {
         if (!seen.has(k)) {
           seen.add(k);
