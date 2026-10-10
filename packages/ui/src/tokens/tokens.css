@@ -1,0 +1,254 @@
+/*
+ * Growth OS design tokens — ported 1:1 from the approved prototype
+ * (design/market-expansion/generator/common.py `T`) and UX_RESEARCH.md §10.3.
+ * Light values are the prototype's; dark values are research §10.3's dark column.
+ * Components use only these variables. Never hard-code a colour in a component.
+ */
+:root {
+  /* Typography (research §10.1) */
+  --font-ui: 'Geist', 'Helvetica Neue', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+  --text-12: 12px;
+  --lh-12: 16px;
+  --text-13: 13px;
+  --lh-13: 20px;
+  --text-14: 14px;
+  --lh-14: 20px;
+  --text-16: 16px;
+  --lh-16: 24px;
+  --text-serif-17: 17px;
+  --lh-serif-17: 28px;
+  --text-18: 18px;
+  --lh-18: 26px;
+  --text-20: 20px;
+  --lh-20: 28px;
+  --text-24: 24px;
+  --lh-24: 32px;
+  --text-30: 30px;
+  --lh-30: 38px;
+
+  /* Spacing (4 px grid), radius, layout, motion (research §10.2) */
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 56px;
+  --content-max: 1160px;
+  --panel-w: 360px;
+  --row-compact: 36px;
+  --row-comfortable: 44px;
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
+
+  /* Base palette — light */
+  --bg-canvas: #f7f7f5;
+  --bg-surface: #ffffff;
+  --bg-sunken: #f0f0ec;
+  --border-subtle: #e4e4df;
+  --border-strong: #d6d6d0;
+  --border-control: #84888f;
+  --text-primary: #17181b;
+  --text-secondary: #4b4f57;
+  --text-tertiary: #6a6e76;
+  --inactive: #cfcfca;
+  --accent: #3049c9;
+  --accent-bg: #eef0fb;
+  --accent-border: #c9d0f2;
+  --accent-hover: #2840b3;
+  --focus-ring: #3049c9;
+
+  /* Semantic (status only) */
+  --success-fg: #1b7046;
+  --success-bg: #e6f3eb;
+  --warning-fg: #8a5300;
+  --warning-bg: #fbf0da;
+  --danger-fg: #b3261e;
+  --danger-bg: #fcebea;
+  --info-fg: #2853b8;
+  --info-bg: #e9eefa;
+  --neutral-fg: #4b4f57;
+  --neutral-bg: #eeeeeb;
+  --ai-fg: #6a3db0;
+  --ai-bg: #f1ecfa;
+  --restricted-fg: #3b4250;
+  --restricted-bg: #e8eaee;
+
+  /* Epistemic kinds (research §7.1, §10.3) */
+  --kind-evidence-fg: #0e6464;
+  --kind-evidence-bg: #e3f1f0;
+  --kind-assumption-fg: #8c2d6b;
+  --kind-assumption-bg: #f8e9f1;
+  --kind-scenario-fg: #2f5f78;
+  --kind-scenario-bg: #e6eef3;
+  --kind-actual-fg: #17181b;
+  --kind-actual-bg: #ecece8;
+
+  /* Scenario ramp (ordinal; shapes ▼ ● ▲ required) */
+  --scenario-downside: #5e8fa8;
+  --scenario-base: #2f5f78;
+  --scenario-upside: #163a4d;
+
+  /* Chart reference lines */
+  --chart-actual: #17191b;
+  --chart-threshold: #4b4f57;
+  --chart-baseline: #6a6e76;
+  --chart-cap: #8a5300;
+  --chart-topdown: #6a6e76;
+  --chart-bottomup: #2f5f78;
+
+  /* Categorical (up to 4 candidates or cohorts; never status) */
+  --cat-1: #0072b2;
+  --cat-2: #b35a00;
+  --cat-3: #00866b;
+  --cat-4: #a8508a;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg-canvas: #0f1012;
+    --bg-surface: #17191c;
+    --bg-sunken: #1e2125;
+    --border-subtle: #2a2e34;
+    --border-strong: #353a41;
+    --border-control: #6a707a;
+    --text-primary: #ecedef;
+    --text-secondary: #b3b7bf;
+    --text-tertiary: #8b9099;
+    --inactive: #3a3f46;
+    --accent: #8da2f7;
+    --accent-bg: #1b2347;
+    --accent-border: #33407a;
+    --accent-hover: #a9b9f9;
+    --focus-ring: #8da2f7;
+    --success-fg: #5fcb93;
+    --success-bg: #12291d;
+    --warning-fg: #e9b651;
+    --warning-bg: #2d2410;
+    --danger-fg: #f48a84;
+    --danger-bg: #331817;
+    --info-fg: #86a9f6;
+    --info-bg: #152039;
+    --neutral-fg: #b3b7bf;
+    --neutral-bg: #24272c;
+    --ai-fg: #bba0f4;
+    --ai-bg: #251d3b;
+    --restricted-fg: #c3c8d1;
+    --restricted-bg: #262a31;
+    --kind-evidence-fg: #6ccfcb;
+    --kind-evidence-bg: #10292a;
+    --kind-assumption-fg: #e79bc9;
+    --kind-assumption-bg: #2e1726;
+    --kind-scenario-fg: #8fc0da;
+    --kind-scenario-bg: #14232c;
+    --kind-actual-fg: #ecedef;
+    --kind-actual-bg: #24272c;
+    --scenario-downside: #6e9db5;
+    --scenario-base: #9cc4d9;
+    --scenario-upside: #d3e8f3;
+    --chart-actual: #ecedef;
+    --chart-threshold: #b3b7bf;
+    --chart-baseline: #8b9099;
+    --chart-cap: #e9b651;
+    --chart-topdown: #8b9099;
+    --chart-bottomup: #9cc4d9;
+    --cat-1: #56b4e9;
+    --cat-2: #e69f00;
+    --cat-3: #3cc49e;
+    --cat-4: #d98bb8;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg-canvas: #0f1012;
+  --bg-surface: #17191c;
+  --bg-sunken: #1e2125;
+  --border-subtle: #2a2e34;
+  --border-strong: #353a41;
+  --border-control: #6a707a;
+  --text-primary: #ecedef;
+  --text-secondary: #b3b7bf;
+  --text-tertiary: #8b9099;
+  --inactive: #3a3f46;
+  --accent: #8da2f7;
+  --accent-bg: #1b2347;
+  --accent-border: #33407a;
+  --accent-hover: #a9b9f9;
+  --focus-ring: #8da2f7;
+  --success-fg: #5fcb93;
+  --success-bg: #12291d;
+  --warning-fg: #e9b651;
+  --warning-bg: #2d2410;
+  --danger-fg: #f48a84;
+  --danger-bg: #331817;
+  --info-fg: #86a9f6;
+  --info-bg: #152039;
+  --neutral-fg: #b3b7bf;
+  --neutral-bg: #24272c;
+  --ai-fg: #bba0f4;
+  --ai-bg: #251d3b;
+  --restricted-fg: #c3c8d1;
+  --restricted-bg: #262a31;
+  --kind-evidence-fg: #6ccfcb;
+  --kind-evidence-bg: #10292a;
+  --kind-assumption-fg: #e79bc9;
+  --kind-assumption-bg: #2e1726;
+  --kind-scenario-fg: #8fc0da;
+  --kind-scenario-bg: #14232c;
+  --kind-actual-fg: #ecedef;
+  --kind-actual-bg: #24272c;
+  --scenario-downside: #6e9db5;
+  --scenario-base: #9cc4d9;
+  --scenario-upside: #d3e8f3;
+  --chart-actual: #ecedef;
+  --chart-threshold: #b3b7bf;
+  --chart-baseline: #8b9099;
+  --chart-cap: #e9b651;
+  --chart-topdown: #8b9099;
+  --chart-bottomup: #9cc4d9;
+  --cat-1: #56b4e9;
+  --cat-2: #e69f00;
+  --cat-3: #3cc49e;
+  --cat-4: #d98bb8;
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-14);
+  line-height: var(--lh-14);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

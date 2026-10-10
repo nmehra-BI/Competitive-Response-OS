@@ -1,0 +1,30 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [{ "callId": "dup-1", "tool": "sizing.calculate", "args": "${json:subject.sizingInput}" }]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "An imported cohort repeats the process-qualified population. It should not be counted again.",
+      "proposals": [
+        {
+          "type": "cohort_dedup",
+          "cohortAId": "${id:label=Process-qualified}",
+          "cohortBId": "${id:label=Process-qualified (imported)}",
+          "proposedOverlap": 1080,
+          "method": "Same rule and source; 1,080 shared site IDs reported by the import"
+        },
+        {
+          "type": "cohort_dedup",
+          "cohortAId": "${id:label=Size-qualified}",
+          "cohortBId": "${id:label=Process-qualified}",
+          "proposedOverlap": 500,
+          "method": "Aggregate overlap from the dedup run (sizing engine input)"
+        }
+      ],
+      "unknowns": ["Whether the 20 imported sites not shared are real additions"],
+      "notChecked": ["Site-ID lists (restricted)"]
+    }
+  }
+]

@@ -1,0 +1,43 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [{ "callId": "up-1", "tool": "sizing.calculate", "args": "${json:subject.sizingInput}" }]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Sizing with figures the engine did not produce (adversarial script).",
+      "proposals": [
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "SAM is precisely €41,237,500 per year.",
+            "kind": "evidence",
+            "evidenceIds": ["${passage:SRC-014}"],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Adoption will reach 23.7% by year 3.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "SAM is 2,000 unique sites (sizing engine).",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": [],
+      "notChecked": []
+    }
+  }
+]

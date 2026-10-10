@@ -1,0 +1,32 @@
+[
+  {
+    "id": "bus-default",
+    "skill": "bottom-up-sizing",
+    "subject": "ME-104",
+    "suites": [
+      "arithmetic",
+      "citation-validity",
+      "provenance-coverage",
+      "source-faithfulness",
+      "unsupported-precision",
+      "material-unknowns"
+    ],
+    "expect": {
+      "status": "completed",
+      "engineCalls": 1,
+      "proposalTypes": ["claim", "claim", "claim", "assumption_value"]
+    }
+  },
+  {
+    "id": "bus-unsupported-precision",
+    "skill": "bottom-up-sizing",
+    "subject": "ME-104",
+    "fixture": "unsupported-precision",
+    "suites": ["unsupported-precision", "citation-validity", "arithmetic"],
+    "expect": {
+      "status": "completed",
+      "engineCalls": 1,
+      "unsupportedFigures": ["41,237,500", "23.7%"]
+    }
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "name": "@growth-os/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TaskConnector interface, typed connector errors, and the simulated task tool with fault injection. A real Jira adapter implements the same interface.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*",
+    "kysely": "^0.27.5"
+  }
+}

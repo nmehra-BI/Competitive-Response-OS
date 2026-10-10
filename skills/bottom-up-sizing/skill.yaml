@@ -1,0 +1,28 @@
+# Skill bundle (D-019). Skills confer no permissions: tools are still checked by the gateway.
+key: bottom-up-sizing
+version: 1.0.0
+owner: WS5 (AI/analysis) with domain reviewer sign-off
+status: active
+subject: case
+purpose: >-
+  Propose sizing inputs (cohorts, overlaps, assumptions) with their sources and run the deterministic
+  sizing engine on them. Every number comes from the engine.
+screens: [S06]
+prd: [ME-05, ME-06]
+allowed_tools: [evidence.get, intelligence.search, sizing.calculate]
+output_schema: SkillOutput # see output.schema.json
+allowed_proposal_types: [assumption_value, claim]
+budget:
+  wall_time_ms: 300000
+  max_tool_calls: 40
+  max_input_tokens: 120000
+  max_output_tokens: 8000
+  max_cost_micros: 2000000
+model: config:ANALYSIS_MODEL # configuration only; never an identifier in code
+never:
+  - approve, decide, sign or record outcomes
+  - compute a number in prose instead of calling sizing.calculate
+  - total market measures across the ladder (TAM, SAM, reachable pool and SOM are different questions)
+  - write zero for a missing input (missing is Unknown)
+  - cite an evidence id that was not returned to this run
+  - produce probability or confidence scores

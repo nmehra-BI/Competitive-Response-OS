@@ -1,0 +1,58 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "bus-1", "tool": "evidence.get", "args": { "sourceKey": "SRC-014" } },
+      { "callId": "bus-2", "tool": "evidence.get", "args": { "sourceKey": "SRC-021" } }
+    ]
+  },
+  {
+    "type": "tool_calls",
+    "calls": [{ "callId": "bus-3", "tool": "sizing.calculate", "args": "${json:subject.sizingInput}" }]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "The sizing engine reproduces the committed ladder with no blocking checks. SAM rests on two cohorts with a 500-site overlap removed.",
+      "proposals": [
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "About 5,000 food-processing sites in Germany operate a process-water treatment step (TAM site count).",
+            "kind": "evidence",
+            "evidenceIds": ["${passage:SRC-014}"],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "SAM is 2,000 unique sites, €40,000,000 per year, after removing an overlap of 500 sites (sizing engine).",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "The reachable pool is 500 sites; it is a site count, not money.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "assumption_value",
+          "inputKey": "adoption_rate.base",
+          "value": "0.20",
+          "valueText": null,
+          "basis": "Kept at the committed value until paid commitments and the pilot test it.",
+          "evidenceIds": []
+        }
+      ],
+      "unknowns": ["Adoption by year 3 is an assumption under test", "No top-down cross-check figure"],
+      "notChecked": ["Site-ID lists (restricted)", "Trade registry records"]
+    }
+  }
+]

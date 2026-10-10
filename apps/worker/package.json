@@ -1,0 +1,23 @@
+{
+  "name": "@growth-os/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Background jobs on graphile-worker: outbox dispatch and reconcile, analysis runs, timers, ingestion, analytics.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@growth-os/ai": "workspace:*",
+    "@growth-os/connectors": "workspace:*",
+    "@growth-os/contracts": "workspace:*",
+    "@growth-os/db": "workspace:*",
+    "@growth-os/domain": "workspace:*",
+    "graphile-worker": "^0.16.6"
+  },
+  "devDependencies": {
+    "@growth-os/fixtures-aster": "workspace:*"
+  }
+}
