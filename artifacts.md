@@ -42,6 +42,24 @@ the Wave 4 streams (`docs/market-expansion/build/WAVE4.md`). What changes per wo
 | WF-09 | "Accept as fact" in one step; tenant "Live analysis" off until the addendum and an eval run are recorded | E4, E3 | D-130, D-131 |
 | WF-10 | Licences fail closed (written confirmation, term end, on-expiry action) | E3 | D-129 |
 
+### Build status overview (Wave 4 integrated, 2026-10-10)
+
+The five Wave 4 streams are merged (decisions.md D-141…D-158). Every workflow runs end to end on the real stack with
+the product decisions D-109…D-121 in code; the full real suite (67 tests, D-158) includes the Jira Cloud spec
+against a local mock Jira server. "Proving specs" are under `apps/web/e2e/` (real stack unless marked mock).
+
+| ID | Build status | Code (new or changed in Wave 4) | Proving specs and suites | Still simulated or open |
+|---|---|---|---|---|
+| WF-01 | Done · a case can start from S01 | `screens/overview/NewCaseForm.tsx` → `cases.createDirect` | `real/w4-e1-editors` (S01 New case), `NewCaseForm.test.tsx`, `aster-journey` | — |
+| WF-03 | Done · S06 editor; pool checked against SAM | `screens/sizing/SizingEditor.tsx`, `editor-model.ts`; `modules/me/sizing`; domain `me/sizing` lineage | `real/w4-e1-editors`, `real/w4-e4-workflow` (SAM lineage), `aster-journey` step 8, `sizing.db`, `lineage.golden` | CR-W4-E1-3 deferred |
+| WF-04 | Done · S08 editor; one-time block apart | `screens/economics/EconomicsScreen.tsx`, `editor-model.ts`; `modules/me/economics` (opex note column, D-147) | `real/w4-e1-editors`, `economics.db`, `EconomicsScreen.test.tsx` | CR-W4-E1-1 deferred |
+| WF-05 | Done · S09 add assumption; validation draft tasks | `AddAssumptionForm.tsx`, `ValidationTaskDraft.tsx`; `modules/me/assumptions/evidence.ts`, `modules/tasksync/drafts.ts` | `real/w4-e1-editors` (nine assumptions typed), `real/w4-e2-plan-and-spend`, `real/w4-e4-workflow`, `aster-journey` step 12, `tasksync.db`, `assumptions.db` | CR-E2-1 deferred |
+| WF-06 | Done · matrix routing, G3 quorum, lapse, expiry, stop rules, measure types | `modules/me/gates` (`lib/governance.ts`), domain `platform/policy/governance.ts`, `admin/committee.ts`, migration 0007 seat guard | `real/w4-e3-governance`, `aster-journey` steps 17, 20, 29, `committee.db`, `governance-security.db`, `governance.test` | Real ceilings and committee from customer Finance |
+| WF-07 | Done · S11 plan editor, spend, stop-rule trips; S14 mapping editor; Jira Cloud adapter | `screens/pilot/{PlanEditor,RecordSpend,StopRules}.tsx`, `modules/me/{pilot,budget}`, `admin/mapping.ts`, `TaskMappingEditor.tsx`, `packages/connectors/src/jira/**`, `admin/connections.ts`, `JiraConnectionPanel.tsx` | `real/w4-e2-plan-and-spend`, `real/w4-e4-workflow`, `real/w4-e5-jira`, `real/pilot-sync`, `aster-journey` steps 21–24, `connector-faults/*` and `connector-faults/jira/*`, `tenant-ref` | Jira Cloud only against the mock; CR-E5-1, CR-E5-5 |
+| WF-08 | Done · X rule, X1 €30k · 45 days, G3 investment wording | `modules/me/outcomes`, domain `me/gates` (X keys), `screens/outcomes` | `aster-journey` steps 27–28, `real/w4-e3-governance`, `outcomes.db`, `governance-security.db` | — |
+| WF-09 | Done · one-step "Accept as fact"; live-analysis gate | `modules/analysis/one-step.ts`, `screens/thesis/ClaimProposals.tsx`, `admin/live-analysis.ts`, worker `jobs/analysis/run.ts` (`gateLiveProvider`) | `real/w4-e4-workflow`, `live-gate.db`, `proposals.db`, evals smoke | Live provider off until the addendum and an eval run |
+| WF-10 | Done · licences fail closed; expiry job | `admin/licences.ts`, `modules/platform/evidence` (`rightsCappedAccess`), worker `jobs/timers/license-expiry.ts`, worker tools (`licenceAllowsModelContext`, D-146) | `real/w4-e3-governance` (S14 licences), `evidence.db`, `license-expiry.db`, `gateway.db`, `real/restricted-evidence` | Written confirmations from Legal |
+
 ### Build status overview (end-to-end, 2026-10-09)
 
 Every workflow now runs end to end on the **real stack**: the API, the worker and Vite with MSW off, against a
@@ -199,6 +217,13 @@ a return supersedes the old snapshot), `apps/api/src/modules/me/gates/` (decidin
 `platform/directory/directory.db.test.ts`, `apps/api/test/db/security/tenancy.test.ts`.
 
 **Product decision (2026-10-09, D-109):** G0 stays a single sponsor approval with no expiry. Aster gains two synthetic investment-committee members (PQ-14); no G3 grant is seeded, so step 29 still shows the authority gap.
+
+**Update — Wave 4 integrated (2026-10-10, D-149):** a case can now start without an opportunity or the API. S01 and
+the case list have "New case" (title, business unit, product, segment and geography from `catalogue.scopeOptions`,
+currency, horizon) → `cases.createDirect` → the case opens at its thesis at Draft mandate; the mandate is completed
+on S02 and approved at G0 as before. Code: `apps/web/src/screens/overview/NewCaseForm.tsx`; API
+`modules/me/cases` (unchanged). Proving: `real/w4-e1-editors.spec.ts` (from S01), `NewCaseForm.test.tsx`. Failure
+paths: missing title or horizon named in the form, nothing sent; a business unit without `mandate.edit` → 403 shown.
 
 #### UI walkthrough (WF-01)
 
@@ -367,6 +392,17 @@ which Aster does not seed.
 
 **Product decision (2026-10-09, D-112, D-117):** A new case's sizing model is entered in a minimal S06 draft editor (boundary, cohorts, overlap, reachable pool; blanks stay Unknown), replacing the API entry of D-095. The reachable pool stays an entered number; a new check keeps it at or below SAM sites, and SAM's "Used by" shows that check.
 
+**Update — Wave 4 integrated (2026-10-10, D-141, D-149):** the first model is entered in the **S06 sizing draft
+editor** (boundary: market unit, currency, reference year, product boundary, what spend includes; TAM site count and
+spend per site; cohorts and their overlap; reachable pool with its channel definition; adoption and capacity linked
+to assumptions). Each input is Evidence (source) or Assumption (link); a blank sends `clearInputKeys` and the ledger
+shows Unknown, never 0; `MISSING_INPUT` blocks "Create snapshot vN". Autosave runs one save at a time (D-145). The
+reachable pool is checked against SAM as an upper bound (`checked_against` lineage edge; SAM's drawer reads "Used
+by: Reachable pool (upper-bound check: 500 ≤ 2,000 sites)"; `REACHABLE_EXCEEDS_SAM` blocks like SAM > TAM). Code:
+`screens/sizing/SizingEditor.tsx`, `editor-model.ts`, `modules/me/sizing`, domain `me/sizing`. Proving:
+`real/w4-e1-editors` (UI only), `real/w4-e4-workflow` (lineage), `aster-journey` step 8, `sizing.db`,
+`lineage.db`, `lineage.golden.test`.
+
 #### UI walkthrough (WF-03)
 
 | Step | Who | Screen | Route |
@@ -429,6 +465,14 @@ CSV export with per-year and one-time sections apart; the scenario table uses th
 16), `me/assumptions/assumptions.db.test.ts` (steps 9, 19). Deferred: xlsx export (CR-WS4a-5).
 
 **Product decision (2026-10-09, D-112):** Economics drivers are entered in a minimal S08 driver editor, with one-time investment in its own block. Cash flow and payback stay "Not available".
+
+**Update — Wave 4 integrated (2026-10-10, D-141, D-147):** the **S08 economics driver editor** sets price, margin,
+annual incremental opex with a scope note (own column since 0007), capacity and adoption per scenario, linked to
+assumptions with unit and currency checks; currency and base year once in the header; the one-time scale-entry
+investment in its own block, never in a /year row; cash flow and payback stay "Not available". "Start the economics
+model" works for a case with no economics yet. Code: `screens/economics/EconomicsScreen.tsx`, `editor-model.ts`,
+`modules/me/economics`. Proving: `real/w4-e1-editors` (four scenario rows, €400k one-time apart), `economics.db`,
+`EconomicsScreen.test.tsx`.
 
 #### UI walkthrough (WF-04)
 
@@ -512,6 +556,16 @@ Tests: `me/assumptions/assumptions.db.test.ts`, `me/thesis/thesis.db.test.ts`, `
 (steps 10, 13, 14). Open: who authors validation tasks (PQ-13).
 
 **Product decision (2026-10-09, D-112, D-113):** Assumptions are registered on S09 ("Add assumption"). After G1, a new step sits between "tasks drafted" and "Preview tasks": the experiment owner or case owner edits the draft validation tasks on S09 (title, owner, due date inside the window, deliverable; add or remove unsent tasks). Thresholds, sample and budget still change only by amendment.
+
+**Update — Wave 4 integrated (2026-10-10, D-141, D-152, D-154):** S09 **"Add assumption"** (statement, value and unit,
+owner, Evidence with linked sources or "Assumption — no evidence", sensitivity, decision-critical, validation
+method, due date; units and model inputs from the contracts). After G1 approval, **"Validation tasks · Draft"** lets
+the experiment owner or case owner edit, add and remove unsent tasks (`tasks.addDraft/editDraft/removeDraft`;
+removal marks the row; an edit after preview makes the preview stale); sent tasks are read-only with their key.
+Results read "Met · 9 interviews (target 8)". Code: `AddAssumptionForm.tsx`, `ValidationTaskDraft.tsx`,
+`modules/me/assumptions/evidence.ts`, `modules/tasksync/drafts.ts`, domain `me/validation`. Proving:
+`real/w4-e1-editors`, `real/w4-e2-plan-and-spend`, `real/w4-e4-workflow`, `aster-journey` steps 12 and 14,
+`tasksync.db`, `assumptions.db`, `ValidationScreen.test.tsx`.
 
 #### UI walkthrough (WF-05)
 
@@ -614,6 +668,18 @@ met; material changes and resolution), `apps/api/src/platform/materiality.ts` (t
 `apps/api/test/db/joint/assumption-pauses-writes.test.ts`.
 
 **Product decision (2026-10-09, D-109, D-112, D-115):** Approval ceilings come from a Finance-signed delegation of authority (sponsor G1 €50k, G2 €150k, X €50k by default; editable per tenant). Unused G1 and G2 approvals expire after 30 days, X after 14. G3 (and any request above the sponsor's ceiling) needs 2 of 3 committee approvals on the same snapshot hash, including the finance seat; approvals already given lapse if the snapshot goes stale. The G2 request also pre-registers stop rules and typed measures (Demand, Delivery effort, Buyer fit, Spend, Other).
+
+**Update — Wave 4 integrated (2026-10-10, D-141, D-148):** a request **routes by the matrix**: to the sponsor within
+min(matrix ceiling, the sponsor's grant) — for X, parent G2 plus every live extension within the sponsor's G2 grant —
+else to the **committee** within its ceiling, else an authority gap. On the committee route each member decides in
+their seat; the request moves only at **quorum: 2 of 3 on the current snapshot with the finance seat**, or ends Not
+approved when quorum can no longer be reached; approvals on an earlier snapshot show as lapsed (never-rule 2).
+Exclusions: package author, case owner, the finance reviewer who signed the case's economics. The database refuses a
+seat the approver does not hold (0007). Expiry per gate: G1/G2 30 days, X 14, G0/G3 never. S10 G2 requests carry
+**stop rules** (frozen into the first G2 snapshot, copied on refresh) and a **measure type** per threshold.
+Code: `modules/me/gates` (`lib/governance.ts`, `lib/package.ts`), domain `platform/policy/governance.ts`,
+`admin/committee.ts`, `screens/decisions`, `ApprovalPanel.tsx`. Proving: `real/w4-e3-governance` (G3 quorum
+walked in the UI), `aster-journey` steps 17, 20, 29, `committee.db`, `governance-security.db`, `governance.test`.
 
 #### UI walkthrough (WF-06)
 
@@ -772,6 +838,23 @@ sequenceDiagram
 
 **Product decision (2026-10-09, D-112, D-114, D-121):** Pilot tasks and milestones are written in an S11 pilot plan editor. Step 23's mapping fix moves to an S14 "Task mapping" editor (a project or issue-type change on an approved, unsent set is material and warns first). S11 gains "Record spend". The first real connector is Jira Cloud with OAuth 2.0 (3LO) as a dedicated integration account; the idempotency key is stored on the issue and reconcile searches for it before any retry.
 
+**Update — Wave 4 integrated (2026-10-10, D-141, D-143, D-144, D-155):** S11 gains the **plan editor** (milestones
+with date and evidence expected; tasks with owner, dependency, due date, deliverable and an optional one-time budget
+line; new rows reference each other by ordinal), **Record spend** (Committed · Spent, reference, optional task;
+above the remaining approval → "Request scope change"; corrections are reversals with a reason) and **Stop rules ·
+pre-registered** with "Report trip" (a sponsor review item; no task, gate or case state moves). S14 gains the **task
+mapping editor** (project, issue type, assignees Mapped / Unmapped / Not found via "Check with Jira" →
+`admin.checkMapping`; a destination change on an approved, unsent set shows its impact and saves only with
+`acknowledgeMaterialImpact`, running `plan_destination_changed`). The **Jira Cloud adapter** (`TASK_CONNECTOR=jira`)
+implements `TaskConnector` with OAuth 2.0 3LO as the integration account, AES-256-GCM tokens, refresh with rotation,
+the key written atomically at create and read back, and reconcile by label then entity property; worker call sites
+pass the tenant. One preview per click (the double preview fixed in D-155). Code: `screens/pilot/{PlanEditor,
+RecordSpend,StopRules}.tsx`, `modules/me/{pilot,budget}`, `admin/mapping.ts`, `TaskMappingEditor.tsx`,
+`packages/connectors/src/jira/**`, `admin/connections.ts`, `JiraConnectionPanel.tsx`, worker `jobs/outbox/dispatch.ts`.
+Proving: `real/w4-e2-plan-and-spend`, `real/w4-e4-workflow` (mapping), `real/w4-e5-jira` (six issues from the
+mock), `aster-journey` steps 21–24, `real/pilot-sync`, `connector-faults/*` and `connector-faults/jira/*`,
+`connections.db`, `mapping.db`, `budget.db`, `pilot.db`. Open: a real Jira site (customer IT), CR-E5-1, CR-E5-5.
+
 #### UI walkthrough (WF-07)
 
 | Step | Who | Screen | Route |
@@ -852,6 +935,15 @@ review draft with If-Match on `rowVersion`; decision via the case machine; `outc
 Gap: `readiness` is always empty (no table).
 
 **Product decision (2026-10-09, D-110, D-111):** The extension is capped at 25% of the parent pilot budget and 50% of its window, one per pilot, with the same or narrower scope. Aster X1 is €30k · 45 days (1 Mar – 14 Apr 2027) and is approvable by Elena ("Approve extension €30k · 45 days"). G3 keeps all four blockers; the scale-budget blocker names the €400k one-time scale-entry investment and never puts it beside a /year figure.
+
+**Update — Wave 4 integrated (2026-10-10, D-141):** the **extension rule** is enforced at request and at decision:
+≤ 25% of the parent's approved amount, ≤ 50% of its window and ≥ 14 days, the parent's sites or fewer, no outreach,
+one extension per parent; a null cap is refused in real tenants. S12 shows "Up to €30k (25% of €120k) · up to 45
+days"; Aster X1 is €30k · 45 days and Elena's button reads "Approve extension €30k · 45 days". The fourth **G3
+blocker** reads "No scale budget requested · economics vN carries €400k one-time scale-entry investment", never next
+to a /year figure; G3 reads the Demand measure type. Code: `modules/me/outcomes`, `modules/me/gates`, domain
+`me/gates` (X keys `extension_within_rule`, `one_extension_per_parent`), `screens/outcomes`. Proving: `aster-journey`
+steps 27–28, `real/w4-e3-governance`, `outcomes.db`, `governance-security.db`.
 
 #### UI walkthrough (WF-08)
 
@@ -980,6 +1072,14 @@ sequenceDiagram
 
 **Product decision (2026-10-09, D-116, D-120):** Live analysis stays off per tenant until a signed provider addendum is recorded and a manual eval run passes. An unedited, fully cited claim proposal can be accepted as fact in one human action; otherwise it is added as a draft first.
 
+**Update — Wave 4 integrated (2026-10-10, D-141):** S05 offers **"Accept as fact"** in one act for an unedited, cited
+claim proposal whose citations all open for the viewer (both audit events in one transaction); otherwise "Add as
+draft". A tenant's **Live analysis** is off until the addendum and a passing eval run are recorded (S14, audited,
+DB-checked); with a live provider configured and the tenant off, the worker stops before any provider call:
+"Stopped — your work is saved". The fixture provider is unaffected. Code: `modules/analysis/one-step.ts`,
+`screens/thesis/ClaimProposals.tsx`, `admin/live-analysis.ts`, worker `jobs/analysis/run.ts` (`gateLiveProvider`).
+Proving: `real/w4-e4-workflow`, `proposals.db`, `live-gate.db`, evals smoke.
+
 #### UI walkthrough (WF-09)
 
 | Step | Who | Screen | Route |
@@ -1060,6 +1160,16 @@ is CR-WS5-1, deferred with a parity test to write). Tests: the evidence DB suite
 
 **Product decision (2026-10-09, D-120):** A licence without written confirmation fails closed: metadata only, no excerpt, model context, embeddings or export. Each licence gets a term end and an on-expiry action that removes excerpts and embeddings but keeps provenance.
 
+**Update — Wave 4 integrated (2026-10-10, D-141, D-146):** licences **fail closed**: without a written confirmation, after
+the term ends, or with 0 sentences, an excerpt entitlement drops to aggregate only in `evidence.get`, search and
+export, and the worker's evidence tool keeps passages out of model context (also for licence rows older than the
+0006 constraint). `timers.license_expiry` (daily 02:15) expires a licence the day after its term, drops it to
+metadata only in the same write (the database enforces it) and, for "delete copy, keep audit", marks the sources
+deleted; provenance stays. S14 edits the confirmation, term end and on-expiry action. Code: `admin/licences.ts`,
+`modules/platform/evidence`, worker `jobs/timers/license-expiry.ts`, worker `jobs/analysis/tools`. Proving:
+`real/w4-e3-governance` (S14 licences), `evidence.db`, `license-expiry.db`, `license-expiry.test`, `gateway.db`,
+`real/restricted-evidence`.
+
 #### UI walkthrough (WF-10)
 
 | Step | Who | Screen | Route |
@@ -1088,11 +1198,11 @@ real stack; `real/*` are the alternate-path specs under `apps/web/e2e/real/`. Ca
 | 5 | Convert OPP-07 to ME-104; G0 Approved on the rail | WF-02, WF-01 | `/me/cases/ME-104/thesis` | `POST /me/opportunities/:ref/convert`, `GET /me/cases/:caseRef` | `aster-journey` steps 1–5 |
 | 6 | Start assessment; sizing ladder and SOM formula | WF-03 | `/me/cases/ME-104/sizing` | `POST /me/cases/:caseRef/transitions`, `PATCH /me/cases/:caseRef/sizing/draft`, `POST …/sizing/draft/calculate` | `aster-journey` steps 6–8 |
 | 7 | Variant: TAM 500 blocks with SAM > TAM; undo | WF-03 | `/me/cases/ME-104/sizing` | `POST …/sizing/draft/calculate` | `aster-journey` steps 6–8 |
-| 8 | Commit sizing v2; lineage on SAM | WF-03, WF-10 | `/me/cases/ME-104/sizing` (lineage drawer) | `POST …/sizing/commit`, `GET /me/cases/:caseRef/lineage` | `aster-journey` steps 6–8 |
+| 8 | Commit sizing v2; lineage on SAM: "Used by: Reachable pool (upper-bound check: 500 ≤ 2,000 sites)" (D-117) | WF-03, WF-10 | `/me/cases/ME-104/sizing` (lineage drawer) | `POST …/sizing/commit`, `GET /me/cases/:caseRef/lineage` (`usedBy[].relation = checked_against`) | `aster-journey` steps 6–8, `real/w4-e4-workflow` |
 | 9 | Daniel disputes 20% adoption; scenario table and money cards | WF-04, WF-05 | `/me/cases/ME-104/economics` | `GET /me/cases/:caseRef/economics`, `POST /me/assumptions/:id/disputes`, `POST /me/cases/:caseRef/dissent` | `aster-journey` step 9 |
 | 10 | Create EXP-03; submit G1 (v1 hashed) | WF-05, WF-06 | `/me/cases/ME-104/validation` | `POST /me/cases/:caseRef/experiments`, `POST /me/cases/:caseRef/gate-requests`, `POST /me/gate-requests/:id/submit` | `aster-journey` steps 10–12 |
 | 11 | Elena approves validation €15k; EXP-03 locked; tasks drafted | WF-06, WF-05 | `/reviews` → `/me/cases/ME-104/decisions?gate=G1` | `GET /reviews`, `POST /me/gate-requests/:id/decisions` | `aster-journey` steps 10–12 |
-| 12 | Preview and create VAL-1…VAL-5 | WF-07 | `/me/cases/ME-104/validation` | `POST /me/task-sets/:id/previews`, `POST /me/task-sets/:id/sync` | `aster-journey` steps 10–12 |
+| 12 | Edit a drafted task ("Validation tasks · Draft", D-113), preview and create VAL-1…VAL-5 | WF-05, WF-07 | `/me/cases/ME-104/validation` | `PATCH /me/tasks/:id/draft`, `POST /me/task-sets/:id/previews`, `POST /me/task-sets/:id/sync` | `aster-journey` steps 10–12, `real/w4-e4-workflow` |
 | 13 | Amend the window to 20 Nov | WF-05 | `/me/cases/ME-104/validation` | `POST /me/experiments/:id/amendments` | `aster-journey` steps 13–16 |
 | 14 | Record 9 interviews / 4 commitments | WF-05 | `/me/cases/ME-104/validation` | `POST /me/experiments/:id/start`, `POST /me/experiments/:id/results` | `aster-journey` steps 13–16 |
 | 15 | Lena signs the specialist review (pilot scope) | WF-05 | `/me/cases/ME-104/feasibility` | `POST /me/cases/:caseRef/feasibility/:dimension/reviews` | `aster-journey` steps 13–16 |
@@ -1103,14 +1213,21 @@ real stack; `real/*` are the alternate-path specs under `apps/web/e2e/real/`. Ca
 | 20 | Elena approves the pilot with C1 and C2; expiry shown | WF-06 | `/me/cases/ME-104/decisions?gate=G2` | `POST /me/gate-requests/:id/decisions` | `aster-journey` steps 19–20 |
 | 21 | Activation blocked: missing owner, then open C1 | WF-07 | `/me/cases/ME-104/pilot` | `POST /me/cases/:caseRef/pilot-plan/activate` → `PRECONDITIONS_UNMET` | `aster-journey` steps 21–24 |
 | 22 | Owner set, C1 met, activate; 5 of 6 confirmed, 1 failed (permission) | WF-07 | `/me/cases/ME-104/pilot` | `PATCH /me/tasks/:id`, `POST /me/conditions/:id/met`, `POST …/pilot-plan/activate`, `POST /me/task-sets/:id/previews`, `POST /me/task-sets/:id/sync`, `PUT /dev/simulator/faults` | `aster-journey` steps 21–24, `real/pilot-sync` |
-| 23 | Fix the mapping; retry 1 failed task; exactly 6 issues | WF-07 | `/me/cases/ME-104/pilot` | `PUT /admin/connector-mappings/:id`, `POST /me/task-sets/:id/retry`, `GET /dev/simulator/issues` | `aster-journey` steps 21–24, `real/pilot-sync` |
+| 23 | Fix the assignee in S14 › Connections › Task mapping ("Check with Jira": Not found → Mapped; not material, no dialog); retry 1 failed task; exactly 6 issues | WF-07 | `/admin/connections` → `/me/cases/ME-104/pilot` | `POST /admin/connector-mappings/:id/check`, `PUT /admin/connector-mappings/:id`, `POST /me/task-sets/:id/retry`, `GET /dev/simulator/issues` | `aster-journey` steps 21–24, `real/w4-e4-workflow`, `real/pilot-sync` |
 | 24 | Timeout after success: Checking → Confirmed, no duplicate | WF-07 | `/me/cases/ME-104/pilot` | `PUT /dev/simulator/faults`, worker `outbox.reconcile` | `aster-journey` steps 21–24 |
 | 25 | Jonas records actuals: Not met · Not met · Inconclusive | WF-08 | `/me/cases/ME-104/outcomes` | `POST /me/cases/:caseRef/outcome-observations` | `aster-journey` steps 25–28 |
 | 26 | Maya's recommendation (not a decision) with causal limitations | WF-08 | `/me/cases/ME-104/outcomes` | `PATCH /me/cases/:caseRef/outcome-review` | `aster-journey` steps 25–28 |
-| 27 | Elena decides Revise and extend; Maya requests the extension (€[cap]) | WF-08, WF-06 | `/me/cases/ME-104/outcomes` | `POST /me/cases/:caseRef/outcome-decisions`, `POST /me/cases/:caseRef/extension-requests` | `aster-journey` steps 25–28 |
-| 28 | "Request scale approval" disabled with all four G3 blockers (D-039) | WF-08 | `/me/cases/ME-104/outcomes` | `GET /me/cases/:caseRef/gates/:gateCode/preconditions`, `POST …/gate-requests` → `PRECONDITIONS_UNMET` (four blockers) | `aster-journey` steps 25–28 |
+| 27 | Elena decides Revise and extend; Maya requests X1 €30k · 45 days within "Up to €30k (25% of €120k) · up to 45 days"; Elena sees "Approve extension €30k · 45 days" enabled (D-110) | WF-08, WF-06 | `/me/cases/ME-104/outcomes`, `/me/cases/ME-104/decisions?gate=X` | `POST /me/cases/:caseRef/outcome-decisions`, `POST /me/cases/:caseRef/extension-requests`, `GET /me/gate-requests/:id/package` | `aster-journey` steps 25–28, `real/w4-e3-governance` |
+| 28 | "Request scale approval" disabled with all four G3 blockers; the fourth reads "no scale budget requested · economics vN carries €400k one-time scale-entry investment" (D-111) | WF-08 | `/me/cases/ME-104/outcomes` | `GET /me/cases/:caseRef/gates/:gateCode/preconditions`, `POST …/gate-requests` → `PRECONDITIONS_UNMET` (four blockers) | `aster-journey` steps 25–28 |
 | 29 | Admin: authority gap, tool-only diagnostics, cannot approve | WF-01, WF-06, WF-09 | `/admin/health` (authority and diagnostics sections) | `GET /admin/authority-grants`, `GET /admin/diagnostics/runs/:id`, `POST /me/gate-requests/:id/decisions` → `FORBIDDEN` | `aster-journey` steps 29–30 |
 | 30 | History: every step once, in audit order, with actor and version | all | `/me/cases/ME-104/history` | `GET /me/cases/:caseRef/history` | `aster-journey` steps 29–30 |
+
+**Journey map updates (2026-10-10, Wave 4 integrated).** Steps 8, 12, 23, 27 and 28 changed as above. Also: step 14
+reads "Met · 9 interviews (target 8) · Met · 4 commitments (target 4)" (D-152); step 17 enters a measure type per
+threshold and at least one stop rule (D-112, D-115); step 20 shows "Your authority: up to €150k · BU Water" and an
+unused approval expires after 30 days (D-109). Steps 6 and 21 still enter the PRD §6 register, models and pilot
+tasks through `support/journey.ts` as fixture-exact test setup; the same data entry is proven in the UI alone by
+`real/w4-e1-editors` (S01, S09, S06, S08) and `real/w4-e2-plan-and-spend` (S07, S11) (D-149).
 
 Alternate paths (BUILD_PLAN §8): missing data → `real/missing-data`; restricted evidence → `real/restricted-evidence`;
 expired connector, partial sync and approval invalidated after activation → `real/pilot-sync`; duplicate cohort →
