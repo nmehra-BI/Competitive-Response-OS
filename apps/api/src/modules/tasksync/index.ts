@@ -5,7 +5,12 @@
  * re-checks authorization at send time; this module never calls `createTask`.
  */
 import { randomUUID } from 'node:crypto';
-import { ConnectorError, createConnectorFactory, type ExternalTaskInput } from '@growth-os/connectors';
+import {
+  ConnectorError,
+  createConnectorFactory,
+  type ConnectionRef,
+  type ExternalTaskInput,
+} from '@growth-os/connectors';
 import { API, type Blocker, type ConnectorStatus, type TaskSyncPreview } from '@growth-os/contracts';
 import { sql, type Tx } from '@growth-os/db';
 import { syncMachine, type ApplyResult, type WorkflowFacts } from '@growth-os/domain';
@@ -136,10 +141,13 @@ export const taskSyncHandlers: HandlerMap = {
 
       // Dry run through the connector (no writes in the tool). Runs on the pool, not the business
       // transaction: the tool is a remote system.
-      const connector = createConnectorFactory({ sim: ctx.deps.db })({
+      // The tenant travels with the connection (E5: Jira credentials are row-level secured per tenant).
+      const ref: ConnectionRef & { tenantId: string } = {
         id: s.connection!.id,
         provider: s.connection!.provider,
-      });
+        tenantId: ctx.tenantId,
+      };
+      const connector = createConnectorFactory({ sim: ctx.deps.db })(ref);
       let connectionStatus: ConnectorStatus = s.connection!.status;
       const problems: Blocker[] = [];
       let toolResults: { fields: Record<string, string>; problems: string[] }[] = [];

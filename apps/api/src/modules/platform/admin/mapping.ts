@@ -20,6 +20,7 @@ import {
   createPgSimStore,
   createSimulatedConnector,
   SIMULATED_PROVIDER,
+  type ConnectionRef,
   type ExternalTaskInput,
   type PreviewItemResult,
   type TaskConnector,
@@ -290,8 +291,15 @@ async function people(tx: Tx, mappingId: string, body: MappingBody) {
  * fault rule (as a real project refuses a non-member). For the dry lookup, a person with such a rule
  * is not a member of the project, so the connector's own `preview()` reports Not found.
  */
-async function connectorFor(db: Db, conn: { id: string; provider: string }, accounts: string[]) {
-  if (conn.provider !== SIMULATED_PROVIDER) return createConnectorFactory({ sim: db })(conn);
+async function connectorFor(
+  db: Db,
+  conn: { id: string; provider: string },
+  tenantId: string,
+  accounts: string[],
+) {
+  // The tenant travels with the connection (E5: Jira credentials are row-level secured per tenant).
+  const ref: ConnectionRef & { tenantId: string } = { id: conn.id, provider: conn.provider, tenantId };
+  if (conn.provider !== SIMULATED_PROVIDER) return createConnectorFactory({ sim: db })(ref);
   const r = await sql<{ assignee: string }>`
     SELECT match->>'assignee' AS assignee FROM sim.fault_rule
      WHERE connection_id = ${conn.id} AND mode = 'permission_denied' AND remaining > 0
@@ -312,6 +320,7 @@ const NOT_FOUND_CODES = new Set(['assignee_not_found', 'assignee_not_in_project'
 async function checkMapping(
   tx: Tx,
   db: Db,
+  tenantId: string,
   mappingId: string,
   body: MappingBody,
   now: Date,
@@ -340,6 +349,7 @@ async function checkMapping(
     const connector: TaskConnector = await connectorFor(
       db,
       conn,
+      tenantId,
       items.map((i) => i.assignee!),
     );
     try {
@@ -397,7 +407,7 @@ export const mappingHandlers: HandlerMap = {
   [API.admin.checkMapping.id]: command(API.admin.checkMapping, {
     authorize: (ctx) => configure(ctx.identity),
     audit: 'none',
-    handle: (ctx, t) => checkMapping(t.tx, ctx.deps.db, ctx.params.id, ctx.body, ctx.now),
+    handle: (ctx, t) => checkMapping(t.tx, ctx.deps.db, ctx.tenantId, ctx.params.id, ctx.body, ctx.now),
   }),
 
   // ---- PUT /admin/connector-mappings/:id (replaces the handler in ./index.ts) ---------------------
