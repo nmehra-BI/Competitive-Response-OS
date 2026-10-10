@@ -1,15 +1,14 @@
 /**
- * Wave 4 · E1 (ticket 1, D-112 §2–§3) on the real stack from `aster-start`: an operator starts a case
- * alone. Maya creates a direct case, enters the S06 sizing model in the editor to the PRD §6 numbers
- * and commits sizing v1 (SAM €40m/year, 500 unique sites), then starts the S08 economics model,
+ * Wave 4 · E1 (ticket 1, D-112 §1–§3) on the real stack from `aster-start`: an operator starts a case
+ * alone, in the UI only (PQ-17 closed, D-149). Maya creates a direct case on S01 ("New case"), registers
+ * the model assumptions on S09 ("Add assumption"), enters the S06 sizing model in the editor to the PRD §6
+ * numbers and commits sizing v1 (SAM €40m/year, 500 unique sites), then starts the S08 economics model,
  * notes the opex scope and commits economics v1 with the four scenario rows and the €400k one-time
- * investment apart. G1's "Comparable sizing committed" precondition is then met. Both editors are
- * axe-clean.
- *
- * The assumption register is entered through the API until E2's S09 "Add assumption" form lands
- * (WAVE4 §3 E1); the case is created through `cases.createDirect`, which has no S01 form yet.
+ * investment apart. G1's "Comparable sizing committed" precondition is then met. Every form is axe-clean.
+ * The API is only read (source ids for the editor selects, and the assertions).
  */
 import { assumptions, businessUnits, products, segments } from '@growth-os/fixtures-aster';
+import { SENSITIVITY_LABELS } from '@growth-os/contracts';
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../support/fixtures';
 import { analytics, apiCall, auditActions, resetStack } from '../support/real';
@@ -22,28 +21,50 @@ const sourceId = async (page: Page, key: string) => {
   return r.json.source.id;
 };
 
-async function registerAssumptions(page: Page, caseKey: string): Promise<Record<string, string>> {
-  const ids: Record<string, string> = {};
-  for (const a of assumptions) {
-    const v = a as unknown as { value: string | null; valueText?: string; ownerId: string };
-    const r = await apiCall<{ id: string }>(page, 'POST', `/me/cases/${caseKey}/assumptions`, {
-      inputKey: a.inputKey,
-      name: a.name,
-      ownerId: v.ownerId,
-      value: v.value,
-      valueText: v.value === null ? (v.valueText ?? null) : null,
-      unit: a.unit,
-      basis: a.basis,
-      sensitivity: a.sensitivity,
-      decisionCritical: a.decisionCritical,
-      consequenceIfFalse: a.consequenceIfFalse,
-      validationMethod: a.validationMethod,
-      dueOn: a.dueOn,
-    });
-    expect(r.status, `assumption ${a.key}`).toBe(201);
-    ids[a.inputKey] = r.json.id;
+/** The value of the option whose text contains `text` (option values are ids). */
+async function optionValue(select: Locator, text: string): Promise<string> {
+  const v = await select.locator('option').filter({ hasText: text }).first().getAttribute('value');
+  expect(v, `option "${text}"`).toBeTruthy();
+  return v!;
+}
+
+/** Select the option whose text contains `text`. */
+async function pick(select: Locator, text: string): Promise<void> {
+  await select.selectOption(await optionValue(select, text));
+}
+
+/** The model assumptions of PRD §6 (ASM-01…05, 08…11), as an operator types them on S09. */
+const MODEL_ASSUMPTIONS = assumptions.filter((a) => (a as { value: string | null }).value !== null);
+
+/** S09 "Add assumption" for each model assumption; returns input key → register key (ASM-nn). */
+async function registerAssumptions(
+  page: Page,
+  caseKey: string,
+  expectAccessible: (o?: { include?: string[] }) => Promise<void>,
+): Promise<Record<string, string>> {
+  await page.goto(`/me/cases/${caseKey}/validation`);
+  const keys: Record<string, string> = {};
+  for (const [i, a] of MODEL_ASSUMPTIONS.entries()) {
+    const v = (a as { value: string }).value;
+    await page.getByRole('button', { name: 'Add assumption' }).click();
+    const form = page.getByRole('form', { name: 'Add assumption' });
+    await form.getByLabel(/^Statement/).fill(a.name);
+    await form.getByLabel('Model input').selectOption(a.inputKey);
+    // Rates are typed as percentages; money and counts as numbers.
+    await form.getByLabel(/^Value/).fill(a.unit === 'rate' ? String(Number(v) * 100) : String(Number(v)));
+    await form.getByLabel(SENSITIVITY_LABELS[a.sensitivity]).check();
+    if (a.decisionCritical) await form.getByRole('checkbox', { name: /^Decision-critical/ }).check();
+    await form.getByLabel(/^Validation method/).fill(a.validationMethod);
+    if (a.dueOn) await form.getByLabel(/^Due date/).fill(a.dueOn);
+    if (i === 0) await expectAccessible();
+    await form.getByRole('button', { name: 'Add assumption' }).click();
+    const status = page.getByRole('status').filter({ hasText: 'added to the register.' });
+    await expect(status).toBeVisible();
+    keys[a.inputKey] = /(ASM-\d+)/.exec((await status.textContent()) ?? '')![1]!;
   }
-  return ids;
+  const register = page.getByRole('table', { name: 'Assumption register' });
+  for (const a of MODEL_ASSUMPTIONS) await expect(register).toContainText(a.name);
+  return keys;
 }
 
 /** Wait until the editor's autosave has nothing pending. */
@@ -53,26 +74,32 @@ async function saved(editor: Locator) {
   });
 }
 
-test('an operator builds sizing v1 and economics v1 for a new case in the editors alone', async ({
+test('an operator starts a case and builds sizing v1 and economics v1 in the UI alone', async ({
   page,
   loginAs,
   expectAccessible,
 }) => {
   await loginAs('maya');
-  const created = await apiCall<{ key: string }>(page, 'POST', '/me/cases', {
-    businessUnitId: businessUnits[0].id,
-    title: 'German food plants — water monitoring (editor)',
-    mandate: {
-      geographyCodes: ['DE'],
-      segmentIds: [segments[0].id],
-      productId: products[0].id,
-      currency: 'EUR',
-      horizonYears: 3,
-    },
-  });
-  expect(created.status).toBe(201);
-  const caseKey = created.json.key;
-  const asm = await registerAssumptions(page, caseKey);
+  // ---- S01 New case ---------------------------------------------------------------------------
+  await page.goto('/me/cases');
+  await page.getByRole('button', { name: 'New case' }).click();
+  const nc = page.getByRole('form', { name: 'New expansion case' });
+  await nc.getByLabel('Case title (required)').fill('German food plants — water monitoring (editor)');
+  await nc.getByLabel('Business unit').selectOption({ label: businessUnits[0].name });
+  await nc.getByLabel('Product').selectOption({ label: products[0].name });
+  await nc.getByLabel('Segment').selectOption({ label: segments[0].name });
+  await nc.getByLabel('Geography').selectOption({ label: 'Germany' });
+  await expect(nc.getByLabel('Currency')).toHaveValue('EUR');
+  await nc.getByLabel('Horizon (years)').fill('3');
+  await expectAccessible();
+  await nc.getByRole('button', { name: 'Create case' }).click();
+  await page.waitForURL(/\/me\/cases\/ME-\d+\/thesis$/);
+  const caseKey = /\/me\/cases\/(ME-\d+)\//.exec(page.url())![1]!;
+  const created = await apiCall<{ case: { stage: string } }>(page, 'GET', `/me/cases/${caseKey}`);
+  expect(created.json.case.stage).toBe('draft_mandate');
+
+  // ---- S09 Add assumption ---------------------------------------------------------------------
+  const asmKey = await registerAssumptions(page, caseKey, expectAccessible);
   const src14 = await sourceId(page, 'SRC-014');
   const src21 = await sourceId(page, 'SRC-021');
 
@@ -101,9 +128,7 @@ test('an operator builds sizing v1 and economics v1 for a new case in the editor
   await tam.getByLabel('TAM site count · basis').selectOption(`src:${src14}`);
   await tam.getByLabel('TAM site count', { exact: true }).fill('5000');
   await tam.getByLabel('TAM site count', { exact: true }).blur();
-  await editor
-    .getByLabel('Annual spend per site · basis')
-    .selectOption(`asm:${asm['annual_spend_per_site']}`);
+  await pick(editor.getByLabel('Annual spend per site · basis'), asmKey['annual_spend_per_site']!);
 
   // Two unique-site cohorts and the overlap between them.
   for (const c of [
@@ -124,7 +149,7 @@ test('an operator builds sizing v1 and economics v1 for a new case in the editor
   await saved(editor);
 
   // The reachable pool with its channel definition; adoption and capacity from the register.
-  await editor.getByLabel('Reachable pool · basis').selectOption(`asm:${asm['reachable_pool']}`);
+  await pick(editor.getByLabel('Reachable pool · basis'), asmKey['reachable_pool']!);
   await editor
     .getByLabel(/^Channel definition/)
     .fill('Partner coverage list: distributors serving German food plants');
@@ -135,7 +160,7 @@ test('an operator builds sizing v1 and economics v1 for a new case in the editor
       'adoption_rate.upside': 'Adoption by year 3 · Upside',
       capacity: 'Installation and support capacity',
     }[k]!;
-    await editor.getByLabel(`${label} · basis`).selectOption(`asm:${asm[k]}`);
+    await pick(editor.getByLabel(`${label} · basis`), asmKey[k]!);
   }
   await editor.getByLabel(/^Channel definition/).blur();
   await saved(editor);
@@ -158,7 +183,7 @@ test('an operator builds sizing v1 and economics v1 for a new case in the editor
     'Unknown',
   );
   await expect(editor.getByText('Blocked: add Installation and support capacity.')).toBeVisible();
-  await editor.getByLabel('Installation and support capacity · basis').selectOption(`asm:${asm['capacity']}`);
+  await pick(editor.getByLabel('Installation and support capacity · basis'), asmKey['capacity']!);
   await editor.getByLabel('Installation and support capacity · basis').blur();
   await saved(editor);
   await expect(page.locator('[data-measure="SAM"]')).toContainText('€40m/year');
@@ -196,10 +221,12 @@ test('an operator builds sizing v1 and economics v1 for a new case in the editor
   await expect(header.getByRole('textbox', { name: 'Base year' })).toHaveValue('2026');
   await expect(header.getByRole('textbox', { name: 'Horizon (years)' })).toHaveValue('3');
   // Drivers follow the register; Downside is linked here by hand.
-  await page
-    .getByRole('row', { name: /^Adoption by year 3 · Downside/ })
-    .getByRole('combobox', { name: 'Assumption link' })
-    .selectOption(asm['adoption_rate.downside']!);
+  await pick(
+    page
+      .getByRole('row', { name: /^Adoption by year 3 · Downside/ })
+      .getByRole('combobox', { name: 'Assumption link' }),
+    asmKey['adoption_rate.downside']!,
+  );
   await page.getByRole('textbox', { name: /^Opex scope note/ }).fill('Sales and admin only; excludes COGS');
   await page.getByRole('textbox', { name: /^Opex scope note/ }).blur();
   await expect(page.getByText('Scope: Sales and admin only; excludes COGS')).toBeVisible({ timeout: 15_000 });

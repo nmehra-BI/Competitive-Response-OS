@@ -20,7 +20,8 @@ const MODEL_INPUTS: { key: string; label: string; unit: ValueUnit }[] = [
   { key: 'adoption_rate.upside', label: 'Adoption · Upside scenario', unit: 'rate' },
   { key: 'annual_spend_per_site', label: 'Annual spend per site', unit: 'currency_per_year_per_site' },
   { key: 'reachable_pool', label: 'Reachable pool (sites)', unit: 'sites' },
-  { key: 'capacity', label: 'Delivery capacity (sites)', unit: 'sites' },
+  // Capacity is counted in customers, the unit the sizing and economics engines read (ASM-08).
+  { key: 'capacity', label: 'Delivery capacity (customers)', unit: 'customers' },
   { key: 'gross_margin', label: 'Gross margin', unit: 'rate' },
   { key: 'annual_incremental_opex', label: 'Annual incremental opex', unit: 'currency_per_year' },
   { key: 'one_time_investment', label: 'One-time investment', unit: 'currency_one_time' },
