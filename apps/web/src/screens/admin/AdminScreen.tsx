@@ -40,6 +40,7 @@ import { useApiQuery, useCommand } from '../../lib/query';
 import { useViewer } from '../../lib/session';
 import { fmtDateTime, fmtTime } from '../history/dates';
 import '../history/ws8d.css';
+import { TaskMappingSection } from './TaskMappingEditor';
 
 const SECTIONS = [
   { id: 'authority', label: 'Roles and authority' },
@@ -180,6 +181,7 @@ function AdminBody({ illustrative }: { illustrative: boolean }) {
       <PoliciesSection />
       <EntitlementsSection />
       <ConnectionsSection />
+      <TaskMappingSection />
       <RunBudgetSection />
       <DiagnosticsSection />
     </>
