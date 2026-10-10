@@ -128,6 +128,44 @@ describe('useDraft', () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith({ title: 'unsent' }, 3));
   });
 
+  it('runs one save at a time: waiters on an in-flight save never both send (D-145)', async () => {
+    const calls: [F, number][] = [];
+    let release!: () => void;
+    let first = true;
+    const save = vi.fn(async (v: F, rv: number) => {
+      calls.push([v, rv]);
+      if (first) {
+        first = false;
+        await new Promise<void>((r) => (release = r));
+      }
+      return { value: v, rowVersion: rv + 1 };
+    });
+    const { result } = renderHook(() => useDraft<F>({ storageKey: null, server, save, debounceMs: 10_000 }));
+    act(() => result.current.setField('title', 'a'));
+    let p1!: Promise<void>;
+    act(() => {
+      p1 = result.current.flush(); // in flight
+    });
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    act(() => result.current.setField('title', 'ab'));
+    let p2!: Promise<void>, p3!: Promise<void>;
+    act(() => {
+      p2 = result.current.flush(); // blur
+      p3 = result.current.flush(); // debounce or unmount at the same moment
+    });
+    await act(async () => {
+      release();
+      await Promise.all([p1, p2, p3]);
+    });
+    // The second save carries the newer edit on the row version the first returned; the third has
+    // nothing left to send.
+    expect(calls).toEqual([
+      [{ title: 'a' }, 3],
+      [{ title: 'ab' }, 4],
+    ]);
+    expect(result.current.status.state).toBe('saved');
+  });
+
   it('a failed save keeps the edit and offers retry', async () => {
     const save = vi.fn(async () => {
       throw problem('INTERNAL', 500);

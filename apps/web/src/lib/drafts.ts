@@ -95,7 +95,8 @@ export function useDraft<T>(opts: UseDraftOptions<T>): Draft<T> {
   const dirty = useRef(false);
   const latest = useRef<T | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saving = useRef<Promise<void> | null>(null);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const conflictRef = useRef<DraftConflict<T> | null>(null);
   const [, rerender] = useState(0);
   const now = () => (optsRef.current.now ?? (() => new Date()))();
 
@@ -125,44 +126,46 @@ export function useDraft<T>(opts: UseDraftOptions<T>): Draft<T> {
     }
   }, [server, storageKey]);
 
-  const doSave = useCallback(async (): Promise<void> => {
-    if (saving.current) {
-      await saving.current;
-    }
+  // One save at a time per draft (D-145). Every caller (debounce timer, blur flush, pagehide,
+  // unmount, conflict resolution) joins the same queue; a queued save re-reads `dirty`, `latest` and
+  // the row version left by the save before it, so two callers waiting on one in-flight save never
+  // both send (the second finds nothing to send, or sends the newer edit with the new row version).
+  const runSave = useCallback(async (): Promise<void> => {
     if (!dirty.current || latest.current === undefined || rowVersion.current === null) return;
+    if (conflictRef.current) return;
     const sending = latest.current;
     setStatus({ state: 'saving' });
-    const p = (async () => {
-      try {
-        const res = await optsRef.current.save(sending, rowVersion.current!);
-        rowVersion.current = res.rowVersion;
-        if (latest.current === sending) {
-          dirty.current = false;
-          writeStore(optsRef.current.storageKey, null);
-        } else {
-          writeStore(optsRef.current.storageKey, {
-            baseRowVersion: res.rowVersion,
-            value: latest.current as T,
-          });
-        }
-        setStatus({ state: 'saved', at: now().toISOString() });
-      } catch (e) {
-        if (e instanceof ApiProblem && e.code === 'VERSION_CONFLICT') {
-          const theirs = (await optsRef.current.reload?.().catch(() => undefined)) ?? null;
-          setConflict({ mine: latest.current as T, theirs });
-          setStatus({ state: 'conflict' });
-        } else {
-          setStatus({ state: 'unsaved' });
-        }
-      }
-    })();
-    saving.current = p;
     try {
-      await p;
-    } finally {
-      saving.current = null;
+      const res = await optsRef.current.save(sending, rowVersion.current);
+      rowVersion.current = res.rowVersion;
+      if (latest.current === sending) {
+        dirty.current = false;
+        writeStore(optsRef.current.storageKey, null);
+      } else {
+        writeStore(optsRef.current.storageKey, {
+          baseRowVersion: res.rowVersion,
+          value: latest.current as T,
+        });
+      }
+      setStatus({ state: 'saved', at: now().toISOString() });
+    } catch (e) {
+      if (e instanceof ApiProblem && e.code === 'VERSION_CONFLICT') {
+        const theirs = (await optsRef.current.reload?.().catch(() => undefined)) ?? null;
+        const c = { mine: latest.current as T, theirs };
+        conflictRef.current = c;
+        setConflict(c);
+        setStatus({ state: 'conflict' });
+      } else {
+        setStatus({ state: 'unsaved' });
+      }
     }
   }, []);
+
+  const doSave = useCallback((): Promise<void> => {
+    const next = queue.current.then(runSave);
+    queue.current = next.catch(() => undefined);
+    return next;
+  }, [runSave]);
 
   const schedule = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -187,7 +190,6 @@ export function useDraft<T>(opts: UseDraftOptions<T>): Draft<T> {
     },
     [schedule],
   );
-  const conflictRef = useRef(conflict);
   conflictRef.current = conflict;
 
   const setField = useCallback(

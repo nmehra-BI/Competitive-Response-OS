@@ -1166,7 +1166,6 @@ export default function EconomicsScreen() {
     [draftV],
   );
   const serverDraft = useRef(draftV);
-  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   serverDraft.current = draftV;
   const draft = useDraft<EconForm>({
     storageKey:
@@ -1174,18 +1173,8 @@ export default function EconomicsScreen() {
         ? `${viewer.data.tenant.id}:economics-editor:${caseKey}:v${draftV.version}`
         : null,
     server,
-    // One save at a time (a blur flush and a debounced save can start together); each plans against
-    // the draft the previous one left.
-    save: (value, rowVersion) => {
-      const run = saveQueue.current.then(() =>
-        saveEconomics(value, serverDraft.current?.rowVersion ?? rowVersion),
-      );
-      saveQueue.current = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      return run;
-    },
+    // The draft hook runs one save at a time (D-145) and passes the row version the last one left.
+    save: (value, rowVersion) => saveEconomics(value, rowVersion),
     reload: async () => {
       const view = await api(API.economics.get, { params: { caseRef: caseKey } });
       return view.draft ? { value: econFormOf(view.draft), rowVersion: view.draft.rowVersion } : undefined;

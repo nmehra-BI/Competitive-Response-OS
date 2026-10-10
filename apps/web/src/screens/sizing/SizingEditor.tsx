@@ -304,7 +304,6 @@ export function SizingEditor({
   assumptionsRef.current = assumptions;
   const [problem, setProblem] = useState<unknown>(null);
   const [pending, setPending] = useState<Record<string, string>>({});
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   const server: Versioned<SizingForm> = useMemo(
     () => ({ value: formFromVersion(version), rowVersion: version?.rowVersion ?? 0 }),
@@ -315,18 +314,8 @@ export function SizingEditor({
       ? `${viewer.data.tenant.id}:sizing-editor:${caseKey}:v${version?.version ?? 0}`
       : null,
     server,
-    // One save at a time: the draft hook can start a blur flush and a debounced save together; the
-    // later one is planned against the state the earlier one left (and is usually empty).
-    save: (value, rowVersion) => {
-      const run = queue.current.then(() =>
-        saveNow(value, serverRef.current.version?.rowVersion ?? rowVersion),
-      );
-      queue.current = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      return run;
-    },
+    // The draft hook runs one save at a time (D-145) and passes the row version the last one left.
+    save: (value, rowVersion) => saveNow(value, rowVersion),
     reload: async () => {
       const v = await api(API.sizing.get, { params: { caseRef: caseKey } });
       const shown = v.draft ?? v.current;
