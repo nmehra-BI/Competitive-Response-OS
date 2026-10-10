@@ -540,15 +540,15 @@ test('steps 17–18: Maya prepares and submits G2; the package carries dissent; 
   }
   await expect(form.getByRole('list', { name: 'Pilot thresholds' }).getByRole('listitem')).toHaveCount(3);
   // Stop rules pre-registered with the request (D-112): trigger, consequence and owner.
-  await form.getByLabel('Stop rule trigger').fill('Spend would exceed the approved €120k ceiling');
+  await form.getByLabel('Stop trigger').fill('Spend would exceed the approved €120k ceiling');
   await form.getByLabel('Consequence').selectOption('pause_and_request_review');
-  await form.getByLabel('Stop rule owner').selectOption({ label: 'Jonas Klein' });
+  await form.getByLabel('Stop owner').selectOption({ label: 'Jonas Klein' });
   await form.getByRole('button', { name: 'Add stop rule' }).click();
   await form.getByLabel('Trigger kind').selectOption('threshold');
   await form.getByLabel('Watched threshold').selectOption({ label: 'Paid use and continuation' });
-  await form.getByLabel('Stop rule trigger').fill('Fewer than 2 of 4 pilot customers in paid use at day 45');
+  await form.getByLabel('Stop trigger').fill('Fewer than 2 of 4 pilot customers in paid use at day 45');
   await form.getByLabel('Consequence').selectOption('recommend_stop');
-  await form.getByLabel('Stop rule owner').selectOption({ label: 'Jonas Klein' });
+  await form.getByLabel('Stop owner').selectOption({ label: 'Jonas Klein' });
   await form.getByRole('button', { name: 'Add stop rule' }).click();
   await expect(form.getByRole('list', { name: 'Stop rules' }).getByRole('listitem')).toHaveCount(2);
   await form

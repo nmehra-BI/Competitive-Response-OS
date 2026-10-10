@@ -244,7 +244,6 @@ function ThresholdList({
           <select
             id={`${base}-mt`}
             className="gos-select"
-            required
             value={measureType ?? ''}
             onChange={(e) => setMeasureType(e.target.value as OutcomeTargetInput['measureType'] | '')}
           >
@@ -399,7 +398,7 @@ function StopRuleList({
         ) : null}
       </div>
       <Field
-        label="Stop rule trigger"
+        label="Stop trigger"
         hint="e.g. fewer than 2 of 4 in paid use at day 45"
         value={text}
         onChange={setText}
@@ -421,7 +420,7 @@ function StopRuleList({
           </select>
         </label>
         <label className="gos-field" htmlFor={`${base}-o`}>
-          Stop rule owner
+          Stop owner
           <select
             id={`${base}-o`}
             className="gos-select"
