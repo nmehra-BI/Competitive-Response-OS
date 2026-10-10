@@ -304,6 +304,7 @@ export function SizingEditor({
   assumptionsRef.current = assumptions;
   const [problem, setProblem] = useState<unknown>(null);
   const [pending, setPending] = useState<Record<string, string>>({});
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   const server: Versioned<SizingForm> = useMemo(
     () => ({ value: formFromVersion(version), rowVersion: version?.rowVersion ?? 0 }),
@@ -314,43 +315,17 @@ export function SizingEditor({
       ? `${viewer.data.tenant.id}:sizing-editor:${caseKey}:v${version?.version ?? 0}`
       : null,
     server,
-    save: async (value, rowVersion) => {
-      setProblem(null);
-      let plan;
-      try {
-        plan = planPatch(value, serverRef.current, assumptionsRef.current);
-      } catch (e) {
-        setProblem(e);
-        throw e;
-      }
-      setPending(Object.fromEntries(plan.pending.map((p) => [p.key, p.message])));
-      if (!plan.patch && !plan.overlapAfter) return { value, rowVersion };
-      try {
-        let next = plan.patch
-          ? await api(API.sizing.saveDraft, {
-              params: { caseRef: caseKey },
-              body: plan.patch,
-              ifMatch: rowVersion,
-            })
-          : view;
-        if (plan.overlapAfter && next.draft) {
-          const o = overlapPatch(value, next.draft);
-          if (o)
-            next = await api(API.sizing.saveDraft, {
-              params: { caseRef: caseKey },
-              body: o,
-              ifMatch: next.draft.rowVersion,
-            });
-        }
-        const v = next.draft ?? next.current;
-        serverRef.current = { form: formFromVersion(v), version: v };
-        qc.setQueryData(queryKey(API.sizing.get, { caseRef: caseKey }, undefined), next);
-        void invalidateAfter(qc, API.sizing.saveDraft.id);
-        return { value: formFromVersion(v), rowVersion: v?.rowVersion ?? rowVersion };
-      } catch (e) {
-        if (!(e instanceof ApiProblem && e.code === 'VERSION_CONFLICT')) setProblem(e);
-        throw e;
-      }
+    // One save at a time: the draft hook can start a blur flush and a debounced save together; the
+    // later one is planned against the state the earlier one left (and is usually empty).
+    save: (value, rowVersion) => {
+      const run = queue.current.then(() =>
+        saveNow(value, serverRef.current.version?.rowVersion ?? rowVersion),
+      );
+      queue.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     },
     reload: async () => {
       const v = await api(API.sizing.get, { params: { caseRef: caseKey } });
@@ -358,6 +333,44 @@ export function SizingEditor({
       return { value: formFromVersion(shown), rowVersion: shown?.rowVersion ?? 0 };
     },
   });
+  async function saveNow(value: SizingForm, rowVersion: number): Promise<Versioned<SizingForm>> {
+    setProblem(null);
+    let plan;
+    try {
+      plan = planPatch(value, serverRef.current, assumptionsRef.current);
+    } catch (e) {
+      setProblem(e);
+      throw e;
+    }
+    setPending(Object.fromEntries(plan.pending.map((p) => [p.key, p.message])));
+    if (!plan.patch && !plan.overlapAfter) return { value, rowVersion };
+    try {
+      let next = plan.patch
+        ? await api(API.sizing.saveDraft, {
+            params: { caseRef: caseKey },
+            body: plan.patch,
+            ifMatch: rowVersion,
+          })
+        : view;
+      if (plan.overlapAfter && next.draft) {
+        const o = overlapPatch(value, next.draft);
+        if (o)
+          next = await api(API.sizing.saveDraft, {
+            params: { caseRef: caseKey },
+            body: o,
+            ifMatch: next.draft.rowVersion,
+          });
+      }
+      const v = next.draft ?? next.current;
+      serverRef.current = { form: formFromVersion(v), version: v };
+      qc.setQueryData(queryKey(API.sizing.get, { caseRef: caseKey }, undefined), next);
+      void invalidateAfter(qc, API.sizing.saveDraft.id);
+      return { value: formFromVersion(v), rowVersion: v?.rowVersion ?? rowVersion };
+    } catch (e) {
+      if (!(e instanceof ApiProblem && e.code === 'VERSION_CONFLICT')) setProblem(e);
+      throw e;
+    }
+  }
   usePublishAutosave(draft.status);
   const commit = useCommand(API.sizing.commit, { onSuccess: () => onClose?.() });
 

@@ -1163,6 +1163,7 @@ export default function EconomicsScreen() {
     [draftV],
   );
   const serverDraft = useRef(draftV);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   serverDraft.current = draftV;
   const draft = useDraft<EconForm>({
     storageKey:
@@ -1170,27 +1171,39 @@ export default function EconomicsScreen() {
         ? `${viewer.data.tenant.id}:economics-editor:${caseKey}:v${draftV.version}`
         : null,
     server,
-    save: async (value, rowVersion) => {
-      setSaveError(null);
-      try {
-        const view = await api(API.economics.saveDraft, {
-          params: { caseRef: caseKey },
-          body: saveBody(value, serverDraft.current!),
-          ifMatch: rowVersion,
-        });
-        serverDraft.current = view.draft;
-        qc.setQueryData(queryKey(API.economics.get, { caseRef: caseKey }, undefined), view);
-        return { value: econFormOf(view.draft!), rowVersion: view.draft!.rowVersion };
-      } catch (e) {
-        if (!(e instanceof ApiProblem && e.code === 'VERSION_CONFLICT')) setSaveError(e);
-        throw e;
-      }
+    // One save at a time (a blur flush and a debounced save can start together); each plans against
+    // the draft the previous one left.
+    save: (value, rowVersion) => {
+      const run = saveQueue.current.then(() =>
+        saveEconomics(value, serverDraft.current?.rowVersion ?? rowVersion),
+      );
+      saveQueue.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     },
     reload: async () => {
       const view = await api(API.economics.get, { params: { caseRef: caseKey } });
       return view.draft ? { value: econFormOf(view.draft), rowVersion: view.draft.rowVersion } : undefined;
     },
   });
+  async function saveEconomics(value: EconForm, rowVersion: number): Promise<Versioned<EconForm>> {
+    setSaveError(null);
+    try {
+      const view = await api(API.economics.saveDraft, {
+        params: { caseRef: caseKey },
+        body: saveBody(value, serverDraft.current!),
+        ifMatch: rowVersion,
+      });
+      serverDraft.current = view.draft;
+      qc.setQueryData(queryKey(API.economics.get, { caseRef: caseKey }, undefined), view);
+      return { value: econFormOf(view.draft!), rowVersion: view.draft!.rowVersion };
+    } catch (e) {
+      if (!(e instanceof ApiProblem && e.code === 'VERSION_CONFLICT')) setSaveError(e);
+      throw e;
+    }
+  }
   usePublishAutosave(pinned === null && draftV ? draft.status : null);
 
   const local = useLocalResult(draftV, draft.value?.values);
