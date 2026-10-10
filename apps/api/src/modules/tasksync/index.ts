@@ -8,7 +8,6 @@ import { randomUUID } from 'node:crypto';
 import {
   ConnectorError,
   createConnectorFactory,
-  type ConnectionRef,
   type ExternalTaskInput,
 } from '@growth-os/connectors';
 import { API, type Blocker, type ConnectorStatus, type TaskSyncPreview } from '@growth-os/contracts';
@@ -141,13 +140,12 @@ export const taskSyncHandlers: HandlerMap = {
 
       // Dry run through the connector (no writes in the tool). Runs on the pool, not the business
       // transaction: the tool is a remote system.
-      // The tenant travels with the connection (E5: Jira credentials are row-level secured per tenant).
-      const ref: ConnectionRef & { tenantId: string } = {
+      // The tenant travels with the connection: Jira credentials are row-level secured per tenant.
+      const connector = createConnectorFactory({ sim: ctx.deps.db })({
         id: s.connection!.id,
         provider: s.connection!.provider,
         tenantId: ctx.tenantId,
-      };
-      const connector = createConnectorFactory({ sim: ctx.deps.db })(ref);
+      });
       let connectionStatus: ConnectorStatus = s.connection!.status;
       const problems: Blocker[] = [];
       let toolResults: { fields: Record<string, string>; problems: string[] }[] = [];

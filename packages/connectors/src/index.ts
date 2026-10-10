@@ -9,6 +9,7 @@ export * from './simulated/faults';
 export * from './simulated/memory-store';
 export * from './simulated/pg-store';
 export * from './factory';
+export * from './jira';
 
 /**
  * FROZEN idempotency key for an external task write (D-021): stable across retries, previews and

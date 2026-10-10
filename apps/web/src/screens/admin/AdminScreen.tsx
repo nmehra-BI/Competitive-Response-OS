@@ -46,6 +46,7 @@ import { CommitteeSection } from './CommitteeSection';
 import { LicencesSection } from './LicencesSection';
 import { LiveAnalysisSection } from './LiveAnalysisSection';
 import { TaskMappingSection } from './TaskMappingEditor';
+import { JiraConnectionPanel } from './JiraConnectionPanel';
 
 const SECTIONS = [
   { id: 'authority', label: 'Roles and authority' },
@@ -194,6 +195,7 @@ function AdminBody({ illustrative }: { illustrative: boolean }) {
       <PoliciesSection />
       <EntitlementsSection />
       <ConnectionsSection />
+      <JiraConnectionPanel />
       <TaskMappingSection />
       <RunBudgetSection />
       <DiagnosticsSection />

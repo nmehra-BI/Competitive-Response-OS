@@ -12,6 +12,7 @@ import type { HandlerMap } from '../server';
 import { analysisHandlers } from './analysis';
 import { adminHandlers } from './platform/admin';
 import { mappingHandlers } from './platform/admin/mapping';
+import { connectionHandlers } from './platform/admin/connections';
 import { auditHandlers } from './platform/audit';
 import { authHandlers } from './platform/auth';
 import { commentHandlers } from './platform/comments';
@@ -48,6 +49,7 @@ export const handlers: HandlerMap = {
   ...commentHandlers,
   ...adminHandlers,
   ...mappingHandlers,
+  ...connectionHandlers,
   ...auditHandlers,
   ...caseHandlers,
   ...assumptionHandlers,
