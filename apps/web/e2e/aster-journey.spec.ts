@@ -176,7 +176,8 @@ test('steps 6–8: Maya starts the assessment; ladder, SAM > TAM block and undo,
   await expect(page.getByText('Blocking: SAM is larger than TAM')).toHaveCount(0);
   await expect(rung('SAM')).toContainText('€40m/year');
 
-  // 8 · Commit sizing v2; lineage on SAM: exact €40,000,000, inputs one level, used by SOM and economics.
+  // 8 · Commit sizing v2; lineage on SAM: exact €40,000,000, inputs one level, used by the reachable pool
+  // as an upper-bound check (the pool feeds SOM and economics).
   await page.getByRole('button', { name: 'Create snapshot v2' }).click();
   await expect(page.getByText(/Snapshot v2 · committed/)).toBeVisible();
   const versions = await sqlRows<{ version: number; state: string }>(
@@ -192,10 +193,11 @@ test('steps 6–8: Maya starts the assessment; ladder, SAM > TAM block and undo,
   const drawer = page.getByRole('dialog', { name: 'SAM' });
   await expect(drawer).toContainText('€40,000,000');
   await expect(drawer).toContainText('Inputs · one level');
-  // "Used by SOM, economics" in the script: the engine computes SOM from the reachable pool (an
-  // operational subset of SAM, entered), so no figure is calculated from SAM. The drawer says so
-  // honestly (PQ-18); the reachable pool lists SOM and economics.
-  await expect(drawer).toContainText('No other calculated figure uses this value.');
+  // The honest chain (D-117, PQ-18): no figure is calculated from SAM; the entered reachable pool is
+  // checked against it as an upper bound, and the pool feeds SOM and economics.
+  await expect(
+    drawer.getByRole('link', { name: 'Reachable pool (upper-bound check: 500 ≤ 2,000 sites)' }),
+  ).toBeVisible();
   await expect(drawer).toContainText(/v2 · €40,000,000\/year/);
   await expectAccessible();
   await page.keyboard.press('Escape');
@@ -331,6 +333,14 @@ test('steps 10–12: EXP-03 and G1; Elena approves validation €15k; VAL tasks 
   await expect(page.locator('[data-experiment="EXP-03"]')).toContainText('Plan locked at G1');
   const tasks = page.getByRole('list', { name: 'Validation tasks' });
   await expect(tasks.getByText('Not sent')).toHaveCount(5);
+  // D-113: the drafted tasks are editable before sending (wording, owner, due date, deliverable).
+  await expect(page.getByRole('heading', { name: 'Validation tasks · Draft' })).toBeVisible();
+  await tasks.getByRole('button', { name: 'Edit task: Record results and nonresponse' }).click();
+  const draft = page.getByRole('form', { name: 'Edit task · Record results and nonresponse' });
+  await draft.getByLabel(/^Deliverable/).fill('Result record with nonresponse reasons');
+  await draft.getByRole('button', { name: 'Save task' }).click();
+  await expect(page.getByText('Saved task 5. Preview again before sending.')).toBeVisible();
+  expect(await auditActions('ME-104')).toContain('task.updated');
   await page.getByRole('button', { name: 'Preview tasks' }).click();
   await expect(page.getByText('Preview · nothing sent yet')).toBeVisible();
   await expect(page.getByText(/project ME-VAL/).first()).toBeVisible();
@@ -723,20 +733,30 @@ test('steps 21–24: activation blockers, permission fault on task 2, retry only
   expect((await simulatedIssues(page, 'PIL-')).length).toBe(5);
   await expectAccessible();
 
-  // 23 · Fix the mapping (admin; no mapping editor on S14 yet, PQ-11), then retry only the failed task.
-  await loginAs('admin', '/admin/health');
-  const conns = await apiCall<{
-    mappings: { id: string; purpose: string; connectionId: string; assigneeMap: Record<string, string> }[];
-  }>(page, 'GET', '/admin/connections');
-  const pil = conns.json.mappings.find((m) => m.purpose === 'pilot_tasks')!;
-  const fixed = await apiCall(page, 'PUT', `/admin/connector-mappings/${pil.id}`, {
-    connectionId: pil.connectionId,
-    purpose: 'pilot_tasks',
-    destinationProject: 'PIL',
-    issueType: 'Task',
-    assigneeMap: { ...pil.assigneeMap, 'a57e0003-0000-4000-8000-000000000008': 'ops.pilot@aster.example' },
-  });
-  expect(fixed.status).toBe(200);
+  // 23 · Fix the mapping in S14 › Connections › Jira › Task mapping (D-114 §1), then retry only the
+  // failed task. "Check with Jira" shows the refused account as Not found; an assignee edit is not
+  // material (no dialog, the G2 approval stays in force).
+  await loginAs('admin', '/admin/connections');
+  const mappingSection = page.locator('#admin-task-mapping');
+  await mappingSection.getByRole('button', { name: /^Task mapping · Jira/ }).click();
+  await mappingSection.getByRole('tab', { name: 'Pilot tasks' }).click();
+  const assignees = mappingSection.getByRole('table', { name: 'Assignees · Pilot tasks' });
+  await expect(assignees.getByText('Not found')).toBeVisible();
+  await expect(assignees).toContainText('operations.lead@aster.example is not a member of project PIL');
+  await expectAccessible();
+  await assignees.getByLabel('Jira account for [Operations lead]').fill('ops.pilot@aster.example');
+  await mappingSection.getByRole('button', { name: 'Check with Jira' }).click();
+  await expect(assignees.getByText('Not found')).toHaveCount(0);
+  await mappingSection.getByRole('button', { name: 'Save mapping' }).click();
+  await expect(mappingSection.getByText('Saved: PIL · Task.')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const [pilMapping] = await sqlRows<{ assignee_map: Record<string, string> }>(
+    `SELECT assignee_map FROM platform.connector_mapping WHERE purpose = 'pilot_tasks'`,
+  );
+  expect(pilMapping!.assignee_map['a57e0003-0000-4000-8000-000000000008']).toBe('ops.pilot@aster.example');
+  expect(
+    await sqlRows(`SELECT 1 FROM platform.material_change WHERE change_type = 'plan_destination_changed'`),
+  ).toHaveLength(0);
   await loginAs('jonas', PILOT);
   await settled(page);
   await page.getByRole('button', { name: 'Retry 1 failed task' }).first().click();

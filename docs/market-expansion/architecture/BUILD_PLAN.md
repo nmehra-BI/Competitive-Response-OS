@@ -190,7 +190,7 @@ analytics. Times follow the fixture journey moments.
 | 5 | Maya | Convert OPP-07 (owner Maya) | Case ME-104, stage Discovery; rail G0 Approved (5 Oct) |
 | 6 | Maya | Start assessment; open Sizing | Ladder: TAM 5,000 sites · €100m/year; SAM 2,000 · €40m/year; Reachable 500 · "—"; SOM Base Year 3 · 100 customers · €2.0m annual revenue; formula `(1,400 + 1,100 − 500) × €20,000`; no total row |
 | 7 | Maya | Variant: edit TAM to 500 | "Blocking: SAM is larger than TAM"; commit disabled; undo restores |
-| 8 | Maya | Commit sizing v2; open lineage on SAM | Exact €40,000,000; inputs one level; used by SOM, economics |
+| 8 | Maya | Commit sizing v2; open lineage on SAM | Exact €40,000,000; inputs one level; used by: Reachable pool (upper-bound check: 500 ≤ 2,000 sites), which feeds SOM and economics (D-117) |
 | 9 | Daniel | Open Economics; dispute 20% adoption with 10% proposal | Dispute thread "Disputed by Daniel Weber"; Downside 10% assumption; scenario table €1.0m/€2.0m/€2.4m; €0.60m/€1.20m/€1.44m; €600k ×3; €0k (break-even)/€600k/€840k; €400k one-time separate; cash flow and payback "Not available"; `assumption_changed` emitted |
 | 10 | Maya | Validation: create EXP-03 (20 sites, ≥ 8 interviews, ≥ 4 commitments, €15k); submit G1 | G1 snapshot v1 hashed; preconditions met (comparable sizing committed) |
 | 11 | Elena | Reviews › Awaiting: "Approve validation €15k" | Authorizes / does not authorize boxes; approve with rationale → stage Validation; EXP-03 plan locked; `validation_authorized`, `gate_approved` |
