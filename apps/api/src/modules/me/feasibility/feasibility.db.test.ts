@@ -9,6 +9,7 @@ import { analyticsFor, api, auditFor, inTenant, world, type World } from '../cas
 import { caseById } from '../cases/access';
 import { caseByRef } from '../gates/lib/common';
 import { caseGateState } from '../gates/lib/facts';
+import { agentCookie } from '../gates/testkit';
 
 let w: World;
 beforeAll(async () => {
@@ -193,5 +194,128 @@ describe('feasibility', () => {
         })
       ).statusCode,
     ).toBe(403);
+  });
+});
+
+// Wave 4 (D-112 §4, D-132): S07 "Add dimension / Request review" on ME-102 (no readiness rows yet).
+describe('feasibility.addDimension', () => {
+  const add = (over: Record<string, unknown> = {}) => ({
+    dimension: 'product_fit',
+    reviewerId: D().user('priya'),
+    dueOn: '2026-11-30',
+    question: 'Does the monitoring kit fit brewery CIP lines?',
+    questionDetail: 'Check sensor placement on CIP return lines and the cleaning chemistry limits.',
+    scopeText: 'Two reference breweries; CIP lines only',
+    humanOnly: false,
+    ...over,
+  });
+
+  it('adds a dimension with a named reviewer, question and scope; the reviewer is asked in Reviews', async () => {
+    const key = crypto.randomUUID();
+    const res = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+      params: { caseRef: 'ME-102' },
+      body: add(),
+      idempotencyKey: key,
+    });
+    expect(res.statusCode).toBe(201);
+    const v = API.feasibility.addDimension.response.parse(res.json());
+    const row = v.rows.find((r) => r.dimension === 'product_fit')!;
+    expect(row).toMatchObject({
+      question: 'Does the monitoring kit fit brewery CIP lines?',
+      questionDetail: 'Check sensor placement on CIP return lines and the cleaning chemistry limits.',
+      scopeText: 'Two reference breweries; CIP lines only',
+      status: 'in_review',
+      dueOn: '2026-11-30',
+      humanOnly: false,
+      reviewer: { displayName: 'Priya Shah' },
+      currentReview: null,
+    });
+    expect((await auditFor(w, D(), row.id)).map((e) => e.action)).toEqual(['feasibility.dimension_added']);
+    const replay = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+      params: { caseRef: 'ME-102' },
+      body: add(),
+      idempotencyKey: key,
+    });
+    expect(replay.statusCode).toBe(201);
+    const inbox = API.work.reviewsInbox.response.parse(
+      (
+        await api(w, API.work.reviewsInbox, await w.cookie('demo', 'priya'), { query: { tab: 'awaiting' } })
+      ).json(),
+    );
+    const asked = inbox.reviewRequests.filter((r) => r.targetType === 'feasibility.product_fit');
+    expect(asked.map((r) => [r.caseKey, r.area, r.question, r.whatToCheck])).toEqual([
+      [
+        'ME-102',
+        'product',
+        'Check sensor placement on CIP return lines and the cleaning chemistry limits.',
+        ['Scope of review: Two reference breweries; CIP lines only'],
+      ],
+    ]);
+  });
+
+  it('one row per dimension per case (409); a specialist review is always human-only', async () => {
+    const dup = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+      params: { caseRef: 'ME-102' },
+      body: add({ reviewerId: D().user('jonas') }),
+    });
+    expect(dup.statusCode).toBe(409);
+    const onJourney = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+      params: { caseRef: 'ME-104' },
+      body: add(),
+    });
+    expect(onJourney.statusCode).toBe(409);
+    const spec = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+      params: { caseRef: 'ME-102' },
+      body: add({ dimension: 'specialist_review', reviewerId: D().user('lena'), humanOnly: false }),
+    });
+    expect(spec.statusCode).toBe(201);
+    expect(
+      FeasibilityView.parse(spec.json()).rows.find((r) => r.dimension === 'specialist_review')!.humanOnly,
+    ).toBe(true);
+  });
+
+  it('the named reviewer must be a person who is a member of the case (400)', async () => {
+    for (const who of ['admin', 'analysisAgent'] as const) {
+      const res = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+        params: { caseRef: 'ME-102' },
+        body: add({ dimension: 'channel', reviewerId: D().user(who) }),
+      });
+      expect([who, res.statusCode]).toEqual([who, 400]);
+      expect((res.json() as { errors: { path: string }[] }).errors[0]!.path).toBe('body.reviewerId');
+    }
+    const foreign = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'maya'), {
+      params: { caseRef: 'ME-102' },
+      body: add({ dimension: 'channel', reviewerId: w.tenants.b!.user('priya') }),
+    });
+    expect(foreign.statusCode).toBe(400);
+  });
+
+  it('cross-tenant 404; read-only reviewer 403; the agent principal is refused', async () => {
+    const caseId = await inTenant(w, D(), async (tx) => (await caseById(tx, 'ME-102')).id);
+    const cross = await api(w, API.feasibility.addDimension, await w.cookie('b', 'maya'), {
+      params: { caseRef: caseId },
+      body: add({ dimension: 'competition' }),
+    });
+    expect(cross.statusCode).toBe(404);
+    const ro = await api(w, API.feasibility.addDimension, await w.cookie('demo', 'opsLead'), {
+      params: { caseRef: 'ME-102' },
+      body: add({ dimension: 'competition' }),
+    });
+    expect(ro.statusCode).toBe(403);
+    const agent = await api(w, API.feasibility.addDimension, await agentCookie(w.t, D()), {
+      params: { caseRef: 'ME-102' },
+      body: add({ dimension: 'competition' }),
+    });
+    expect(agent.statusCode).toBe(403);
+    expect((agent.json() as { code: string }).code).toBe('AGENT_IDENTITY_FORBIDDEN');
+    const rows = await inTenant(w, D(), async (tx) =>
+      tx
+        .selectFrom('me.feasibility_assessment')
+        .select('dimension')
+        .where('case_id', '=', caseId)
+        .orderBy('dimension')
+        .execute(),
+    );
+    expect(rows.map((r) => r.dimension)).toEqual(['product_fit', 'specialist_review']);
   });
 });

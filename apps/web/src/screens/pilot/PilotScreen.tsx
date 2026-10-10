@@ -32,6 +32,7 @@ import {
   TextAreaField,
   formatBudget,
   formatNotAvailable,
+  formatOneTime,
   type DataTableColumn,
 } from '@growth-os/ui';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -44,20 +45,14 @@ import { useViewer } from '../../lib/session';
 import { fmtDate, fmtDateTime, fmtPeriod } from '../history/dates';
 import '../history/ws8d.css';
 import { usePeople } from '../../lib/people';
+import { PlanEditor } from './PlanEditor';
+import { FUNCTION_LABEL } from './planDraft';
+import { RecordSpend } from './RecordSpend';
+import { StopRules } from './StopRules';
 
 type View = PilotPlanView;
 type Money = NonNullable<View['budget']>['approved'];
 type MoneyOr = NonNullable<View['budget']>['spent'];
-
-const FUNCTION_LABEL: Record<Task['function'], string> = {
-  product: 'Product',
-  sales: 'Sales',
-  marketing: 'Marketing',
-  operations: 'Operations',
-  strategy: 'Strategy',
-  finance: 'Finance',
-  specialist: 'Specialist',
-};
 
 function moneyText(m: Money | MoneyOr): string {
   return 'unavailable' in m ? formatNotAvailable(m.reason) : formatBudget(m.amount, m.currency);
@@ -112,12 +107,17 @@ export default function PilotScreen() {
     );
   }
   const isPilotOwner = !!viewer.data?.roles.some((r) => r.role === 'pilot_owner' && !r.revokedAt);
+  // pilot.edit_plan and budget.record: the case owner or the pilot owner (the API re-checks scope).
+  const canEditPlan = !!viewer.data?.roles.some(
+    (r) => (r.role === 'pilot_owner' || r.role === 'case_owner') && !r.revokedAt,
+  );
   return (
     <PilotView
       caseKey={caseKey}
       v={q.data}
       viewerPerson={viewer.data?.person}
       canOperate={isPilotOwner}
+      canEditPlan={canEditPlan}
       search={search}
       setSearch={setSearch}
     />
@@ -138,6 +138,7 @@ function PilotView({
   v,
   viewerPerson,
   canOperate,
+  canEditPlan,
   search,
   setSearch,
 }: {
@@ -145,10 +146,15 @@ function PilotView({
   v: View;
   viewerPerson: PersonRef | undefined;
   canOperate: boolean;
+  canEditPlan: boolean;
   search: URLSearchParams;
   setSearch: (s: URLSearchParams, o?: { replace?: boolean }) => void;
 }) {
-  const [dialog, setDialog] = useState<Dialog>(null);
+  // Deep link `view=scope` (the "Request scope change" blocker of a refused spend) opens the dialog.
+  const [dialog, setDialog] = useState<Dialog>(() =>
+    search.get('view') === 'scope' ? { kind: 'scope' } : null,
+  );
+  const [editing, setEditing] = useState(false);
   const directory = usePeople();
   const [preview, setPreview] = useState<TaskSyncPreview | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -328,6 +334,15 @@ function PilotView({
       header: 'Deliverable',
       cell: (t) => <span style={{ fontSize: 12.5 }}>{t.deliverable}</span>,
     },
+    {
+      key: 'budget',
+      header: 'Budget line',
+      cell: (t) => (
+        <span className="ws8d-note">
+          {t.budgetLine ? formatOneTime(t.budgetLine.amount, t.budgetLine.currency) : '—'}
+        </span>
+      ),
+    },
     { key: 'status', header: 'Status', cell: (t) => <TaskStatusTag status={t.status} /> },
     {
       key: 'sync',
@@ -414,7 +429,35 @@ function PilotView({
         <BudgetMeterView v={v} />
       </div>
 
+      <RecordSpend
+        v={v}
+        canRecord={canEditPlan}
+        caseRef={caseRef}
+        today={v.budget?.asOf ?? ''}
+        onScopeChange={() => setDialog({ kind: 'scope' })}
+        onDone={setNote}
+      />
+
+      <StopRules
+        rules={v.stopRules ?? []}
+        caseRef={caseRef}
+        viewer={viewerPerson}
+        canReportAny={canEditPlan}
+        onDone={setNote}
+      />
+
       <div className="ws8d-row">
+        {!active && v.draft && !editing ? (
+          <Button
+            variant="secondary"
+            icon="pencil"
+            disabled={!canEditPlan}
+            disabledReason="Only the case owner or the pilot owner edits the plan."
+            onClick={() => setEditing(true)}
+          >
+            Edit plan
+          </Button>
+        ) : null}
         {!active ? (
           <Button
             variant="primary"
@@ -453,6 +496,16 @@ function PilotView({
       </div>
       {lastError ? <ProblemBanner error={lastError} /> : null}
 
+      {editing && v.draft && !active ? (
+        <PlanEditor
+          v={v}
+          caseRef={caseRef}
+          people={peopleOf(v, viewerPerson, directory.people)}
+          onClose={() => setEditing(false)}
+          onDone={setNote}
+        />
+      ) : null}
+
       {preview ? (
         <PreviewPanel
           p={preview}
@@ -471,6 +524,7 @@ function PilotView({
         subtitle="Product · sales · marketing · operations · review. Internal status is separate from external sync."
       />
       {ts?.destinationLabel ? <p className="ws8d-muted">Destination: {ts.destinationLabel}</p> : null}
+      <MilestoneList v={v} />
       <div className="gos-card" style={{ overflow: 'hidden' }}>
         <TaskTable tasks={tasks} columns={columns} selected={selected} />
       </div>
@@ -683,6 +737,24 @@ function Baseline({
         <span className="ws8d-muted">Changing budget, sites or dates needs a new authorization.</span>
       </div>
     </section>
+  );
+}
+
+/** Milestones of the plan with their date and the evidence expected (D-112 §5). */
+function MilestoneList({ v }: { v: View }) {
+  const ms = (v.current ?? v.draft)?.milestones ?? [];
+  if (!ms.length) return null;
+  return (
+    <ul className="ws8d-list" aria-label="Milestones">
+      {ms.map((m) => (
+        <li key={m.id}>
+          <b style={{ fontWeight: 600 }}>{m.name}</b>
+          {m.windowText ? ` · ${m.windowText}` : ''}
+          {m.dueOn ? ` · ${fmtDate(m.dueOn)}` : ''}
+          {m.evidenceExpected ? ` · Evidence expected: ${m.evidenceExpected}` : ''}
+        </li>
+      ))}
+    </ul>
   );
 }
 

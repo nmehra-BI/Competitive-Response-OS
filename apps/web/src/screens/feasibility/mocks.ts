@@ -13,6 +13,7 @@ import { feasibility, people, specialistQuestion } from '@growth-os/fixtures-ast
 import type { HttpHandler } from 'msw';
 import { findCase, personRef } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
+import { state } from '../../mocks/state';
 import { assessment, CASE_ID, CASE_KEY, nowIso, sourceChip, wsId } from '../sizing/mock-state';
 
 const notFound = () => new MockProblem('NOT_FOUND', 'Not found.');
@@ -126,10 +127,72 @@ function requireMe104(caseRef: string) {
   if (!c || c.key !== CASE_KEY) throw notFound();
 }
 
+// ----- Wave 4: S07 "Add dimension / Request review" (D-112 §4) on cases without readiness rows -----
+
+/** ME-102 (assessment, no feasibility yet) takes added dimensions; ME-104 already has all seven. */
+const ADD_CASES = new Set(['ME-102']);
+let addedBound: object | null = null;
+let added: Record<string, FeasibilityAssessment[]> = {};
+
+function addedRows(caseKey: string): FeasibilityAssessment[] {
+  if (addedBound !== state.scenario) {
+    addedBound = state.scenario;
+    added = {};
+  }
+  return (added[caseKey] ??= []);
+}
+
+function viewOf(caseRef: string): FeasibilityView {
+  const c = findCase(caseRef);
+  if (c && ADD_CASES.has(c.key)) {
+    const rows = addedRows(c.key);
+    return {
+      rows,
+      counts: { signed: 0, inReview: rows.length, pending: 0, blockers: 0 },
+      competitors: [],
+    };
+  }
+  requireMe104(caseRef);
+  return feasibilityView();
+}
+
+const REQUESTERS = new Set<string>([people.maya.id, people.elena.id]);
+
 export const handlers: HttpHandler[] = [
-  mock(API.feasibility.get, ({ params }) => {
-    requireMe104(params.caseRef);
-    return feasibilityView();
+  mock(API.feasibility.get, ({ params }) => viewOf(params.caseRef)),
+
+  mock(API.feasibility.addDimension, ({ params, body, viewerId }) => {
+    const c = findCase(params.caseRef);
+    if (!c) throw notFound();
+    if (!REQUESTERS.has(viewerId!))
+      throw new MockProblem('FORBIDDEN', 'Only the case owner or the sponsor requests a review.');
+    const existing =
+      c.key === CASE_KEY ? feasibility.map((f) => f.dimension) : addedRows(c.key).map((r) => r.dimension);
+    if (existing.includes(body.dimension))
+      throw new MockProblem('INVALID_TRANSITION', 'This dimension is already on the case.');
+    const reviewer = Object.values(people).find((p) => p.id === body.reviewerId);
+    if (!reviewer || reviewer.kind !== 'human' || reviewer.id === people.admin.id)
+      throw new MockProblem('VALIDATION_FAILED', 'Name a reviewer who is a member of this case.', {
+        errors: [{ path: 'body.reviewerId', code: 'not_case_member', message: 'Not a case member' }],
+      });
+    const rows = addedRows(c.key);
+    rows.push({
+      id: wsId(26, 40 + rows.length),
+      caseId: c.id,
+      dimension: body.dimension,
+      question: body.question,
+      questionDetail: body.questionDetail,
+      evidenceText: '',
+      reviewer: personRef(body.reviewerId),
+      status: 'in_review',
+      scopeText: body.scopeText,
+      dueOn: body.dueOn,
+      humanOnly: body.humanOnly || body.dimension === 'specialist_review',
+      currentReview: null,
+      blockers: [],
+      disagreements: [],
+    });
+    return viewOf(params.caseRef);
   }),
 
   mock(API.feasibility.sign, ({ params, body, viewerId }) => {

@@ -4,10 +4,12 @@
  */
 import type {
   Blocker,
+  BudgetEntry,
   BudgetMeter,
   MessageDraft,
   PilotPlanVersion,
   PilotPlanView,
+  StopRuleState,
   Task,
   TaskSet,
 } from '@growth-os/contracts';
@@ -24,7 +26,7 @@ import {
   type CaseLite,
   type People,
 } from '../gates/lib/common';
-import { conditionRows, toCondition } from '../gates/lib/serialize';
+import { conditionRows, contentOf, snapshotById, toCondition } from '../gates/lib/serialize';
 import { summaryText } from '../../tasksync/text';
 
 export async function pilotPlanOf(tx: Tx, caseId: string) {
@@ -59,7 +61,14 @@ async function toVersion(tx: Tx, v: VersionRow): Promise<PilotPlanVersion> {
     windowEnd: isoDate(v.window_end as unknown as string),
     scopeText: v.scope_text,
     thresholdsText: v.thresholds_text,
-    milestones: ms.map((m) => ({ id: m.id, name: m.name, windowText: m.window_text, ordinal: m.ordinal })),
+    milestones: ms.map((m) => ({
+      id: m.id,
+      name: m.name,
+      windowText: m.window_text,
+      ordinal: m.ordinal,
+      dueOn: isoDateOrNull(m.due_on as unknown as string | null),
+      evidenceExpected: m.evidence_expected,
+    })),
     rowVersion: v.row_version,
   };
 }
@@ -146,6 +155,11 @@ export async function toTasks(tx: Tx, rows: TaskRow[], people?: People): Promise
             confirmedAt: null,
           },
       rowVersion: t.row_version,
+      // One-time pilot money inside the approved ceiling (D-112 §5); never a per-year figure.
+      budgetLine:
+        t.budget_amount !== null && t.budget_currency !== null
+          ? { amount: fromCents(cents(t.budget_amount)), currency: t.budget_currency, note: t.budget_note }
+          : null,
     };
   });
 }
@@ -197,6 +211,90 @@ export async function taskSetView(tx: Tx, taskSetId: string): Promise<TaskSet | 
   };
 }
 
+/** Budget entry rows of one gate, oldest first (append-only; reversals included). */
+export async function budgetEntryRows(tx: Tx, gateRequestId: string) {
+  return tx
+    .selectFrom('me.budget_entry')
+    .selectAll()
+    .where('gate_request_id', '=', gateRequestId)
+    .orderBy('recorded_at')
+    .orderBy('id')
+    .execute();
+}
+export type BudgetEntryRow = Awaited<ReturnType<typeof budgetEntryRows>>[number];
+
+/**
+ * Net one-time amount of one kind: entries minus the reversals that correct them (D-133). Every row
+ * stays a non-negative amount; only the meter subtracts.
+ */
+export function netByKind(rows: readonly BudgetEntryRow[], kind: string): bigint {
+  return rows
+    .filter((e) => e.kind === kind)
+    .reduce((a, e) => (e.reverses_entry_id ? a - cents(e.amount) : a + cents(e.amount)), 0n);
+}
+
+export async function toBudgetEntries(tx: Tx, rows: readonly BudgetEntryRow[]): Promise<BudgetEntry[]> {
+  const people = await peopleOf(
+    tx,
+    rows.map((r) => r.recorded_by),
+  );
+  const reversedBy = new Map(
+    rows.filter((r) => r.reverses_entry_id).map((r) => [r.reverses_entry_id!, r.id] as const),
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    gateRequestId: r.gate_request_id,
+    kind: r.kind as BudgetEntry['kind'],
+    amount: fromCents(cents(r.amount)),
+    currency: r.currency,
+    asOf: isoDate(r.as_of as unknown as string),
+    sourceText: r.source_text,
+    recordedBy: people(r.recorded_by),
+    reference: r.reference,
+    taskId: r.task_id,
+    reversesEntryId: r.reverses_entry_id,
+    reversalReason: r.reversal_reason,
+    reversedByEntryId: reversedBy.get(r.id) ?? null,
+    recordedAt: isoDateTime(r.recorded_at),
+  }));
+}
+
+/**
+ * The approved G2's pre-registered stop rules (D-112, D-127), read from the approved snapshot, with
+ * their trip state. A trip is a sponsor review item (`review_request`, target `stop_rule`); it never
+ * changes task, gate or case state (never-rule 7).
+ */
+export async function stopRuleStates(tx: Tx, snapshotId: string | null): Promise<StopRuleState[]> {
+  if (!snapshotId) return [];
+  const snap = await snapshotById(tx, snapshotId);
+  const rules = snap ? (contentOf(snap).stopRules ?? []) : [];
+  if (rules.length === 0) return [];
+  const trips = await tx
+    .selectFrom('platform.review_request')
+    .select(['id', 'target_id', 'requested_by', 'created_at'])
+    .where('case_id', '=', snap!.case_id)
+    .where('target_type', '=', 'stop_rule')
+    .where(
+      'target_id',
+      'in',
+      rules.map((r) => r.id),
+    )
+    .orderBy('created_at', 'desc')
+    .execute();
+  const people = await peopleOf(tx, [...rules.map((r) => r.ownerId), ...trips.map((x) => x.requested_by)]);
+  return rules.map((r) => {
+    const trip = trips.find((x) => x.target_id === r.id);
+    return {
+      ...r,
+      owner: people(r.ownerId),
+      status: trip ? 'tripped' : 'not_tripped',
+      trippedAt: trip ? isoDateTime(trip.created_at) : null,
+      trippedBy: trip ? people(trip.requested_by) : null,
+      reviewRequestId: trip?.id ?? null,
+    };
+  });
+}
+
 /** Budget meter for an approved gate budget (one-time pilot money of one gate; never mixed). */
 export async function budgetMeter(tx: Tx, gateRequestId: string, asOf: string): Promise<BudgetMeter | null> {
   const g = await tx
@@ -205,12 +303,8 @@ export async function budgetMeter(tx: Tx, gateRequestId: string, asOf: string): 
     .where('id', '=', gateRequestId)
     .executeTakeFirst();
   if (!g?.requested_amount || !g.currency) return null;
-  const entries = await tx
-    .selectFrom('me.budget_entry')
-    .select(['kind', 'amount', 'currency'])
-    .where('gate_request_id', '=', gateRequestId)
-    .execute();
-  const sum = (k: string) => entries.filter((e) => e.kind === k).reduce((a, e) => a + cents(e.amount), 0n);
+  const entries = await budgetEntryRows(tx, gateRequestId);
+  const sum = (k: string) => netByKind(entries, k);
   const money = (
     amount: string,
     measure: 'approved_budget' | 'committed_spend' | 'spent_to_date' | 'remaining_budget',
@@ -382,6 +476,8 @@ export async function pilotView(
     draft: draft ? await toVersion(tx, draft) : null,
     conditions: conds.map((x) => toCondition(x, people)),
     budget: decided && gate ? await budgetMeter(tx, gate.id, asOf) : null,
+    stopRules: decided && snap ? await stopRuleStates(tx, snap.id) : [],
+    budgetEntries: decided && gate ? await toBudgetEntries(tx, await budgetEntryRows(tx, gate.id)) : [],
     taskSet,
     activationBlockers:
       plan.status === 'active'

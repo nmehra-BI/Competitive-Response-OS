@@ -6,8 +6,11 @@ import type {
   EvidenceQuality,
   RegisterGroup,
   Sensitivity,
+  SourceChip,
 } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
+import type { Identity } from '../../../platform/context';
+import { basisChips } from './evidence';
 import { isoDateOrNull, isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
 import { caseHref, moneyString, peopleMap, trimDecimal, who } from '../cases/access';
 
@@ -163,9 +166,12 @@ export async function toAssumptions(
   tx: Tx,
   rows: readonly AssumptionRow[],
   caseKey: string,
+  /** With the viewer, the linked basis sources are shown as chips (S09 register, D-112 §1). */
+  identity?: Identity,
 ): Promise<Assumption[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
+  const basis = identity ? await basisChips(tx, identity, ids) : new Map<string, SourceChip[]>();
   const versions = (await tx
     .selectFrom('platform.assumption_version')
     .selectAll()
@@ -201,7 +207,7 @@ export async function toAssumptions(
     xs.filter((x) => x.state === 'committed').sort((a, b) => b.version - a.version)[0];
   const items = rows.map((r): Assumption => {
     const v = versions.find((x) => x.id === r.current_version_id)!;
-    const current = toVersion(v, people);
+    const current = { ...toVersion(v, people), sources: basis.get(r.id) ?? [] };
     const s = latest(sizing.filter((x) => x.assumption_id === r.id));
     const e = latest(econ.filter((x) => x.assumption_id === r.id));
     const usedBy = [
@@ -239,13 +245,18 @@ export async function toAssumptions(
   return sortRegister(items);
 }
 
-export async function caseAssumptions(tx: Tx, caseId: string, caseKey: string): Promise<Assumption[]> {
+export async function caseAssumptions(
+  tx: Tx,
+  caseId: string,
+  caseKey: string,
+  identity?: Identity,
+): Promise<Assumption[]> {
   const rows = (await tx
     .selectFrom('platform.assumption')
     .selectAll()
     .where('case_id', '=', caseId)
     .execute()) as AssumptionRow[];
-  return toAssumptions(tx, rows, caseKey);
+  return toAssumptions(tx, rows, caseKey, identity);
 }
 
 /** Business name for materiality copy: "adoption assumption changed on 26 Nov". */

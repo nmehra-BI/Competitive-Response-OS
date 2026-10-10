@@ -158,6 +158,19 @@ function table(): Case[] {
       body: { statement: 'x' },
     },
     {
+      def: API.feasibility.addDimension,
+      params: c,
+      body: {
+        dimension: 'channel',
+        reviewerId: a.user('priya'),
+        dueOn: null,
+        question: 'x',
+        questionDetail: null,
+        scopeText: 'x',
+        humanOnly: false,
+      },
+    },
+    {
       def: API.feasibility.resolveBlocker,
       params: { id: ids.blocker },
       body: { kind: 'resolved', resolution: 'x', scopeRestrictionGateRequestId: null },
@@ -230,15 +243,15 @@ const WS4A_GROUPS = [
 ] as const;
 
 describe('tenancy for every WS4a endpoint', () => {
-  it('covers all 64 WS4a endpoints', () => {
+  it('covers all 65 WS4a endpoints', () => {
     // Wave 4 additions (D-132) answer "Not implemented" until their stream lands them; that stream adds
     // its endpoint to the table above and removes it from this list (WAVE4.md, E2).
-    const WAVE4_PENDING = new Set(['feasibility.addDimension']);
+    const WAVE4_PENDING = new Set<string>([]);
     const all = WS4A_GROUPS.flatMap((g) => Object.values(API[g]) as EndpointDef[]).filter(
       (d) => d.id !== 'opportunities.requestDiscovery' && !WAVE4_PENDING.has(d.id),
     );
     const covered = new Set([...table().map((c) => c.def.id), ...LISTS.map((d) => d.id)]);
-    expect(all).toHaveLength(64);
+    expect(all).toHaveLength(65);
     expect(all.map((d) => d.id).filter((id) => !covered.has(id))).toEqual([]);
   });
 

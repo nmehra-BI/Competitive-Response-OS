@@ -6,6 +6,7 @@
  */
 import {
   API,
+  FEASIBILITY_DIMENSION_LABELS,
   type FeasibilityAssessment,
   type FeasibilityBlocker,
   type FeasibilityDimension,
@@ -31,6 +32,7 @@ import {
 } from '../cases/access';
 import { chipsFor, sourceChips } from '../cases/sources';
 import type { Identity } from '../../../platform/context';
+import { isCaseMember } from './members';
 
 const AREA: Record<FeasibilityDimension, ReviewArea> = {
   product_fit: 'product',
@@ -113,7 +115,7 @@ export async function feasibilityView(tx: Tx, identity: Identity, caseId: string
         caseId: r.case_id,
         dimension: r.dimension as FeasibilityDimension,
         question: r.question,
-        questionDetail: questionDetail(r.dimension, r.question),
+        questionDetail: r.question_detail ?? questionDetail(r.dimension, r.question),
         evidenceText: r.evidence_text,
         reviewer: who(people, r.reviewer_user_id),
         status: r.status as FeasibilityAssessment['status'],
@@ -301,6 +303,81 @@ export const feasibilityHandlers: HandlerMap = {
           { now: ctx.now, actorUserId: ctx.userId },
         );
       }
+      return feasibilityView(tx, ctx.identity, c.id);
+    },
+  }),
+
+  [API.feasibility.addDimension.id]: command(API.feasibility.addDimension, {
+    load: async (ctx, tx) => {
+      const c = await findCase(tx, ctx.params.caseRef);
+      if (!c) throw notFound();
+      return c;
+    },
+    authorize: (ctx, c) => authorizeOnCase(ctx.identity, ctx.now, c, 'review.request'),
+    handle: async (ctx, t, c) => {
+      const { tx } = t;
+      const b = ctx.body;
+      const exists = await tx
+        .selectFrom('me.feasibility_assessment')
+        .select('id')
+        .where('case_id', '=', c.id)
+        .where('dimension', '=', b.dimension)
+        .executeTakeFirst();
+      if (exists)
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          `${FEASIBILITY_DIMENSION_LABELS[b.dimension]} is already on this case. Change its reviewer there.`,
+        );
+      if (!(await isCaseMember(tx, c, b.reviewerId)))
+        throw new ApiError('VALIDATION_FAILED', 'Name a reviewer who is a member of this case.', {
+          errors: [{ path: 'body.reviewerId', code: 'not_case_member', message: 'Not a case member' }],
+        });
+      const question = b.question.trim();
+      const detail = b.questionDetail?.trim() || null;
+      const scope = b.scopeText.trim();
+      const a = await tx
+        .insertInto('me.feasibility_assessment')
+        .values({
+          tenant_id: ctx.tenantId,
+          case_id: c.id,
+          dimension: b.dimension,
+          question,
+          question_detail: detail,
+          reviewer_user_id: b.reviewerId,
+          status: 'in_review',
+          scope_text: scope,
+          due_on: b.dueOn,
+          // A specialist review is always human-only ("AI cannot provide this review").
+          human_only: b.humanOnly || b.dimension === 'specialist_review',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      // The named reviewer is asked in their Reviews inbox; only they can sign (feasibility.sign).
+      const rr = await tx
+        .insertInto('platform.review_request')
+        .values({
+          tenant_id: ctx.tenantId,
+          case_id: c.id,
+          area: AREA[b.dimension],
+          target_type: `feasibility.${b.dimension}`,
+          target_id: a.id,
+          question: detail ?? question,
+          what_to_check: [`Scope of review: ${scope}`],
+          requested_by: ctx.userId,
+          reviewer_user_id: b.reviewerId,
+          due_on: b.dueOn,
+          created_at: ctx.now,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await t.audit({
+        action: 'feasibility.dimension_added',
+        objectType: 'feasibility_assessment',
+        objectId: a.id,
+        caseId: c.id,
+        summary: `${FEASIBILITY_DIMENSION_LABELS[b.dimension]} added; review requested from a named reviewer`,
+        details: { dimension: b.dimension, reviewRequestId: rr.id, humanOnly: b.humanOnly },
+      });
       return feasibilityView(tx, ctx.identity, c.id);
     },
   }),

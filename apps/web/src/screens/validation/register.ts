@@ -33,6 +33,26 @@ export function compareAssumptions(a: Assumption, b: Assumption): number {
   );
 }
 
+/**
+ * S09 "Add assumption" (D-112 §1): a rate is typed as a percentage ("20" → "0.2") and stored as a
+ * fraction in [0, 1]. String arithmetic only (no float); a blank or unreadable value is null, never 0.
+ */
+export function percentToFraction(input: string): string | null {
+  const m = /^(\d{1,3})(?:\.(\d{1,6}))?$/.exec(input.trim());
+  if (!m) return null;
+  const whole = m[1]!.padStart(3, '0');
+  const int = whole.slice(0, -2).replace(/^0+(?=\d)/, '');
+  const frac = `${whole.slice(-2)}${m[2] ?? ''}`.replace(/0+$/, '');
+  if (Number(int) > 1 || (int === '1' && frac !== '')) return null;
+  return frac ? `${int}.${frac}` : int;
+}
+
+/** A plain non-negative decimal ("1,250.5" → "1250.5"); null when unreadable. */
+export function decimalValue(input: string): string | null {
+  const s = input.trim().replace(/[,\s’']/g, '');
+  return /^\d{1,16}(\.\d{1,8})?$/.test(s) ? s : null;
+}
+
 export interface RegisterGroupRows {
   group: RegisterGroup;
   items: Assumption[];
