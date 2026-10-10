@@ -6,6 +6,9 @@ export const PERSONAS = {
   jonas: { name: 'Jonas Klein', landing: '/my-work' },
   priya: { name: 'Priya Shah', landing: '/reviews?tab=assigned' },
   lena: { name: 'Lena Hoffmann', landing: '/reviews?tab=assigned' },
+  // D-109 §5: synthetic investment committee members (finance and operations seats; no G3 grant).
+  katrin: { name: 'Katrin Vogel', landing: '/reviews?tab=awaiting' },
+  thomas: { name: 'Thomas Berger', landing: '/reviews?tab=awaiting' },
   admin: { name: '[Tenant administrator]', landing: '/admin/health' },
 } as const;
 

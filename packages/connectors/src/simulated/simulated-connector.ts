@@ -21,6 +21,7 @@ import {
   type ExternalTaskInput,
   type ExternalTaskRef,
   type PreviewItemResult,
+  type PreviewProblemCode,
   type TaskConnector,
 } from '../task-connector';
 
@@ -88,9 +89,12 @@ export function createSimulatedConnector(connectionId: string, store: SimStore):
           members.set(item.project, await store.projectMembers(connectionId, item.project));
         const projectMembers = members.get(item.project)!;
         const problems: string[] = [];
+        const problemCodes: PreviewProblemCode[] = [];
         if (!item.assignee) problems.push(`no assignee is mapped for "${item.title}"`);
-        else if (projectMembers.length > 0 && !projectMembers.includes(item.assignee))
+        else if (projectMembers.length > 0 && !projectMembers.includes(item.assignee)) {
           problems.push(`assignee ${item.assignee} is not a member of project ${item.project}`);
+          problemCodes.push('assignee_not_in_project'); // D-134
+        }
         out.push({
           title: item.title,
           assignee: item.assignee,
@@ -101,6 +105,7 @@ export function createSimulatedConnector(connectionId: string, store: SimStore):
             labels: item.labels.join(', '),
           },
           problems,
+          ...(problemCodes.length ? { problemCodes } : {}),
         });
       }
       await store.logCall(connectionId, 'preview', null, `ok:${items.length}`);

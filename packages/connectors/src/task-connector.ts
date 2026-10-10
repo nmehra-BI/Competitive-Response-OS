@@ -32,7 +32,19 @@ export interface PreviewItemResult {
   assignee: string | null;
   fields: Record<string, string>;
   problems: string[]; // e.g. "assignee [Operations lead] is not a member of project PIL"
+  /**
+   * Machine-readable reasons, one per entry in `problems` where known (D-134, additive). The S14 mapping
+   * check reads `assignee_not_found` as "Not found"; every adapter (simulated, Jira Cloud) should set them.
+   */
+  problemCodes?: PreviewProblemCode[];
 }
+
+export type PreviewProblemCode =
+  | 'project_not_found'
+  | 'issue_type_not_found'
+  | 'assignee_not_found'
+  | 'assignee_not_in_project'
+  | 'permission_denied';
 
 export interface ConnectorHealth {
   status: 'connected' | 'expired' | 'missing_permission' | 'unavailable';

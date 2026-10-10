@@ -22,6 +22,12 @@ export const JOBS = {
   evidenceFreshness: 'evidence.freshness',
   /** Deliver analytics outbox rows to the sink (dev: table only). Owner: WS1. */
   analyticsFlush: 'analytics.flush',
+  /**
+   * Licence term ended: run the licence's on-expiry action (remove excerpts and embeddings, keep provenance
+   * metadata) and drop its permissions to metadata only in the same write (D-120, D-129). Owner: Wave 4 E3.
+   * Scheduled below; it runs once its handler is registered (schedule.ts keeps registered tasks only).
+   */
+  timersLicenseExpiry: 'timers.license_expiry',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -49,4 +55,5 @@ export const CRONTAB = [
   `0 * * * * ${JOBS.timersPilotWindow}`,
   `30 3 * * * ${JOBS.evidenceFreshness}`,
   `*/1 * * * * ${JOBS.analyticsFlush}`,
+  `15 2 * * * ${JOBS.timersLicenseExpiry}`,
 ].join('\n');

@@ -139,6 +139,18 @@ const EXTRA: Record<string, string[]> = {
   'admin.reconnect': [...g('taskSync'), ...g('opportunities')],
   'admin.setMapping': [...g('taskSync')],
   'dev.setConnectorFaults': [...g('taskSync')],
+  // Wave 4 (D-122 onward): registered here once so the streams never edit this map.
+  'feasibility.addDimension': [...PORTFOLIO, ...STALENESS],
+  'pilot.tripStopRule': [...PORTFOLIO],
+  'tasks.addDraft': [...g('experiments'), ...PORTFOLIO],
+  'tasks.editDraft': [...g('experiments'), ...PORTFOLIO],
+  'tasks.removeDraft': [...g('experiments'), ...PORTFOLIO],
+  'budget.reverseEntry': [...g('pilot'), API.overview.portfolio.id],
+  'admin.setCommitteeMember': [...DECISION],
+  'admin.setLicense': [...g('evidence')],
+  'admin.setLiveAnalysis': [...g('analysis')],
+  'admin.createConnection': [...g('taskSync')],
+  'admin.completeAuthorization': [...g('taskSync'), ...g('pilot')],
 };
 
 const NOT_CASE_SCOPED = new Set(['auth', 'search', 'admin', 'dev', 'evidence', 'mandates', 'comparisons']);

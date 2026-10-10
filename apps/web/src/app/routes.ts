@@ -121,7 +121,14 @@ export const ROUTES = [
     query: ['claim', 'passage'],
     owner: 'WS8d',
   },
-  { id: 'admin', path: '/admin/:section', screen: 'S14 Admin', query: ['run'], owner: 'WS8d' },
+  // `code` / `state`: the Jira OAuth 2.0 (3LO) redirect lands on /admin/connections (D-135).
+  {
+    id: 'admin',
+    path: '/admin/:section',
+    screen: 'S14 Admin',
+    query: ['run', 'connection', 'code', 'state'],
+    owner: 'WS8d',
+  },
   { id: 'designSystem', path: '/design-system', screen: 'DesignSystem', query: [], owner: 'WS7' },
 ] as const satisfies readonly RouteDef[];
 
