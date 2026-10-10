@@ -643,6 +643,16 @@ export const TaskFunction = z.enum([
   'specialist',
 ]);
 export type TaskFunction = z.infer<typeof TaskFunction>;
+/** S11 task function (CR-E2-2, D-154). */
+export const TASK_FUNCTION_LABELS = labels(TaskFunction, {
+  product: 'Product',
+  sales: 'Sales',
+  marketing: 'Marketing',
+  operations: 'Operations',
+  strategy: 'Strategy',
+  finance: 'Finance',
+  specialist: 'Specialist',
+});
 
 export const TaskSetOwnerType = z.enum(['pilot_plan_version', 'experiment']);
 export type TaskSetOwnerType = z.infer<typeof TaskSetOwnerType>;

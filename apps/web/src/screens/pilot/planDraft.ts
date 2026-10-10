@@ -4,18 +4,17 @@
  * ordinal (their number in the editor); the API resolves ordinals in the same patch and refuses cycles.
  * A blank budget line is no line (never €0); an unreadable amount blocks saving.
  */
-import type { API, PilotPlanView, Task, TaskFunction } from '@growth-os/contracts';
+import {
+  TASK_FUNCTION_LABELS,
+  type API,
+  type PilotPlanView,
+  type Task,
+  type TaskFunction,
+} from '@growth-os/contracts';
 import { isPositiveAmount, parseAmount } from './money';
 
-export const FUNCTION_LABEL: Record<TaskFunction, string> = {
-  product: 'Product',
-  sales: 'Sales',
-  marketing: 'Marketing',
-  operations: 'Operations',
-  strategy: 'Strategy',
-  finance: 'Finance',
-  specialist: 'Specialist',
-};
+/** Task function labels come from the contracts (CR-E2-2, D-154). */
+export const FUNCTION_LABEL: Readonly<Record<TaskFunction, string>> = TASK_FUNCTION_LABELS;
 
 export interface MilestoneRow {
   key: string;

@@ -4,7 +4,15 @@
  * validation method; due date. A blank value is never 0: the form asks for a value or a description in
  * words. Rates are typed as percentages and sent as fractions; money carries its currency and price year.
  */
-import { API, SENSITIVITY_LABELS, Sensitivity, type PersonRef, type ValueUnit } from '@growth-os/contracts';
+import {
+  API,
+  MODEL_INPUTS,
+  SENSITIVITY_LABELS,
+  Sensitivity,
+  VALUE_UNIT_LABELS,
+  type PersonRef,
+  type ValueUnit,
+} from '@growth-os/contracts';
 import { Button, OwnerPicker, TextAreaField } from '@growth-os/ui';
 import { useId, useState } from 'react';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
@@ -13,35 +21,10 @@ import { useApiQuery, useCommand } from '../../lib/query';
 import { Field } from './Field';
 import { decimalValue, percentToFraction } from './register';
 
-/** Model inputs the engines read (`inputKey`), with the unit each one needs. */
-const MODEL_INPUTS: { key: string; label: string; unit: ValueUnit }[] = [
-  { key: 'adoption_rate.base', label: 'Adoption · Base scenario', unit: 'rate' },
-  { key: 'adoption_rate.downside', label: 'Adoption · Downside scenario', unit: 'rate' },
-  { key: 'adoption_rate.upside', label: 'Adoption · Upside scenario', unit: 'rate' },
-  { key: 'annual_spend_per_site', label: 'Annual spend per site', unit: 'currency_per_year_per_site' },
-  { key: 'reachable_pool', label: 'Reachable pool (sites)', unit: 'sites' },
-  // Capacity is counted in customers, the unit the sizing and economics engines read (ASM-08).
-  { key: 'capacity', label: 'Delivery capacity (customers)', unit: 'customers' },
-  { key: 'gross_margin', label: 'Gross margin', unit: 'rate' },
-  { key: 'annual_incremental_opex', label: 'Annual incremental opex', unit: 'currency_per_year' },
-  { key: 'one_time_investment', label: 'One-time investment', unit: 'currency_one_time' },
-  { key: 'hours_per_site', label: 'Deployment effort per site', unit: 'hours_per_site' },
-];
+/** Model inputs and unit wording come from the contracts (CR-E2-2, D-154). */
+const UNIT_TEXT = VALUE_UNIT_LABELS;
 const OTHER = 'other';
 
-const UNIT_TEXT: Record<ValueUnit, string> = {
-  sites: 'sites',
-  companies: 'companies',
-  customers: 'customers',
-  rate: '%',
-  currency_per_year_per_site: 'per site per year',
-  currency_per_year: 'per year',
-  currency_one_time: 'one-time',
-  interviews: 'interviews',
-  commitments: 'commitments',
-  hours_per_site: 'hours per site',
-  text: 'described in words',
-};
 const MONEY = new Set<ValueUnit>(['currency_per_year_per_site', 'currency_per_year', 'currency_one_time']);
 const OTHER_UNITS: ValueUnit[] = [
   'sites',

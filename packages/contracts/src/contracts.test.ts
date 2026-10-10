@@ -45,6 +45,11 @@ import {
   Tenant,
   THESIS_BLOCKER_STATUS_LABELS,
   ThesisBlockerStatus,
+  TASK_FUNCTION_LABELS,
+  TaskFunction,
+  VALUE_UNIT_LABELS,
+  ValueUnit,
+  MODEL_INPUTS,
 } from './index';
 
 describe('API registry', () => {
@@ -183,8 +188,18 @@ describe('Wave 4 additions are additive (D-122 onward)', () => {
       [AssigneeMappingStatus, ASSIGNEE_MAPPING_STATUS_LABELS],
       [LineageRelation, LINEAGE_RELATION_LABELS],
       [BudgetEntryKind, BUDGET_ENTRY_KIND_LABELS],
+      [TaskFunction, TASK_FUNCTION_LABELS],
+      [ValueUnit, VALUE_UNIT_LABELS],
     ];
     for (const [e, l] of pairs) expect(Object.keys(l).sort()).toEqual([...e.options].sort());
+  });
+
+  it("model inputs carry the engines' units: capacity in customers, never sites (D-154)", () => {
+    expect(new Set(MODEL_INPUTS.map((m) => m.key)).size).toBe(MODEL_INPUTS.length);
+    expect(MODEL_INPUTS.find((m) => m.key === 'capacity')).toMatchObject({ unit: 'customers' });
+    expect(MODEL_INPUTS.find((m) => m.key === 'one_time_investment')).toMatchObject({
+      unit: 'currency_one_time',
+    });
   });
 
   it('labels pair the gate with the status and the snapshot version (D-118, D-119)', () => {

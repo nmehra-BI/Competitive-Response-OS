@@ -42,6 +42,41 @@ export const ValueUnit = z.enum([
 ]);
 export type ValueUnit = z.infer<typeof ValueUnit>;
 
+/** How a unit reads after a value (S09 "Add assumption", register; CR-E2-2, D-154). */
+export const VALUE_UNIT_LABELS: Readonly<Record<ValueUnit, string>> = Object.freeze({
+  sites: 'sites',
+  companies: 'companies',
+  customers: 'customers',
+  rate: '%',
+  currency_per_year_per_site: 'per site per year',
+  currency_per_year: 'per year',
+  currency_one_time: 'one-time',
+  interviews: 'interviews',
+  commitments: 'commitments',
+  hours_per_site: 'hours per site',
+  text: 'described in words',
+});
+
+/**
+ * Model inputs an assumption can feed (`Assumption.inputKey`), with the unit the engines read and the
+ * label the sizing and economics ledgers show (CR-E2-2, D-154). Capacity is counted in customers.
+ */
+export const MODEL_INPUTS: readonly { key: string; label: string; unit: ValueUnit }[] = Object.freeze([
+  { key: 'adoption_rate.base', label: 'Adoption by year 3 · Base', unit: 'rate' },
+  { key: 'adoption_rate.downside', label: 'Adoption by year 3 · Downside', unit: 'rate' },
+  { key: 'adoption_rate.upside', label: 'Adoption by year 3 · Upside', unit: 'rate' },
+  { key: 'annual_spend_per_site', label: 'Annual spend per site', unit: 'currency_per_year_per_site' },
+  { key: 'reachable_pool', label: 'Reachable pool', unit: 'sites' },
+  { key: 'capacity', label: 'Installation and support capacity', unit: 'customers' },
+  { key: 'gross_margin', label: 'Gross margin', unit: 'rate' },
+  { key: 'annual_incremental_opex', label: 'Annual incremental opex', unit: 'currency_per_year' },
+  { key: 'one_time_investment', label: 'Scale-entry investment', unit: 'currency_one_time' },
+  { key: 'hours_per_site', label: 'Deployment effort per site', unit: 'hours_per_site' },
+] as const);
+export const MODEL_INPUT_LABELS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(MODEL_INPUTS.map((m) => [m.key, m.label])),
+);
+
 export const AssumptionVersion = z.object({
   id: Id,
   assumptionId: Id,
