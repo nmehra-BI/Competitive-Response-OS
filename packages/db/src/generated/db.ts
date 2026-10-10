@@ -54,7 +54,11 @@ export interface MeBudgetEntry {
   kind: string;
   recorded_at: Generated<Timestamp>;
   recorded_by: string;
+  reference: string | null;
+  reversal_reason: string | null;
+  reverses_entry_id: string | null;
   source_text: string;
+  task_id: string | null;
   tenant_id: string;
 }
 
@@ -279,6 +283,7 @@ export interface MeFeasibilityAssessment {
   human_only: Generated<boolean>;
   id: Generated<string>;
   question: string;
+  question_detail: string | null;
   reviewer_user_id: string;
   scope_text: Generated<string>;
   status: Generated<string>;
@@ -530,6 +535,7 @@ export interface MeSizingCrossCheck {
 export interface MeSizingInput {
   assumption_id: string | null;
   assumption_version_id: string | null;
+  basis_text: string | null;
   currency: string | null;
   evidence_quality: string | null;
   id: Generated<string>;
@@ -642,6 +648,7 @@ export interface PlatformApproval {
   approver_role: string;
   approver_user_id: string;
   authority_grant_id: string | null;
+  committee_seat: string | null;
   decided_at: Generated<Timestamp>;
   delegated_to_user_id: string | null;
   disposition: string;
@@ -749,6 +756,7 @@ export interface PlatformAuthorityGrant {
   ceiling_amount: Numeric | null;
   created_at: Generated<Timestamp>;
   currency: string | null;
+  doa_reference: string | null;
   gate_code: string;
   granted_by: string;
   id: Generated<string>;
@@ -852,6 +860,20 @@ export interface PlatformComment {
   tenant_id: string;
 }
 
+export interface PlatformCommitteeMember {
+  business_unit_id: string;
+  created_at: Generated<Timestamp>;
+  doa_reference: string | null;
+  entered_by: string;
+  id: Generated<string>;
+  revoked_at: Timestamp | null;
+  seat: string;
+  tenant_id: string;
+  user_id: string;
+  valid_from: Timestamp;
+  valid_to: Timestamp | null;
+}
+
 export interface PlatformCompany {
   id: Generated<string>;
   name: string;
@@ -895,6 +917,25 @@ export interface PlatformConnection {
   used_for: string;
 }
 
+export interface PlatformConnectionCredential {
+  access_token_ciphertext: Buffer;
+  account_display_name: string | null;
+  account_id: string | null;
+  authorized_at: Generated<Timestamp>;
+  authorized_by: string;
+  cloud_id: string;
+  connection_id: string;
+  key_id: string;
+  kind: Generated<string>;
+  refresh_token_ciphertext: Buffer | null;
+  refreshed_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+  scopes: Generated<string[]>;
+  site_url: string;
+  tenant_id: string;
+  token_expires_at: Timestamp;
+}
+
 export interface PlatformConnectorMapping {
   assignee_map: Generated<Json>;
   connection_id: string;
@@ -903,6 +944,16 @@ export interface PlatformConnectorMapping {
   issue_type: string;
   purpose: string;
   tenant_id: string;
+}
+
+export interface PlatformConnectorOauthState {
+  connection_id: string;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  state_hash: string;
+  tenant_id: string;
+  used_at: Timestamp | null;
+  user_id: string;
 }
 
 export interface PlatformDecisionRecord {
@@ -1043,11 +1094,17 @@ export interface PlatformLicense {
   allow_export: Generated<boolean>;
   allow_model_context: Generated<boolean>;
   boundary_text: string;
+  expired_at: Timestamp | null;
   id: Generated<string>;
   key: string;
   max_excerpt_sentences: Generated<number>;
   name: string;
+  on_expiry_action: Generated<string>;
+  rights_confirmed_on: Timestamp | null;
+  rights_document_ref: string | null;
+  rights_recorded_by: string | null;
   tenant_id: string;
+  term_ends_on: Timestamp | null;
 }
 
 export interface PlatformMaterialChange {
@@ -1078,6 +1135,8 @@ export interface PlatformMaterialChangeImpact {
 }
 
 export interface PlatformMilestone {
+  due_on: Timestamp | null;
+  evidence_expected: string | null;
   id: Generated<string>;
   name: string;
   ordinal: number;
@@ -1132,6 +1191,7 @@ export interface PlatformOutcomeObservation {
 export interface PlatformOutcomeTarget {
   case_id: string;
   id: Generated<string>;
+  measure_type: string | null;
   metric_key: string;
   name: string;
   operator: string;
@@ -1296,6 +1356,9 @@ export interface PlatformSourceEntitlement {
 }
 
 export interface PlatformTask {
+  budget_amount: Numeric | null;
+  budget_currency: string | null;
+  budget_note: string | null;
   case_id: string;
   completed_at: Timestamp | null;
   condition_key: string | null;
@@ -1308,6 +1371,8 @@ export interface PlatformTask {
   milestone_id: string | null;
   ordinal: number;
   owner_user_id: string | null;
+  removed_at: Timestamp | null;
+  removed_by: string | null;
   row_version: Generated<number>;
   status: Generated<string>;
   task_set_id: string;
@@ -1354,6 +1419,17 @@ export interface PlatformTenant {
   name: string;
   slug: string;
   time_zone: Generated<string>;
+}
+
+export interface PlatformTenantAiSetting {
+  addendum_ref: string | null;
+  addendum_signed_on: Timestamp | null;
+  changed_at: Generated<Timestamp>;
+  changed_by: string | null;
+  eval_passed_at: Timestamp | null;
+  eval_run_ref: string | null;
+  live_enabled: Generated<boolean>;
+  tenant_id: string;
 }
 
 export interface PlatformToolCall {
@@ -1488,10 +1564,13 @@ export interface DB {
   "platform.claim": PlatformClaim;
   "platform.claim_evidence_link": PlatformClaimEvidenceLink;
   "platform.comment": PlatformComment;
+  "platform.committee_member": PlatformCommitteeMember;
   "platform.company": PlatformCompany;
   "platform.condition": PlatformCondition;
   "platform.connection": PlatformConnection;
+  "platform.connection_credential": PlatformConnectionCredential;
   "platform.connector_mapping": PlatformConnectorMapping;
+  "platform.connector_oauth_state": PlatformConnectorOauthState;
   "platform.decision_record": PlatformDecisionRecord;
   "platform.decision_snapshot": PlatformDecisionSnapshot;
   "platform.dev_clock": PlatformDevClock;
@@ -1526,6 +1605,7 @@ export interface DB {
   "platform.task_set": PlatformTaskSet;
   "platform.task_sync_preview": PlatformTaskSyncPreview;
   "platform.tenant": PlatformTenant;
+  "platform.tenant_ai_setting": PlatformTenantAiSetting;
   "platform.tool_call": PlatformToolCall;
   "platform.workflow_case": PlatformWorkflowCase;
   "sim.call_log": SimCallLog;
