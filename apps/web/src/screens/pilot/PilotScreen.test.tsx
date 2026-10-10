@@ -68,7 +68,8 @@ describe('S11 Pilot', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Retry 1 failed task' })[0]!);
     expect(await screen.findByText('6 of 6 tasks confirmed in Jira')).toBeTruthy();
     expect(screen.getAllByText('PIL-12').length).toBe(1);
-  });
+    // The journey renders S11 with its stop-rule and spend sections several times (jsdom role queries).
+  }, 20_000);
 
   it('timeout after success: Checking, then Confirmed after reconcile (step 24)', async () => {
     seedWs8d({ pilotVariant: 'timeout' });

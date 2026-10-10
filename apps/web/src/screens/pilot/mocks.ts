@@ -24,7 +24,6 @@ import {
   fid,
   gates,
   journeyMoments as J,
-  pilotBudget,
   pilotMilestones,
   pilotPreview,
   pilotTasks,
@@ -37,6 +36,16 @@ import { mock, MockProblem, mswPath, problem } from '../../mocks/define';
 import { session } from '../../mocks/state';
 import { scoped } from '../mandate/mock-kit';
 import { at, audit, save, ws8d, type TaskSyncState } from '../history/journey';
+import {
+  applyDraft,
+  budgetEntries,
+  budgetLineOf,
+  budgetMeter,
+  milestoneFields,
+  stopRules,
+  tripStopRule,
+  w4Handlers,
+} from './w4-mocks';
 
 type In<S extends z.ZodTypeAny> = z.input<S>;
 
@@ -154,6 +163,7 @@ export function tasks(): In<typeof Task>[] {
         confirmedAt: sync.confirmedAt,
       },
       rowVersion: s.taskStatus?.[t.id]?.rowVersion ?? 1,
+      budgetLine: budgetLineOf(t.id),
     };
   });
 }
@@ -225,16 +235,6 @@ function blockers(): Blocker[] {
   return out;
 }
 
-const money = (
-  amount: string,
-  measure: 'approved_budget' | 'committed_spend' | 'spent_to_date' | 'remaining_budget',
-) => ({
-  amount,
-  currency: pilotBudget.currency,
-  measure,
-  timeBasis: 'budget' as const,
-});
-
 function planVersion(state: 'draft' | 'committed') {
   return {
     id: state === 'committed' ? PLAN_VERSION_ID : mockId(1004),
@@ -248,7 +248,7 @@ function planVersion(state: 'draft' | 'committed') {
     windowEnd: gates.g2.windowEnd,
     scopeText: 'Up to 4 sites · Germany · food processing',
     thresholdsText: ['Paid use and continuation: 4 of 4', 'Deployment effort within [hours per site]'],
-    milestones: pilotMilestones.map((m) => ({ ...m })),
+    milestones: pilotMilestones.map((m) => ({ ...m, ...milestoneFields(m.id) })),
     rowVersion: ws8d().draftRowVersion,
   };
 }
@@ -270,15 +270,9 @@ export function pilotView(): In<typeof PilotPlanView> {
     current: activated() ? planVersion('committed') : null,
     draft: activated() ? null : planVersion('draft'),
     conditions: conditions(),
-    budget: {
-      gateRequestId: gates.g2.id,
-      asOf: pilotBudget.asOf,
-      approved: money(pilotBudget.approved, 'approved_budget'),
-      committed: money(pilotBudget.committed, 'committed_spend'),
-      spent: money(pilotBudget.spent, 'spent_to_date'),
-      remaining: money(pilotBudget.approved, 'remaining_budget'),
-      note: 'Spend above €120k is blocked without a scope-change request.',
-    },
+    budget: budgetMeter(),
+    stopRules: stopRules(),
+    budgetEntries: budgetEntries(),
     taskSet: taskSet(),
     activationBlockers: blockers(),
     messageDrafts: [messageDraft()],
@@ -514,10 +508,17 @@ export const handlers: HttpHandler[] = [
         });
       }
     }
+    applyDraft(body);
     s.draftRowVersion += 1;
     save();
     return pilotView();
   }),
+
+  mock(API.pilot.tripStopRule, ({ params, viewerId }) => {
+    tripStopRule(params.caseRef, params.stopRuleId, viewerId);
+    return pilotView();
+  }),
+  ...w4Handlers,
 
   mock(API.gates.markConditionMet, ({ params, body, viewerId }) => {
     if (params.id !== C1_ID && params.id !== C2_ID) throw notFound();
