@@ -111,7 +111,8 @@ test('steps 25–28: actuals, recommendation, decision, extension, scale blocked
     await expect(d).toHaveCount(0);
   };
   await rec('Paid use and continuation', '3 of 4', 'billing records', '3');
-  await rec('Deployment effort per site', 'Above assumption · [actual hours per site]', 'effort log (C2)');
+  // D-110 §4: 16 hours per site assumed (fixture), 22 actual → Not met.
+  await rec('Deployment effort per site', '22 hours per site', 'effort log (C2)', '22');
   await rec('Buyer fit', 'Mixed', 'interview notes', undefined, '2027-02-01');
   const table = page.getByRole('table', { name: 'Baseline versus actuals' });
   await expect(table.getByText('Not met')).toHaveCount(2);
@@ -159,9 +160,10 @@ test('steps 25–28: actuals, recommendation, decision, extension, scale blocked
   ).toBeVisible();
   await page.getByRole('button', { name: 'Request extension €[cap]' }).click();
   await expect(page.getByText('Placeholder · confirm with PM. The PRD sets no amount.')).toBeVisible();
-  await page.getByPlaceholder('€[cap]').fill('25000');
-  await page.getByPlaceholder('[duration] days').fill('60');
-  await page.getByRole('button', { name: 'Submit extension request €25k' }).click();
+  // D-110 §2: Aster X1 is €30k · 45 days (25% of €120k, half the 90-day window).
+  await page.getByPlaceholder('€[cap]').fill('30000');
+  await page.getByPlaceholder('[duration] days').fill('45');
+  await page.getByRole('button', { name: 'Submit extension request €30k' }).click();
   await expect(page.getByText(/Awaiting decision · Elena Fischer/)).toBeVisible();
   await page.getByRole('button', { name: 'Table' }).click();
   await expect(

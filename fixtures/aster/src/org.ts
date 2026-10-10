@@ -1,6 +1,7 @@
 /**
  * Aster Industrial Systems — tenant, people, roles, authority, policies, licences, connections.
- * Synthetic identities (PRD §6). Ceilings marked [limit] are policy placeholders: the PRD sets none.
+ * Synthetic identities (PRD §6). Ceilings, expiry, the extension rule and the committee follow the
+ * D-109 / D-110 default matrix (illustrative values; a real tenant's Finance confirms its own).
  */
 import { fid } from './ids';
 
@@ -117,10 +118,38 @@ export const people = {
     kind: 'agent',
     landing: '/',
   },
+  /** PQ-14 / D-109 §5: synthetic investment committee members (no G3 grant is seeded). */
+  katrin: {
+    id: fid('user', 10),
+    email: 'katrin.vogel@aster.example',
+    displayName: 'Katrin Vogel',
+    title: 'CFO · Investment committee (finance seat)',
+    initials: 'KV',
+    kind: 'human',
+    landing: '/reviews?tab=awaiting',
+  },
+  thomas: {
+    id: fid('user', 11),
+    email: 'thomas.berger@aster.example',
+    displayName: 'Thomas Berger',
+    title: 'COO · Investment committee (operations seat)',
+    initials: 'TB',
+    kind: 'human',
+    landing: '/reviews?tab=awaiting',
+  },
 } as const;
 
 /** Persona ids offered by the dev login picker, in display order. */
-export const devPersonaOrder = ['elena', 'maya', 'daniel', 'jonas', 'priya', 'lena'] as const;
+export const devPersonaOrder = [
+  'elena',
+  'maya',
+  'daniel',
+  'jonas',
+  'priya',
+  'lena',
+  'katrin',
+  'thomas',
+] as const;
 
 const BU = businessUnits[0].id;
 
@@ -134,14 +163,38 @@ export const roleAssignments = [
   { id: fid('role', 7), userId: people.lena.id, role: 'specialist_reviewer', businessUnitId: BU },
   { id: fid('role', 8), userId: people.admin.id, role: 'tenant_admin', businessUnitId: null },
   { id: fid('role', 9), userId: people.opsLead.id, role: 'read_only_reviewer', businessUnitId: BU },
+  { id: fid('role', 10), userId: people.katrin.id, role: 'investment_committee', businessUnitId: BU },
+  { id: fid('role', 11), userId: people.thomas.id, role: 'investment_committee', businessUnitId: BU },
+] as const;
+
+/** The Finance-signed delegation-of-authority document every Aster grant and seat comes from (D-109 §2). */
+export const ASTER_DOA_REFERENCE = 'DoA-2026-01 · BU Water · illustrative';
+
+/**
+ * G3 committee for BU Water (D-109 §3, §5): Elena chairs; Katrin holds the finance seat and Thomas the
+ * operations seat. Membership is not authority: no G3 grant is seeded, so S14 shows
+ * "Committee named · G3 authority not granted" (step 29 authority gap stays visible).
+ */
+export const committeeMembers = [
+  { id: fid('committeeMember', 1), userId: people.elena.id, seat: 'chair', businessUnitId: BU },
+  { id: fid('committeeMember', 2), userId: people.katrin.id, seat: 'finance', businessUnitId: BU },
+  { id: fid('committeeMember', 3), userId: people.thomas.id, seat: 'operations', businessUnitId: BU },
 ] as const;
 
 /**
- * Delegated authority (S14 matrix). The PRD sets no ceilings, so amounts are placeholders chosen only
- * to cover the Aster asks (G1 €15k, G2 €120k). They are policy data, never displayed as company policy:
- * the UI shows "up to €[limit]" (research §9 S10). There is deliberately no G3 grant: "Authority gap".
+ * Delegated authority (S14 matrix, D-109 §1 default template). Elena Fischer, the BU Water sponsor,
+ * holds G0, G1 up to €50k, G2 up to €150k and X up to €50k (they cover €15k, €120k and the €30k X1).
+ * Grants come from the Finance-signed DoA document. Real grants default to 12 months' validity
+ * (D-109 §2); the illustrative grants stay open-ended so the dated journey and tests never expire with
+ * the calendar. There is deliberately no G3 grant: "Authority gap".
  */
-export const PLACEHOLDER_CEILING = '250000.00';
+export const SPONSOR_CEILINGS = { G1: '50000.00', G2: '150000.00', X: '50000.00' } as const;
+export const COMMITTEE_CEILINGS = {
+  G1: '250000.00',
+  G2: '1000000.00',
+  X: '250000.00',
+  G3: '2000000.00',
+} as const;
 export const authorityGrants = [
   {
     id: fid('authority', 1),
@@ -151,36 +204,49 @@ export const authorityGrants = [
     ceilingAmount: null,
     currency: null,
     validFrom: '2026-01-01',
+    validTo: null,
+    doaReference: ASTER_DOA_REFERENCE,
   },
   {
     id: fid('authority', 2),
     userId: people.elena.id,
     gateCode: 'G1',
     businessUnitId: BU,
-    ceilingAmount: PLACEHOLDER_CEILING,
+    ceilingAmount: SPONSOR_CEILINGS.G1,
     currency: 'EUR',
     validFrom: '2026-01-01',
+    validTo: null,
+    doaReference: ASTER_DOA_REFERENCE,
   },
   {
     id: fid('authority', 3),
     userId: people.elena.id,
     gateCode: 'G2',
     businessUnitId: BU,
-    ceilingAmount: PLACEHOLDER_CEILING,
+    ceilingAmount: SPONSOR_CEILINGS.G2,
     currency: 'EUR',
     validFrom: '2026-01-01',
+    validTo: null,
+    doaReference: ASTER_DOA_REFERENCE,
   },
   {
     id: fid('authority', 4),
     userId: people.elena.id,
     gateCode: 'X',
     businessUnitId: BU,
-    ceilingAmount: PLACEHOLDER_CEILING,
+    ceilingAmount: SPONSOR_CEILINGS.X,
     currency: 'EUR',
     validFrom: '2026-01-01',
+    validTo: null,
+    doaReference: ASTER_DOA_REFERENCE,
   },
 ] as const;
 
+/**
+ * Gate policies (D-109, D-110). Expiry of unused approvals: G1 and G2 30 days, X 14 days; G0 and G3 never
+ * expire in the MVP. G3 needs 2 of 3 committee approvals on the same snapshot, the finance seat required.
+ * `authority` is the default matrix row (one-time EUR per request); per-person ceilings stay on grants.
+ */
 export const gatePolicies = [
   {
     gateCode: 'G0',
@@ -194,6 +260,7 @@ export const gatePolicies = [
     requiredApprovals: 1,
     requiredSignOffAreas: [],
     approvalExpiryDays: 14,
+    approvalExpires: false,
   },
   {
     gateCode: 'G1',
@@ -205,7 +272,13 @@ export const gatePolicies = [
     ],
     requiredApprovals: 1,
     requiredSignOffAreas: [],
-    approvalExpiryDays: 14,
+    approvalExpiryDays: 30,
+    approvalExpires: true,
+    authority: {
+      sponsorCeiling: SPONSOR_CEILINGS.G1,
+      committeeCeiling: COMMITTEE_CEILINGS.G1,
+      currency: 'EUR',
+    },
   },
   {
     gateCode: 'G2',
@@ -218,7 +291,13 @@ export const gatePolicies = [
     ],
     requiredApprovals: 1,
     requiredSignOffAreas: ['finance', 'specialist'],
-    approvalExpiryDays: 14,
+    approvalExpiryDays: 30,
+    approvalExpires: true,
+    authority: {
+      sponsorCeiling: SPONSOR_CEILINGS.G2,
+      committeeCeiling: COMMITTEE_CEILINGS.G2,
+      currency: 'EUR',
+    },
   },
   {
     gateCode: 'G3',
@@ -228,9 +307,13 @@ export const gatePolicies = [
       'updated_economics_and_capacity',
       'approved_scale_budget',
     ],
-    requiredApprovals: 1,
+    requiredApprovals: 2,
     requiredSignOffAreas: ['finance', 'specialist'],
     approvalExpiryDays: 14,
+    approvalExpires: false,
+    committeeSeats: ['chair', 'finance', 'operations'],
+    requiredSeats: ['finance'],
+    authority: { sponsorCeiling: null, committeeCeiling: COMMITTEE_CEILINGS.G3, currency: 'EUR' },
   },
   {
     gateCode: 'X',
@@ -238,6 +321,20 @@ export const gatePolicies = [
     requiredApprovals: 1,
     requiredSignOffAreas: [],
     approvalExpiryDays: 14,
+    approvalExpires: true,
+    authority: {
+      sponsorCeiling: SPONSOR_CEILINGS.X,
+      committeeCeiling: COMMITTEE_CEILINGS.X,
+      currency: 'EUR',
+    },
+    extension: {
+      maxBudgetShare: '0.25',
+      maxDurationShare: '0.50',
+      minDurationDays: 14,
+      maxPerParent: 1,
+      cumulativeWithinSponsorCeiling: true,
+      capRequiredInRealTenants: true,
+    },
   },
 ] as const;
 
@@ -256,6 +353,14 @@ export const materialityRules = [
   { changeType: 'comment_or_formatting', classification: 'not_material' },
 ] as const;
 
+/**
+ * Licences (D-120). Fail closed: a licence without a written confirmation allows metadata only. The two
+ * licences that grant excerpts carry an illustrative confirmation; the vendor estimate has none.
+ */
+export const ASTER_LICENSE_CONFIRMATION = {
+  documentRef: 'Licence confirmation · illustrative · synthetic',
+  confirmedOn: '2026-01-15',
+} as const;
 export const licenses = [
   {
     id: fid('license', 1),
@@ -266,6 +371,9 @@ export const licenses = [
     allowModelContext: true,
     allowEmbeddings: false,
     allowExport: false,
+    rightsConfirmation: ASTER_LICENSE_CONFIRMATION,
+    termEndsOn: '2027-12-31',
+    onExpiry: 'remove_content_keep_metadata',
   },
   {
     id: fid('license', 2),
@@ -276,6 +384,9 @@ export const licenses = [
     allowModelContext: false,
     allowEmbeddings: false,
     allowExport: false,
+    rightsConfirmation: null,
+    termEndsOn: null,
+    onExpiry: 'remove_content_keep_metadata',
   },
   {
     id: fid('license', 3),
@@ -286,6 +397,9 @@ export const licenses = [
     allowModelContext: true,
     allowEmbeddings: false,
     allowExport: true,
+    rightsConfirmation: ASTER_LICENSE_CONFIRMATION,
+    termEndsOn: null,
+    onExpiry: 'remove_content_keep_metadata',
   },
 ] as const;
 

@@ -980,6 +980,7 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
       name: t.name,
       thresholdText: t.thresholdText,
       window: t.windowText,
+      measureType: t.measureType, // D-115
     })),
   };
   const resultComponent = { type: 'experiment_result_version' as const, id: resultId, version: 1 };
@@ -996,10 +997,19 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
     dissent: [],
     components: [...sharedComponents, resultComponent, ...reviewComponents.slice(0, -1)],
   };
+  // D-112: the structured stop rules were pre-registered with the request and first frozen into v3.
+  const stopRules = g2.structuredStopRules.map((r) => ({
+    id: R.id(r.id),
+    key: r.key,
+    trigger: { ...r.trigger },
+    consequence: r.consequence,
+    ownerId: R.id(r.ownerId),
+  }));
   const v3Content: SnapshotContent = {
     ...g2Base,
     signOffs: positions,
     budgetAndStopRules: [...g2.stopRules],
+    stopRules,
     conditionsProposed: conditions,
     dissent: [
       {
@@ -1026,7 +1036,22 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
       business_unit_id: R.id(BU_WATER),
       gate_code: 'G2',
       status: 'awaiting_decision',
-      scope: JSON.stringify(v3Content.scope),
+      // Stored like `gates.createRequest` stores them (outcome targets D-102, stop rules D-112).
+      scope: JSON.stringify({
+        ...v3Content.scope,
+        proposedConditions: [],
+        outcomeTargets: outcomeTargets.map((t) => ({
+          metricKey: t.metricKey,
+          name: t.name,
+          thresholdText: t.thresholdText,
+          operator: t.operator,
+          thresholdValue: t.thresholdValue,
+          unit: t.unit,
+          windowText: t.windowText,
+          measureType: t.measureType,
+        })),
+        stopRules,
+      }),
       requested_amount: g2.amount,
       currency: g2.currency,
       duration_days: g2.durationDays,
@@ -1102,6 +1127,7 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
         threshold_value: t.thresholdValue,
         unit: t.unit,
         window_text: t.windowText,
+        measure_type: t.measureType, // D-115
       })
       .execute();
 

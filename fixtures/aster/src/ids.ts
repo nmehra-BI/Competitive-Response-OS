@@ -40,6 +40,8 @@ const KINDS = {
   reviewRequest: '0023',
   comparison: '0024',
   boundary: '0025',
+  committeeMember: '0026',
+  stopRule: '0027',
 } as const;
 
 export type FixtureKind = keyof typeof KINDS;

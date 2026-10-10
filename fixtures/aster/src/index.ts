@@ -31,6 +31,7 @@ export const asterFixture = {
   sourceEntitlements: org.sourceEntitlements,
   connections: org.connections,
   connectorMappings: org.connectorMappings,
+  committeeMembers: org.committeeMembers,
   sources: discovery.sources,
   mandate: discovery.mandate,
   opportunities: discovery.opportunities,

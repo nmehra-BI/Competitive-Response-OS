@@ -1,6 +1,7 @@
 /**
  * ME-104 validation, gates, pilot and outcomes (PRD §6 "Pilot criteria and sample outcome").
- * Placeholders such as €[cap] and [hours per site] stay placeholders: the PRD sets no value.
+ * The former placeholders are decided (illustrative values): X1 €30k · 45 days and 16 hours per site
+ * assumed / 22 actual (D-110); MD-21 v1 wording and snapshot labels (D-118).
  */
 import { fid } from './ids';
 import { people } from './org';
@@ -151,8 +152,7 @@ export const gates = {
         disposition: 'return_for_revision',
         by: people.elena.id,
         at: '2026-10-03T09:40:00+02:00',
-        rationale:
-          'Name an accountable owner and state the currency. Add ‘no prospect outreach before G1’ to the exclusions.',
+        rationale: 'Returned to change the owner and confirm EUR.',
       },
       {
         snapshotVersion: 2,
@@ -222,7 +222,42 @@ export const gates = {
     stopRules: [
       'Approved budget ceiling €120k. Spend above it needs a scope-change request and a new authorization.',
       'Pause if a specialist condition is breached.',
-      'Day-90 review against pre-registered thresholds: paid use and continuation at 4 of 4 pilot customers; deployment effort within the assumed [hours per site].',
+      'Day-90 review against pre-registered thresholds: paid use and continuation at 4 of 4 pilot customers; deployment effort within the assumed 16 hours per site.',
+    ],
+    /**
+     * Pre-registered stop rules in structured form (D-112, CR-PD-5): trigger, consequence, owner. A trip
+     * asks the sponsor to review; it never stops the case or passes a gate by itself.
+     */
+    structuredStopRules: [
+      {
+        id: fid('stopRule', 1),
+        key: 'SR1',
+        trigger: {
+          kind: 'event',
+          metricKey: null,
+          text: 'Spend would exceed the approved €120k ceiling',
+        },
+        consequence: 'pause_and_request_review',
+        ownerId: people.jonas.id,
+      },
+      {
+        id: fid('stopRule', 2),
+        key: 'SR2',
+        trigger: { kind: 'event', metricKey: null, text: 'A specialist condition is breached' },
+        consequence: 'pause_and_request_review',
+        ownerId: people.lena.id,
+      },
+      {
+        id: fid('stopRule', 3),
+        key: 'SR3',
+        trigger: {
+          kind: 'threshold',
+          metricKey: 'paid_use_continuation',
+          text: 'Fewer than 2 of 4 pilot customers in paid use at day 45',
+        },
+        consequence: 'recommend_stop',
+        ownerId: people.jonas.id,
+      },
     ],
     knownLimitations: [
       'Four sites cannot show market-wide adoption.',
@@ -244,7 +279,8 @@ export const gates = {
       },
     ],
     prototypeFingerprint: '7F3A·19C2', // illustrative only
-    expiresAt: '2026-12-11T23:59:00+01:00',
+    /** Approved 27 Nov; an unused G2 approval expires after 30 days (D-109 §4). */
+    expiresAt: '2026-12-27T23:59:00+01:00',
     positions: [
       {
         reviewerId: people.daniel.id,
@@ -312,13 +348,31 @@ export const gates = {
     key: 'ME-104-X1',
     gateCode: 'X',
     parentKey: 'ME-104-G2',
-    amount: null, // €[cap] · placeholder, confirm with PM. The PRD sets no amount.
-    amountPlaceholder: '€[cap]',
-    durationPlaceholder: '[duration] days',
+    // D-110 §2 (illustrative): 25% of €120k and half of the 90-day window; Elena approves within her
+    // €150k G2 ceiling (€120k + €30k). Both are one-time pilot money.
+    amount: '30000.00',
+    currency: 'EUR',
+    durationDays: 45,
+    windowStart: '2027-03-01',
+    windowEnd: '2027-04-14',
+    maxSites: 4,
+    buttonLabel: 'Approve extension €30k · 45 days',
+    limitsText: 'Up to €30k (25% of €120k) · up to 45 days',
     ownerId: people.jonas.id,
     submittedAt: '2027-03-05T14:05:00+01:00',
-    authorizes: ['Extension work within €[cap] and the chosen scope', 'The existing 4 pilot sites'],
-    doesNotAuthorize: ['Not scale', 'No new sites without a new gate', 'Does not unblock G3'],
+    scopeText: 'The 4 pilot sites only',
+    retestMetricKeys: ['paid_use_continuation', 'deployment_effort'],
+    authorizes: [
+      'Extension work within €30k · 45 days, 1 Mar – 14 Apr 2027',
+      'The 4 pilot sites only',
+      'Re-test paid use and continuation (4 of 4) and deployment effort per site',
+    ],
+    doesNotAuthorize: [
+      'Not scale',
+      'No new sites without a new gate',
+      'No prospect outreach',
+      'Does not unblock G3',
+    ],
   },
   g3: {
     gateCode: 'G3',
@@ -369,6 +423,11 @@ export const pilotTasks = [
     variants: {
       noOwner: 'Unassigned',
       permissionFailure: 'assignee [Operations lead] is not a member of project PIL',
+      /**
+       * D-118 (PQ-15): after the permission fix the retried task takes the next free key. Jira cannot
+       * reserve keys and we never report a key the connector did not return (never-rule 9).
+       */
+      retriedExternalKey: 'PIL-17',
     },
   },
   {
@@ -429,7 +488,7 @@ export const pilotTasks = [
 export const pilotPreview = {
   destination: { tool: 'Jira', project: 'PIL', projectName: 'Aster Pilots' },
   willCreate: 6,
-  linkText: 'each linked to ME-104 · G2 v3',
+  linkText: 'each linked to ME-104 · G2 · Snapshot v3', // D-118: gate + version
   assigneesText: 'Matched by directory: Jonas Klein, Priya Shah, Maya Rao, [Operations lead]',
   permissionsText: 'Create and assign issues · as Jonas Klein',
   repeatsText: 'Each task has a fixed reference; retrying never duplicates',
@@ -458,6 +517,7 @@ export const outcomeTargets = [
     id: fid('outcomeTarget', 1),
     metricKey: 'paid_use_continuation',
     name: 'Paid use and continuation',
+    measureType: 'demand', // D-115: the G3 demand clause reads this type
     thresholdText: '4 of 4 pilot customers',
     operator: 'gte',
     thresholdValue: '4',
@@ -468,9 +528,10 @@ export const outcomeTargets = [
     id: fid('outcomeTarget', 2),
     metricKey: 'deployment_effort',
     name: 'Deployment effort per site',
-    thresholdText: 'Within [hours per site] assumed',
+    measureType: 'delivery_effort',
+    thresholdText: 'Within 16 hours per site', // D-110 §4: 16 installation and support hours assumed
     operator: 'lte',
-    thresholdValue: null,
+    thresholdValue: '16',
     unit: 'hours_per_site',
     windowText: 'weekly log',
   },
@@ -478,6 +539,7 @@ export const outcomeTargets = [
     id: fid('outcomeTarget', 3),
     metricKey: 'buyer_fit',
     name: 'Buyer fit',
+    measureType: 'buyer_fit',
     thresholdText: 'Qualitative · interview notes',
     operator: 'qualitative',
     thresholdValue: null,
@@ -503,8 +565,8 @@ export const outcomeObservations = [
   {
     id: fid('observation', 2),
     targetKey: 'deployment_effort',
-    valueText: 'Above assumption · [actual hours per site]',
-    value: null,
+    valueText: '22 hours per site', // D-110 §4: 22 actual against 16 assumed → Not met
+    value: '22',
     unit: 'hours_per_site',
     periodStart: '2026-12-01',
     periodEnd: '2027-02-28',

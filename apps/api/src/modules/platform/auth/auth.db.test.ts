@@ -36,7 +36,7 @@ async function sessionAudit(userId: string) {
 }
 
 describe('dev persona picker', () => {
-  it('lists the six Aster personas in order, then the tenant administrator', async () => {
+  it('lists the Aster personas in order (six + two committee members, D-109 §5), then the tenant administrator', async () => {
     // The canonical tenant may not be seeded in this database; point the picker at our isolated copy.
     const app = await createTestApp();
     app.app.platform.config.devTenantSlug = a.tenantSlug;
@@ -52,13 +52,15 @@ describe('dev persona picker', () => {
       'Jonas Klein',
       'Priya Shah',
       'Lena Hoffmann',
+      'Katrin Vogel',
+      'Thomas Berger',
       '[Tenant administrator]',
     ]);
     expect(body.personas[0]).toMatchObject({
       roleSummary: 'BU VP · Sponsor',
       landing: '/reviews?tab=awaiting',
     });
-    expect(body.personas[6]?.landing).toBe('/admin/health');
+    expect(body.personas[8]?.landing).toBe('/admin/health');
   });
 
   it('does not register dev routes outside AUTH_MODE=dev', async () => {

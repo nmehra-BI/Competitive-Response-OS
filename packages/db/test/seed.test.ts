@@ -48,6 +48,52 @@ describe('aster-start', () => {
     });
   });
 
+  it('loads the D-109 / D-110 / D-120 policy values: ceilings with DoA, expiry, committee, licence rights', async () => {
+    await inTenant(start, async (tx) => {
+      const grants = await tx
+        .selectFrom('platform.authority_grant')
+        .select(['gate_code', 'ceiling_amount', 'doa_reference'])
+        .orderBy('gate_code')
+        .execute();
+      expect(grants.map((g) => [g.gate_code, g.ceiling_amount])).toEqual([
+        ['G0', null],
+        ['G1', '50000.00'],
+        ['G2', '150000.00'],
+        ['X', '50000.00'],
+      ]);
+      expect(grants.every((g) => g.doa_reference)).toBe(true);
+      const gp = await tx
+        .selectFrom('platform.policy')
+        .select(['key', 'body'])
+        .where('kind', '=', 'gate')
+        .orderBy('key')
+        .execute();
+      const body = (k: string) => gp.find((p) => p.key === k)!.body as Record<string, unknown>;
+      expect(['G1', 'G2', 'X'].map((k) => body(k).approvalExpiryDays)).toEqual([30, 30, 14]);
+      expect(['G0', 'G3'].map((k) => body(k).approvalExpires)).toEqual([false, false]);
+      expect(body('G3')).toMatchObject({ requiredApprovals: 2, requiredSeats: ['finance'] });
+      expect(body('X')).toMatchObject({ extension: { maxBudgetShare: '0.25', maxDurationShare: '0.50' } });
+      const seats = await tx
+        .selectFrom('platform.committee_member as m')
+        .innerJoin('platform.app_user as u', 'u.id', 'm.user_id')
+        .select(['m.seat', 'u.display_name'])
+        .orderBy('m.seat')
+        .execute();
+      expect(seats.map((m) => `${m.seat}:${m.display_name}`)).toEqual([
+        'chair:Elena Fischer',
+        'finance:Katrin Vogel',
+        'operations:Thomas Berger',
+      ]);
+      const licences = await tx
+        .selectFrom('platform.license')
+        .select(['key', 'rights_document_ref', 'allow_model_context'])
+        .orderBy('key')
+        .execute();
+      for (const l of licences)
+        if (l.allow_model_context) expect(l.rights_document_ref, l.key).not.toBeNull();
+    });
+  });
+
   it('has MD-21 approved at G0 on snapshot v2 (v1 returned and superseded), with hash-bound approvals', async () => {
     await inTenant(start, async (tx) => {
       const g0 = await tx
@@ -80,6 +126,23 @@ describe('aster-start', () => {
         .execute();
       expect(approvals.map((x) => x.disposition)).toEqual(['return_for_revision', 'approve']);
       expect(approvals[1]!.snapshot_hash).toBe(snaps[1]!.content_hash);
+      // D-118 (PQ-4): v1 was returned to change the owner (Jonas Klein → Maya Rao) and confirm EUR.
+      const versions = await tx
+        .selectFrom('me.mandate_version')
+        .select(['version', 'owner_user_id', 'currency'])
+        .orderBy('version')
+        .execute();
+      expect(versions.map((v) => [v.version, v.owner_user_id, v.currency])).toEqual([
+        [1, start.id(people.jonas.id), 'EUR'],
+        [2, start.id(people.maya.id), 'EUR'],
+      ]);
+      const returned = await tx
+        .selectFrom('platform.approval')
+        .select('rationale')
+        .where('gate_request_id', '=', g0.id)
+        .where('disposition', '=', 'return_for_revision')
+        .executeTakeFirstOrThrow();
+      expect(returned.rationale).toBe('Returned to change the owner and confirm EUR.');
       const mandate = await tx.selectFrom('me.mandate').select(['status']).executeTakeFirstOrThrow();
       expect(mandate.status).toBe('approved');
     });

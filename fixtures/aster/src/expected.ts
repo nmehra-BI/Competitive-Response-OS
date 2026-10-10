@@ -68,4 +68,52 @@ export const expectedBlocking = {
   mixedUnits: 'UNIT_MISMATCH', // a cohort counted in companies
   mixedYears: 'PRICE_YEAR_MISMATCH', // a cohort from 2024
   currencyMismatch: 'CURRENCY_MISMATCH',
+  reachableExceedsSam: 'REACHABLE_EXCEEDS_SAM', // D-117: reachable pool edited above SAM sites
+} as const;
+
+/**
+ * D-117 (PQ-18): the reachable pool stays an entered number and is checked against SAM (≤ SAM sites).
+ * SAM's lineage drawer lists the check as a "checked against" edge; a breach blocks like SAM > TAM.
+ */
+export const expectedLineage = {
+  samUsedBy: [
+    {
+      label: 'Reachable pool',
+      relation: 'checked_against',
+      detail: 'upper-bound check: 500 ≤ 2,000 sites',
+    },
+  ],
+} as const;
+
+/** D-110 / D-109: the X rule applied to the €120k · 90-day G2 (one-time pilot money only). */
+export const expectedExtension = {
+  maxAmount: '30000.00', // 25% of €120k
+  maxDurationDays: 45, // 50% of 90 days (≥ 14)
+  extensionsAllowed: 1,
+  cumulativeCeiling: '150000.00', // Elena's G2 ceiling: €120k + €30k
+  limitsText: 'Up to €30k (25% of €120k) · up to 45 days',
+  buttonLabel: 'Approve extension €30k · 45 days',
+} as const;
+
+/**
+ * D-111 / D-039: the four G3 blockers, in order. The fourth names the committed one-time investment;
+ * it is never next to a /year figure and is omitted when the viewer cannot read the committed economics.
+ */
+export const expectedScaleGate = {
+  blockerKeys: [
+    'pilot_actuals_vs_thresholds',
+    'readiness_reassessment',
+    'updated_economics_and_capacity',
+    'approved_scale_budget',
+  ],
+  scaleBudgetBlocker:
+    'No scale budget requested · economics v2 carries €400k one-time scale-entry investment',
+} as const;
+
+/** D-109 §3: G3 quorum on one snapshot hash. */
+export const expectedCommittee = {
+  quorum: 2,
+  requiredSeats: ['finance'],
+  waitingText: 'Waiting on second approver · finance seat',
+  authorityGapText: 'Committee named · G3 authority not granted',
 } as const;

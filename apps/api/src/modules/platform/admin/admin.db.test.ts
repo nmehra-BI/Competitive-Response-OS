@@ -58,7 +58,8 @@ describe('roles', () => {
   it('lists roles for admins only', async () => {
     const res = await call(t.app, API.admin.roles, { cookie: c.admin });
     expect(res.statusCode).toBe(200);
-    expect((res.json() as { items: unknown[] }).items.length).toBe(9);
+    // Nine Aster roles plus the two committee members' roles (D-109 §5).
+    expect((res.json() as { items: unknown[] }).items.length).toBe(11);
     expect((await call(t.app, API.admin.roles, { cookie: c.maya })).statusCode).toBe(403);
   });
 

@@ -3,9 +3,17 @@
  * golden numbers are internally consistent using independent integer arithmetic (not the engines).
  */
 import { describe, expect, it } from 'vitest';
-import { EconomicsInput, SizingInput } from '@growth-os/contracts';
+import { EconomicsInput, GatePolicyBody, LicenseInput, SizingInput } from '@growth-os/contracts';
 import {
   assumptions,
+  authorityGrants,
+  committeeMembers,
+  expectedExtension,
+  gatePolicies,
+  licenses,
+  outcomeTargets,
+  people,
+  roleAssignments,
   economicsV2Input,
   expectedEconomics,
   expectedSizing,
@@ -51,7 +59,56 @@ describe('Aster fixture', () => {
     expect(gates.g2.durationDays).toBe(90);
     expect(exp03.originalPlan.sampleSize).toBe(20);
     expect(exp03.result.observations.map((o) => o.observed)).toEqual(['9', '4']);
-    expect(gates.x1.amount).toBeNull(); // €[cap] stays a placeholder
+  });
+
+  it('X1 follows the extension rule: €30k · 45 days inside the sponsor G2 ceiling (D-110)', () => {
+    const x = gatePolicies.find((g) => g.gateCode === 'X')!;
+    expect(gates.x1.amount).toBe(expectedExtension.maxAmount);
+    expect(gates.x1.durationDays).toBe(expectedExtension.maxDurationDays);
+    expect(n(gates.x1.amount)).toBeLessThanOrEqual(n(gates.g2.amount) * n(x.extension.maxBudgetShare));
+    expect(gates.x1.durationDays).toBeLessThanOrEqual(
+      gates.g2.durationDays * n(x.extension.maxDurationShare),
+    );
+    const g2Grant = authorityGrants.find((a) => a.gateCode === 'G2')!;
+    expect(n(gates.g2.amount) + n(gates.x1.amount)).toBeLessThanOrEqual(n(g2Grant.ceilingAmount!));
+    expect(gates.x1.buttonLabel).toBe(expectedExtension.buttonLabel);
+  });
+
+  it('policies match the D-109 matrix and validate against the contract', () => {
+    for (const g of gatePolicies) expect(GatePolicyBody.safeParse(g).success, g.gateCode).toBe(true);
+    const days = Object.fromEntries(
+      gatePolicies.map((g) => [g.gateCode, g.approvalExpires ? g.approvalExpiryDays : null]),
+    );
+    expect(days).toEqual({ G0: null, G1: 30, G2: 30, G3: null, X: 14 });
+    const g3 = gatePolicies.find((g) => g.gateCode === 'G3')!;
+    expect(g3.requiredApprovals).toBe(2);
+    expect(g3.requiredSeats).toEqual(['finance']);
+    expect(authorityGrants.map((a) => a.gateCode as string)).not.toContain('G3'); // the authority gap stays visible
+    expect(authorityGrants.every((a) => a.doaReference)).toBe(true);
+  });
+
+  it('names a three-seat committee with synthetic members and no G3 grant (D-109 §5)', () => {
+    expect(committeeMembers.map((m) => m.seat)).toEqual(['chair', 'finance', 'operations']);
+    expect(committeeMembers.map((m) => m.userId)).toEqual([
+      people.elena.id,
+      people.katrin.id,
+      people.thomas.id,
+    ]);
+    const ic = roleAssignments.filter((r) => r.role === 'investment_committee').map((r) => r.userId);
+    expect(ic).toEqual([people.katrin.id, people.thomas.id]);
+  });
+
+  it('licences fail closed without a written confirmation (D-120)', () => {
+    for (const l of licenses) {
+      expect(LicenseInput.safeParse(l).success, l.key).toBe(true);
+      const permits = l.maxExcerptSentences > 0 || l.allowModelContext || l.allowEmbeddings || l.allowExport;
+      if (permits) expect(l.rightsConfirmation, l.key).not.toBeNull();
+    }
+  });
+
+  it('every pilot threshold has a measure type and a number where the PRD placeholder was (D-110, D-115)', () => {
+    expect(outcomeTargets.map((t) => t.measureType)).toEqual(['demand', 'delivery_effort', 'buyer_fit']);
+    expect(outcomeTargets.find((t) => t.metricKey === 'deployment_effort')!.thresholdValue).toBe('16');
   });
 
   it('every pilot task has an owner in the base fixture, and every assumption has an owner', () => {

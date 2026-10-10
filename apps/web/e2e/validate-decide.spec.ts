@@ -322,7 +322,7 @@ test.describe('S10 Decisions', () => {
     await expectAccessible();
     await panel.getByRole('button', { name: 'Approve pilot €120k · 90 days' }).click();
     await expect(panel).toContainText(/Approved with conditions · 2 conditions/);
-    await expect(panel).toContainText('If unused by 11 Dec 2026');
+    await expect(panel).toContainText('If unused by 27 Dec 2026');
     await expect(panel).toContainText('Pilot approved for v4 only');
     await expect(page.getByRole('region', { name: 'Case header' })).toContainText('Pilot approved');
     const conditions = page.getByRole('region', { name: /Conditions/ });
@@ -367,7 +367,7 @@ test.describe('S10 Decisions', () => {
     await startAt(page, 'expired');
     await loginAs('elena', `${CASE}/decisions?gate=G2`);
     await settled(page);
-    await expect(page.getByText('The approval for v4 expired unused on 11 Dec 2026.')).toBeVisible();
+    await expect(page.getByText('The approval for v4 expired unused on 27 Dec 2026.')).toBeVisible();
     await expect(panel.locator('[data-status="expired"]')).toBeVisible();
 
     await startAt(page, 'v4');

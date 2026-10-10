@@ -131,9 +131,10 @@ export const mandate = {
       id: fid('mandateVersion', 1),
       version: 1,
       state: 'committed',
-      note: 'Submitted 2 Oct; returned for revision by Elena Fischer 3 Oct 09:40',
-      returnComment:
-        'Name an accountable owner and state the currency. Add ‘no prospect outreach before G1’ to the exclusions.',
+      note: 'Submitted 2 Oct; returned to change the owner and confirm EUR (Elena Fischer, 3 Oct 09:40)',
+      returnComment: 'Returned to change the owner and confirm EUR.',
+      /** D-118 (PQ-4): v1 named Jonas Klein as owner; v2 makes Maya Rao the owner and confirms EUR. */
+      ownerId: people.jonas.id,
     },
     {
       id: fid('mandateVersion', 2),

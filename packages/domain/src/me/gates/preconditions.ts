@@ -11,6 +11,7 @@ import type {
   GateCode,
   GateRequestStatus,
   GateStatus,
+  MeasureType,
   Precondition,
   ThresholdResult,
 } from '@growth-os/contracts';
@@ -39,6 +40,8 @@ export type TargetFact = {
   thresholdValue: string | null;
   observedValue: string | null;
   result: ThresholdResult | null;
+  /** D-115: the threshold's measure type. Absent on targets registered before D-122. */
+  measureType?: MeasureType | null;
 };
 
 export type G0Facts = {
@@ -110,6 +113,15 @@ export type GateFacts = G0Facts | G1Facts | G2Facts | G3Facts | XFacts;
 /** Pre-registered metrics that express demand in "X of N" form (used for the G3 blocker copy). */
 // The fixture key and the key S10 derives from the PRD measure name "Paid use and continuation" (D-102).
 export const DEMAND_METRIC_KEYS: readonly string[] = ['paid_use_continuation', 'paid_use_and_continuation'];
+
+/**
+ * D-115 / D-111: the G3 demand clause reads Demand thresholds only — by measure type, or, for targets
+ * registered before measure types existed, by the demand metric key. Other measures (delivery effort,
+ * buyer fit, spend) are reported on S12 and never silently become a G3 blocker.
+ */
+export function isDemandTarget(t: Pick<TargetFact, 'metricKey' | 'measureType'>): boolean {
+  return t.measureType ? t.measureType === 'demand' : DEMAND_METRIC_KEYS.includes(t.metricKey);
+}
 
 // ---------------------------------------------------------------------------
 // Key functions
@@ -271,7 +283,7 @@ export const PRECONDITION_KEYS: Readonly<Record<string, KeyFn>> = {
 
   // --- G3 ------------------------------------------------------------------
   pilot_actuals_vs_thresholds: forGate<G3Facts>('G3', (f) => {
-    const gating = f.pilotTargets.filter((t) => targetMet(t) !== null);
+    const gating = f.pilotTargets.filter((t) => isDemandTarget(t) && targetMet(t) !== null);
     if (gating.length === 0) return no('No pre-registered thresholds to compare against.');
     const failing = gating.filter((t) => targetMet(t) === false);
     if (failing.length === 0) return ok();

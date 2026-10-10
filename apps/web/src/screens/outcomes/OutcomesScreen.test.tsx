@@ -37,11 +37,8 @@ describe('S12 Outcomes', () => {
     renderAt(URL);
     expect(await screen.findByText('Review incomplete')).toBeTruthy();
     await record('Paid use and continuation', '3 of 4', 'billing records', '3');
-    await record(
-      'Deployment effort per site',
-      'Above assumption · [actual hours per site]',
-      'effort log (C2)',
-    );
+    // D-110 §4: 16 hours per site assumed, 22 actual → Not met.
+    await record('Deployment effort per site', '22 hours per site', 'effort log (C2)', '22');
     await record('Buyer fit', 'Mixed', 'interview notes', undefined, '2027-02-01');
     const table = screen.getByRole('table', { name: 'Baseline versus actuals' });
     await waitFor(() => expect(within(table).getAllByText('Not met')).toHaveLength(2));

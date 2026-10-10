@@ -14,6 +14,7 @@ import {
   createPreconditionEvaluator,
   deriveGateDisplayStatus,
   evaluateGate,
+  isDemandTarget,
   type G0Facts,
   type G1Facts,
   type G2Facts,
@@ -259,5 +260,24 @@ describe('PreconditionEvaluator', () => {
         evaluation: evaluateGate({ ...g2, specialistSignOff: null }),
       }),
     ).toBe('preconditions_open');
+  });
+
+  it('the G3 demand clause reads Demand thresholds only, by measure type (D-115, D-122)', () => {
+    // 16 hours assumed, 22 actual is Not met on S12, but delivery effort never becomes a G3 blocker.
+    const typed = asterTargets.map((t) => ({
+      ...t,
+      measureType: outcomeTargets.find((x) => x.metricKey === t.metricKey)!.measureType,
+    }));
+    const r = evaluateGate({ ...g3Aster, pilotTargets: typed });
+    expect(r.blockers.find((b) => b.key === 'pilot_actuals_vs_thresholds')?.message).toBe(
+      'Demand threshold · 3 of 4 met; 4 of 4 required',
+    );
+    // A renamed demand measure still counts (the type, not the name, decides).
+    const renamed = typed.map((t) => (t.measureType === 'demand' ? { ...t, metricKey: 'paying_sites' } : t));
+    expect(evaluateGate({ ...g3Aster, pilotTargets: renamed }).blockers.map((b) => b.key)).toContain(
+      'pilot_actuals_vs_thresholds',
+    );
+    expect(isDemandTarget({ metricKey: 'paid_use_continuation' })).toBe(true); // legacy: by key
+    expect(isDemandTarget({ metricKey: 'paid_use_continuation', measureType: 'other' })).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import {
 import {
   authorityGrants,
   businessUnits,
+  committeeMembers,
   fid,
   cases,
   comparison,
@@ -125,7 +126,25 @@ async function seedOrg(s: SeedCtx): Promise<void> {
         ceiling_amount: g.ceilingAmount,
         currency: g.currency,
         valid_from: g.validFrom,
+        valid_to: g.validTo,
+        doa_reference: g.doaReference, // D-109 §2
         granted_by: admin,
+        created_at: at(ORG_SINCE),
+      })
+      .execute();
+  // G3 committee seats (D-109 §3, §5). Membership is not authority: no G3 grant is seeded.
+  for (const m of committeeMembers)
+    await tx
+      .insertInto('platform.committee_member')
+      .values({
+        id: R.id(m.id),
+        tenant_id: tenantId,
+        business_unit_id: R.id(m.businessUnitId),
+        user_id: R.id(m.userId),
+        seat: m.seat,
+        valid_from: authorityGrants[0].validFrom,
+        doa_reference: authorityGrants[0].doaReference,
+        entered_by: admin,
         created_at: at(ORG_SINCE),
       })
       .execute();
@@ -190,6 +209,12 @@ async function seedOrg(s: SeedCtx): Promise<void> {
         allow_model_context: l.allowModelContext,
         allow_embeddings: l.allowEmbeddings,
         allow_export: l.allowExport,
+        // D-120: fail closed unless confirmed in writing; term end and on-expiry action.
+        rights_document_ref: l.rightsConfirmation?.documentRef ?? null,
+        rights_confirmed_on: l.rightsConfirmation?.confirmedOn ?? null,
+        rights_recorded_by: l.rightsConfirmation ? admin : null,
+        term_ends_on: l.termEndsOn,
+        on_expiry_action: l.onExpiry,
       })
       .execute();
   for (const e of sourceEntitlements)
@@ -298,22 +323,25 @@ async function seedSources(s: SeedCtx): Promise<void> {
   });
 }
 
-function mandateVersionFields(s: SeedCtx, withOutreachExclusion: boolean) {
+/**
+ * MD-21 versions. v1 was returned "to change the owner and confirm EUR" (D-118, PQ-4): it named Jonas
+ * Klein as owner; v2 names Maya Rao and confirms EUR. Both carry every required field (0001 CHECK).
+ */
+function mandateVersionFields(s: SeedCtx, version: 1 | 2) {
   const v2 = mandate.versions[1];
+  const owner = version === 1 ? mandate.versions[0].ownerId : v2.ownerId;
   return {
     objective: v2.objective,
     product_id: s.R.id(v2.productId),
     segment_ids: v2.segmentIds.map((x) => s.R.id(x)),
     geography_codes: [...v2.geographyCodes],
-    exclusions: withOutreachExclusion
-      ? [...v2.exclusions]
-      : v2.exclusions.filter((e) => e !== 'No prospect outreach before G1'),
+    exclusions: [...v2.exclusions],
     horizon_years: v2.horizonYears,
     pilot_duration_days: v2.pilotDurationDays,
     investment_ceiling: v2.investmentCeiling,
     currency: v2.currency,
     evidence_source_kinds: [...v2.evidenceSourceKinds],
-    owner_user_id: s.R.id(v2.ownerId),
+    owner_user_id: s.R.id(owner),
     sponsor_user_id: s.R.id(v2.sponsorId),
     success_definition: v2.successDefinition,
   };
@@ -339,8 +367,12 @@ function g0Content(s: SeedCtx, versionId: string, version: number): SnapshotCont
       segmentLabel: 'Food processing',
       maxSites: null,
       milestones: [],
-      ownerId: s.R.id(v2.ownerId),
-      authorizes: [...gates.g0.authorizes],
+      ownerId: s.R.id(version === 1 ? mandate.versions[0].ownerId : v2.ownerId),
+      // v1 named Jonas Klein as owner (D-118); the authorizes line follows the version.
+      authorizes:
+        version === 1
+          ? gates.g0.authorizes.map((a) => a.replace('Owner Maya Rao', 'Owner Jonas Klein'))
+          : [...gates.g0.authorizes],
       doesNotAuthorize: [...gates.g0.doesNotAuthorize],
     },
     recommendation: 'Approve the bounded mandate scope.',
@@ -384,11 +416,10 @@ async function seedMandate(s: SeedCtx): Promise<void> {
       created_at: at(journeyMoments.mandateDrafted),
     })
     .execute();
-  // v1 was returned for revision. A committed mandate version must carry every required field
-  // (0001 CHECK), so v1 holds the v2 values without the outreach exclusion Elena asked for.
-  for (const [v, withExclusion, committedAt] of [
-    [v1, false, '2026-10-02T16:00:00+02:00'],
-    [v2, true, v2.submittedAt],
+  // v1 was returned to change the owner and confirm EUR (D-118); v2 is the approved scope.
+  for (const [v, version, committedAt] of [
+    [v1, 1, '2026-10-02T16:00:00+02:00'],
+    [v2, 2, v2.submittedAt],
   ] as const)
     await tx
       .insertInto('me.mandate_version')
@@ -398,7 +429,7 @@ async function seedMandate(s: SeedCtx): Promise<void> {
         mandate_id: mandateId,
         version: v.version,
         state: 'committed',
-        ...mandateVersionFields(s, withExclusion),
+        ...mandateVersionFields(s, version),
         committed_at: at(committedAt),
         created_by: maya,
         created_at: at(journeyMoments.mandateDrafted),
@@ -489,7 +520,8 @@ async function seedMandate(s: SeedCtx): Promise<void> {
     objectType: 'mandate',
     objectId: mandateId,
     objectVersion: 2,
-    summary: 'MD-21 v1 returned for revision on 3 Oct; v2 approved (G0) by Elena Fischer on 5 Oct',
+    summary:
+      'MD-21 v1 returned to change the owner and confirm EUR on 3 Oct; v2 approved (G0) by Elena Fischer on 5 Oct',
     occurredAt: h2.at,
   });
 }

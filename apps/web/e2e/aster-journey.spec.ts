@@ -459,10 +459,11 @@ const PILOT_THRESHOLDS = [
     window: '1 Dec 2026 – 28 Feb 2027',
   },
   {
+    // D-110 §4: Aster assumes 16 installation and support hours per site.
     name: 'Deployment effort per site',
-    text: 'Within [hours per site] assumed',
+    text: 'Within 16 hours per site',
     operator: 'lte',
-    value: '',
+    value: '16',
     unit: 'hours_per_site',
     window: 'weekly log',
   },
@@ -776,7 +777,8 @@ test('steps 25–28: actuals, recommendation, decision and extension; scale stay
     await expect(d).toHaveCount(0);
   };
   await rec('Paid use and continuation', '3 of 4', 'billing records', '3');
-  await rec('Deployment effort per site', 'Above assumption · [actual hours per site]', 'effort log (C2)');
+  // D-110 §4: 22 hours per site actual against 16 assumed → Not met.
+  await rec('Deployment effort per site', '22 hours per site', 'effort log (C2)', '22');
   await rec('Buyer fit', 'Mixed', 'interview notes');
   const table = page.getByRole('table', { name: 'Baseline versus actuals' });
   await expect(table.getByText('Not met')).toHaveCount(2);
@@ -801,7 +803,8 @@ test('steps 25–28: actuals, recommendation, decision and extension; scale stay
   await expect(page.getByText('4 self-selected sites, no control group')).toBeVisible();
   await expectAccessible();
 
-  // 27 · Elena records the decision; Maya requests the extension with the €[cap] placeholder.
+  // 27 · Elena records the decision; Maya requests X1 at the decided €30k · 45 days (D-110 §2; it was the
+  // €[cap] placeholder before). X1 stays "Awaiting decision" in the journey and is now approvable.
   await loginAs('elena', OUTCOMES);
   await settled(page);
   await page.getByRole('button', { name: 'Record decision: Revise and extend validation' }).click();
@@ -818,14 +821,15 @@ test('steps 25–28: actuals, recommendation, decision and extension; scale stay
   await loginAs('maya', OUTCOMES);
   await settled(page);
   await page.getByRole('button', { name: 'Request extension €[cap]' }).click();
-  await expect(page.getByText('Placeholder · confirm with PM. The PRD sets no amount.')).toBeVisible();
-  await page.getByRole('button', { name: /^Submit extension request/ }).click();
+  await page.getByPlaceholder('€[cap]').fill('30000');
+  await page.getByPlaceholder('[duration] days').fill('45');
+  await page.getByRole('button', { name: 'Submit extension request €30k' }).click();
   await expect(page.getByText(/Awaiting decision · Elena Fischer/)).toBeVisible();
   expect(await analytics('extension_requested')).toHaveLength(1);
-  const [x1] = await sqlRows<{ status: string; requested_amount: string | null }>(
-    `SELECT status, requested_amount FROM platform.gate_request WHERE gate_code = 'X'`,
+  const [x1] = await sqlRows<{ status: string; requested_amount: string | null; duration_days: number }>(
+    `SELECT status, requested_amount, duration_days FROM platform.gate_request WHERE gate_code = 'X'`,
   );
-  expect(x1).toEqual({ status: 'awaiting_decision', requested_amount: null });
+  expect(x1).toEqual({ status: 'awaiting_decision', requested_amount: '30000.00', duration_days: 45 });
 
   // 28 · "Request scale approval" is disabled with all four unmet G3 preconditions (D-039, PQ-1).
   await expect(page.getByRole('button', { name: 'Request scale approval' })).toBeDisabled();

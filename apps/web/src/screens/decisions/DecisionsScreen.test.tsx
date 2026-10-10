@@ -78,7 +78,7 @@ describe('S10 Decisions · package', () => {
     renderAt('/me/cases/ME-104/decisions?gate=G2');
     const p = await panel();
     expect(p.textContent).toContain('Awaiting decision');
-    expect(p.textContent).toContain('If unused by 11 Dec 2026');
+    expect(p.textContent).toContain('If unused by 27 Dec 2026');
     expect(within(p).getByText('What this authorizes')).toBeTruthy();
     expect(within(p).getByText('What this does not authorize')).toBeTruthy();
     for (const name of ['Return for revision', 'Not approved', 'Abstain']) {
@@ -242,7 +242,7 @@ describe('S10 Decisions · after approval and history', () => {
     preset('expired');
     session.signIn(people.elena.id);
     renderAt('/me/cases/ME-104/decisions?gate=G2');
-    expect(await screen.findByText('The approval for v4 expired unused on 11 Dec 2026.')).toBeTruthy();
+    expect(await screen.findByText('The approval for v4 expired unused on 27 Dec 2026.')).toBeTruthy();
     const p = await panel();
     expect(p.querySelector('[data-status="expired"]')).not.toBeNull();
     expect(p.textContent).toContain('The approval expired unused. Prepare a new request.');

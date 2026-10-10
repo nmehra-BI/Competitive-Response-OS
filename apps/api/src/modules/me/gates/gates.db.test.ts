@@ -281,7 +281,7 @@ describe('stale → refresh v4 → approve with conditions (steps 19, 20)', () =
     expect(pkg.gateRequest.expiresAt).not.toBeNull();
     const days =
       (Date.parse(pkg.gateRequest.expiresAt!) - Date.parse(pkg.gateRequest.decidedAt!)) / 86_400_000;
-    expect(days).toBe(14);
+    expect(days).toBe(30); // D-109 §4: an unused G2 approval expires after 30 days (was 14)
     expect(pkg.approvals).toHaveLength(1);
     expect(pkg.approvals[0]).toMatchObject({
       snapshotId: v4.snapshot.id,
