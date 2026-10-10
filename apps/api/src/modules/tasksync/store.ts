@@ -5,6 +5,7 @@
  */
 import { externalTaskIdempotencyKey, type ExternalTaskInput } from '@growth-os/connectors';
 import {
+  snapshotLabel,
   type ConnectorStatus,
   type SyncStatus,
   type Task,
@@ -131,6 +132,9 @@ export async function loadTaskSet(
       't.row_version',
     ])
     .where('t.task_set_id', '=', set.id)
+    // A removed draft task (D-128) keeps its row for audit and history, but is not part of the set:
+    // not shown, previewed, sent or exported.
+    .where('t.removed_at', 'is', null)
     .orderBy('t.ordinal')
     .execute();
   const deps = tasks.length
@@ -251,7 +255,11 @@ export function destinationOf(
   };
 }
 
-export function toTaskSetView(s: LoadedSet): TaskSet {
+/**
+ * `draftEditable` (D-113): whether the viewer may add, edit or remove unsent tasks of this set. Only
+ * the S09 validation task set carries it; a pilot set is edited in the pilot plan.
+ */
+export function toTaskSetView(s: LoadedSet, opts: { draftEditable?: boolean } = {}): TaskSet {
   const dest = destinationOf(s);
   const tasks: Task[] = s.tasks.map((t) => {
     const link = s.links.get(t.id);
@@ -300,6 +308,7 @@ export function toTaskSetView(s: LoadedSet): TaskSet {
     tasks,
     summary: summarize(counts),
     summaryText: summaryText(counts, dest?.tool ?? 'the task tool'),
+    ...(s.ownerType === 'experiment' ? { draftEditable: opts.draftEditable ?? false } : {}),
   };
 }
 
@@ -311,7 +320,7 @@ export interface GateContext {
   approval: ApprovalEffectiveness;
   approvalId: string | null;
   snapshotHash: string | null;
-  /** "G2 v4": gate and the version of the approved snapshot. */
+  /** "G2 · Snapshot v4": gate and the version of the approved snapshot, always paired (D-118, PQ-19). */
   gateLabel: string;
   blockingConditionsMet: boolean;
 }
@@ -354,7 +363,7 @@ export async function loadGateContext(tx: Tx, gateRequestId: string, now: Date):
     approval,
     approvalId: row.approval_id,
     snapshotHash: row.snapshot_hash?.trim() ?? null,
-    gateLabel: version ? `${row.gate_code} v${version}` : row.gate_code,
+    gateLabel: version ? snapshotLabel(row.gate_code, version) : row.gate_code,
     blockingConditionsMet: row.open_blocking === 0,
   };
 }

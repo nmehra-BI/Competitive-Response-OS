@@ -7,6 +7,7 @@ import {
   API,
   GATE_STATUS_LABELS,
   SYNC_STATUS_LABELS,
+  snapshotLabel,
   type GateStatus,
   type WorkItem,
 } from '@growth-os/contracts';
@@ -62,6 +63,8 @@ export const workHandlers: HandlerMap = {
           'l.external_key',
         ])
         .where('t.owner_user_id', '=', uid)
+        // A removed validation draft task (D-128) is history, not work.
+        .where('t.removed_at', 'is', null)
         .orderBy('t.due_on')
         .execute();
       for (const t of tasks) {
@@ -185,13 +188,22 @@ export const workHandlers: HandlerMap = {
 
       for (const d of await awaitingDecisions(tx, subject, uid)) {
         if (!d.caseId) continue;
+        // Gate and snapshot version are always paired (D-118, PQ-19): "ME-104 · G2 · Snapshot v3".
+        const snap = await tx
+          .selectFrom('platform.gate_request as g')
+          .innerJoin('platform.decision_snapshot as s', 's.id', 'g.current_snapshot_id')
+          .select('s.version')
+          .where('g.id', '=', d.gateRequestId)
+          .executeTakeFirst();
         reviewsTab.push({
           id: d.gateRequestId,
           kind: 'gate_decision',
           title: d.buttonLabel,
           caseId: d.caseId,
           caseKey: d.caseKey,
-          subtitle: `${d.caseKey} · Awaiting your decision`,
+          subtitle: snap
+            ? `${d.caseKey} · ${snapshotLabel(d.gateCode, snap.version)} · Awaiting your decision`
+            : `${d.caseKey} · Awaiting your decision`,
           dueText: d.dueText,
           statusText: 'Awaiting decision',
           href: d.href,

@@ -45,6 +45,7 @@ import '../history/ws8d.css';
 import { CommitteeSection } from './CommitteeSection';
 import { LicencesSection } from './LicencesSection';
 import { LiveAnalysisSection } from './LiveAnalysisSection';
+import { TaskMappingSection } from './TaskMappingEditor';
 
 const SECTIONS = [
   { id: 'authority', label: 'Roles and authority' },
@@ -193,6 +194,7 @@ function AdminBody({ illustrative }: { illustrative: boolean }) {
       <PoliciesSection />
       <EntitlementsSection />
       <ConnectionsSection />
+      <TaskMappingSection />
       <RunBudgetSection />
       <DiagnosticsSection />
     </>

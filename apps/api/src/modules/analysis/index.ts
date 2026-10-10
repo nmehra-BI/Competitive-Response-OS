@@ -26,7 +26,7 @@ import { createFileSkillLoader, hashOf, type SkillLoader } from '@growth-os/ai';
 import type { Tx } from '@growth-os/db';
 import { runMachine } from '@growth-os/domain';
 import { caseVisible, roleAllows } from '../../platform/authz';
-import { isUuid, resolveCase, type CaseRow } from '../../platform/cases';
+import { casesByIds, isUuid, resolveCase, type CaseRow } from '../../platform/cases';
 import type { Authorization, Identity } from '../../platform/context';
 import { ApiError } from '../../platform/errors';
 import { pageOf } from '../../platform/pagination';
@@ -34,6 +34,7 @@ import { command, query, type HandlerMap, type Tools } from '../../platform/pipe
 import { isoDateTime, isoDateTimeOrNull, personRef } from '../../platform/serialize';
 import { createOpportunityFromProposal } from '../me/opportunities/writers';
 import { createClaimFromProposal } from '../me/thesis/writers';
+import { citationsOpen, ONE_STEP_REASONS, oneStepAcceptFor } from './one-step';
 
 export const ANALYSIS_RUN_JOB = 'analysis.run';
 const DISCOVERY_SKILL: SkillKey = 'mandate-to-search-plan';
@@ -227,24 +228,43 @@ function proposalById(tx: Tx, id: string) {
   return tx.selectFrom('platform.proposal').selectAll().where('id', '=', id).executeTakeFirst();
 }
 
-async function serializeProposals(tx: Tx, rows: readonly ProposalRow[]): Promise<Proposal[]> {
+async function serializeProposals(
+  tx: Tx,
+  rows: readonly ProposalRow[],
+  identity: Identity,
+): Promise<Proposal[]> {
   const who = await people(
     tx,
     rows.map((r) => r.decided_by),
   );
-  return rows.map((r) => ({
-    id: r.id,
-    caseId: r.case_id,
-    runId: r.run_id,
-    skill: r.skill_key as SkillKey,
-    payload: ProposalPayload.parse(r.payload),
-    targetType: r.target_type,
-    targetId: r.target_id,
-    status: r.status as Proposal['status'],
-    decidedBy: r.decided_by ? (who.get(r.decided_by) ?? null) : null,
-    decidedAt: isoDateTimeOrNull(r.decided_at),
-    createdAt: isoDateTime(r.created_at),
-  }));
+  const cases = await casesByIds(tx, [
+    ...new Set(rows.map((r) => r.case_id).filter((x): x is string => x !== null)),
+  ]);
+  const out: Proposal[] = [];
+  for (const r of rows) {
+    const payload = ProposalPayload.parse(r.payload);
+    const c = cases.find((x) => x.id === r.case_id);
+    const oneStepAccept = await oneStepAcceptFor(tx, identity, {
+      status: r.status,
+      payload,
+      caseScope: c ? { businessUnitId: c.businessUnitId, caseId: c.id } : null,
+    });
+    out.push({
+      id: r.id,
+      caseId: r.case_id,
+      runId: r.run_id,
+      skill: r.skill_key as SkillKey,
+      payload,
+      targetType: r.target_type,
+      targetId: r.target_id,
+      status: r.status as Proposal['status'],
+      decidedBy: r.decided_by ? (who.get(r.decided_by) ?? null) : null,
+      decidedAt: isoDateTimeOrNull(r.decided_at),
+      createdAt: isoDateTime(r.created_at),
+      ...(oneStepAccept ? { oneStepAccept } : {}),
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +452,7 @@ async function applyAccepted(
   f: ProposalFacts,
   payload: ProposalPayload,
   edited: boolean,
+  asFact = false,
 ): Promise<{ targetType: string | null; targetId: string | null }> {
   const who = { tenantId: ctx.tenantId, actorUserId: ctx.userId, now: ctx.now, identity: ctx.identity };
   switch (payload.type) {
@@ -467,6 +488,27 @@ async function applyAccepted(
         agentRunId: f.run.id,
         proposalId: f.proposal.id,
       });
+      if (asFact) {
+        // D-116: the same human act accepts the claim as a fact (second audit event, same transaction).
+        const accepted = await t.tx
+          .updateTable('platform.claim')
+          .set({ status: 'accepted', accepted_by: ctx.userId, accepted_at: ctx.now })
+          .where('id', '=', c.id)
+          .where('status', '=', 'proposed')
+          .returning('id')
+          .executeTakeFirst();
+        if (!accepted) throw new ApiError('INVALID_TRANSITION', 'Only a proposed AI draft can be accepted.');
+        await t.audit({
+          action: 'claim.accepted',
+          objectType: 'claim',
+          objectId: c.id,
+          caseId: f.run.case_id,
+          summary: 'AI claim accepted as fact in one step (unedited; every citation opens)',
+          details: { proposalId: f.proposal.id, oneStep: true },
+          before: { status: 'proposed' },
+          after: { status: 'accepted' },
+        });
+      }
       return { targetType: 'claim', targetId: c.id };
     }
     default:
@@ -474,6 +516,34 @@ async function applyAccepted(
       // an outcome recommendation stays a recommendation until an authorized person decides.
       return { targetType: null, targetId: null };
   }
+}
+
+/**
+ * `acceptAsFact` (D-131): only `accept` of an unedited claim proposal whose every citation opens for
+ * this viewer, by a person who may accept AI claims. Anything else is refused before a write.
+ */
+async function requireOneStep(
+  ctx: { identity: Identity; body: { decision: string; editedPayload?: unknown } },
+  tx: Tx,
+  f: ProposalFacts,
+  original: ProposalPayload,
+): Promise<void> {
+  const refuse = (message: string, code = 'one_step_unavailable') =>
+    new ApiError('VALIDATION_FAILED', message, {
+      errors: [{ path: 'body.acceptAsFact', code, message }],
+    });
+  if (ctx.body.decision !== 'accept') throw refuse('Only an acceptance can accept a claim as fact.');
+  if (ctx.body.editedPayload !== undefined)
+    throw refuse('An edited claim is added as a draft first; accept it as fact in a second step.', 'edited');
+  if (original.type !== 'claim') throw refuse('Only a claim can be accepted as fact.');
+  const k = original.claim.kind;
+  if (k === 'scenario' || k === 'actual') throw refuse(ONE_STEP_REASONS.kind);
+  if (original.claim.evidenceIds.length === 0) throw refuse(ONE_STEP_REASONS.uncited, 'uncited');
+  if (!(await citationsOpen(tx, ctx.identity, original.claim.evidenceIds)))
+    throw refuse(ONE_STEP_REASONS.notOpen, 'citation_not_open');
+  if (!f.subject.case) throw refuse('A claim can only be accepted on a case.');
+  const may = roleAllows(ctx.identity.subject, 'claim.accept_ai', scopeOf(f.subject));
+  if (!may.allow) throw new ApiError('FORBIDDEN', ONE_STEP_REASONS.role);
 }
 
 // ---------------------------------------------------------------------------
@@ -672,7 +742,7 @@ export const analysisHandlers: HandlerMap = {
               .where('subject_id', '=', s!.mandate!.id),
           );
       const rows = await q.orderBy('created_at').orderBy('id').execute();
-      return { items: await serializeProposals(tx, rows) };
+      return { items: await serializeProposals(tx, rows, ctx.identity) };
     },
   }),
 
@@ -706,12 +776,14 @@ export const analysisHandlers: HandlerMap = {
         targetId: null,
       };
       let payload = original;
+      const asFact = ctx.body.acceptAsFact === true;
+      if (asFact) await requireOneStep(ctx, t.tx, f!, original);
       if (ctx.body.decision === 'reject') status = 'rejected';
       else {
         const edited = ctx.body.editedPayload !== undefined;
         payload = edited ? validateEdit(original, ctx.body.editedPayload) : original;
         status = edited ? 'edited_and_accepted' : 'accepted';
-        target = await applyAccepted(ctx, t, f!, payload, edited);
+        target = await applyAccepted(ctx, t, f!, payload, edited, asFact);
       }
       const row = await t.tx
         .updateTable('platform.proposal')
@@ -739,6 +811,7 @@ export const analysisHandlers: HandlerMap = {
           type: original.type,
           targetType: target.targetType,
           edited: status === 'edited_and_accepted',
+          acceptedAsFact: asFact,
         },
         before: original,
         after: payload,
@@ -754,7 +827,7 @@ export const analysisHandlers: HandlerMap = {
         proposalId: p.id,
         status,
       });
-      const [out] = await serializeProposals(t.tx, [row]);
+      const [out] = await serializeProposals(t.tx, [row], ctx.identity);
       return out!;
     },
   }),

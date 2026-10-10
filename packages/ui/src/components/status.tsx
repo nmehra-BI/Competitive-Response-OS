@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import {
+  ASSIGNEE_MAPPING_STATUS_LABELS,
   ASSUMPTION_STATUS_LABELS,
   CASE_STAGE_LABELS,
   CONDITION_FLAG_LABELS,
@@ -24,12 +25,16 @@ import {
   SENSITIVITY_LABELS,
   SYNC_STATUS_LABELS,
   TASK_STATUS_LABELS,
+  THESIS_BLOCKER_STATUS_HINTS,
+  thesisBlockerLabel,
+  type AssigneeMappingStatus,
   type ConditionFlag,
   type ConditionStatus,
   type CrossCheckResult,
   type ReviewerPosition,
   type Scenario,
   type TaskStatus,
+  type ThesisBlockerStatus,
 } from '@growth-os/contracts';
 import type {
   AiBadgeProps,
@@ -53,6 +58,7 @@ import type {
 } from './contracts';
 import { Icon, UiLink, type IconName } from './Icon';
 import {
+  ASSIGNEE_MAPPING_GLYPH,
   ASSUMPTION_STATUS_DOT,
   CONDITION_STATUS_GLYPH,
   CONNECTOR_GLYPH,
@@ -68,6 +74,7 @@ import {
   STAGE_TONE,
   SYNC_GLYPH,
   TASK_STATUS_GLYPH,
+  THESIS_BLOCKER_GLYPH,
   TONE_FG,
   type Fg,
   type Tone,
@@ -533,4 +540,26 @@ export function TaskStatusTag({ status }: { status: TaskStatus }) {
 export function CrossCheckTag({ result }: { result: CrossCheckResult }) {
   const g = CROSS_CHECK_GLYPH[result];
   return <StatusText icon={g.icon} fg={g.fg} label={CROSS_CHECK_RESULT_LABELS[result]} />;
+}
+
+/**
+ * Thesis blocker status with the gate it concerns (D-119, PQ-6): "Pending · G2" is needed for the next
+ * gate and in progress; "Blocker · G3" is unresolved for a later gate and does not stop the next one.
+ * The hint is a tooltip for pointer users and read after the label by screen readers.
+ */
+export function ThesisBlockerTag({ status, gate }: { status: ThesisBlockerStatus; gate: string }) {
+  const g = THESIS_BLOCKER_GLYPH[status];
+  const hint = THESIS_BLOCKER_STATUS_HINTS[status];
+  return (
+    <span title={hint} className="gos-blocker-tag">
+      <StatusText icon={g.icon} fg={g.fg} label={thesisBlockerLabel(status, gate)} strong iconSize={15} />
+      <span className="gos-sr-only">{` — ${hint}`}</span>
+    </span>
+  );
+}
+
+/** S14 task mapping: a person's account in the task tool (D-114 §1). */
+export function AssigneeMappingTag({ status }: { status: AssigneeMappingStatus }) {
+  const g = ASSIGNEE_MAPPING_GLYPH[status];
+  return <StatusText icon={g.icon} fg={g.fg} label={ASSIGNEE_MAPPING_STATUS_LABELS[status]} strong />;
 }

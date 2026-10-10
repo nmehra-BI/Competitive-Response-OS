@@ -110,9 +110,13 @@ export const lineageHandlers: HandlerMap = {
       return {
         node: view.node,
         inputs: view.inputs,
-        usedBy: view.usedBy.map((n) => ({
+        // D-117: a calculation user reads "Used by"; the reachable pool is checked against SAM
+        // ("upper-bound check: 500 ≤ 2,000 sites"), never computed from it.
+        usedBy: view.usedByEdges.map(({ node: n, relation, detail }) => ({
           label: n.label,
           href: `${caseHref(c.display_key, tab(n.nodeKey))}?node=${encodeURIComponent(n.nodeKey)}`,
+          relation,
+          detail,
         })),
         history,
         exactValue: exactValue(view.node, currency),

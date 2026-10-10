@@ -1,6 +1,7 @@
 /** My Work: the viewer's tasks, conditions, reviews and decisions; task ownership never grants approval. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API } from '@growth-os/contracts';
+import { withTenant } from '@growth-os/db';
 import {
   call,
   createTestApp,
@@ -40,6 +41,8 @@ describe('work.mine', () => {
     expect(w.items.map((x) => [x.kind, x.title])).toEqual([
       ['gate_decision', 'Approve pilot €120k · 90 days'],
     ]);
+    // Gate and snapshot version are paired (D-118, PQ-19).
+    expect(w.items[0]!.subtitle).toBe('ME-104 · G2 · Snapshot v3 · Awaiting your decision');
     expect(w.approvalsNotice).toBeNull();
   });
 
@@ -76,6 +79,48 @@ describe('work.mine', () => {
     expect(w.tabs.find((x) => x.key === 'done')!.count).toBe(done.items.length);
     // Jonas owns tasks but approves nothing: no gate decision items.
     expect((await mine(k.jonas, 'reviews')).items.filter((x) => x.kind === 'gate_decision')).toEqual([]);
+  });
+
+  it('a removed validation draft task (D-128) is history, not work', async () => {
+    const before = (await mine(k.jonas, 'done')).items.filter((x) => x.kind === 'task');
+    const val = before.find((x) => x.href.includes('/validation'))!;
+    // An unsent task in the validation set, owned by Jonas, then marked removed (read side only).
+    const removable = await withTenant(
+      t.db,
+      { tenantId: a.tenantId, userId: null, correlationId: 'work-test' },
+      async (tx) => {
+        const set = await tx
+          .selectFrom('platform.task')
+          .select('task_set_id')
+          .where('id', '=', val.id)
+          .executeTakeFirstOrThrow();
+        const added = await tx
+          .insertInto('platform.task')
+          .values({
+            tenant_id: a.tenantId,
+            case_id: val.caseId,
+            task_set_id: set.task_set_id,
+            ordinal: 99,
+            title: 'Removed draft',
+            function: 'sales',
+            owner_user_id: a.user('jonas'),
+            deliverable: 'Nothing',
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        return added.id;
+      },
+    );
+    expect((await mine(k.jonas)).items.some((x) => x.id === removable)).toBe(true);
+    await withTenant(t.db, { tenantId: a.tenantId, userId: null, correlationId: 'work-test' }, (tx) =>
+      tx
+        .updateTable('platform.task')
+        .set({ removed_at: new Date(), removed_by: a.user('jonas') })
+        .where('id', '=', removable)
+        .execute(),
+    );
+    const all = [...(await mine(k.jonas)).items, ...(await mine(k.jonas, 'done')).items];
+    expect(all.some((x) => x.id === removable)).toBe(false);
   });
 
   it('other tenants, admins and agents see nothing of tenant A', async () => {

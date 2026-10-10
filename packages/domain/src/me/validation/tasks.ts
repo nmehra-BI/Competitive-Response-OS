@@ -71,3 +71,59 @@ export function draftValidationTasks(
   ];
   return tasks.map((t, i) => ({ ...t, ordinal: i + 1 }));
 }
+
+// ---------------------------------------------------------------------------
+// S09 "Validation tasks · Draft" (D-113, D-128)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sync states in which a validation task is still a draft: never sent, or only previewed. Anything
+ * past `in_preview` (sending, confirmed, failed, checking, paused …) is read-only here, and the database
+ * guard `task_removal_guard` refuses removing it as well.
+ */
+export const DRAFT_TASK_SYNC_STATES: ReadonlySet<string> = new Set(['not_sent', 'in_preview']);
+
+export function isDraftTask(syncStatus: string | null | undefined): boolean {
+  return DRAFT_TASK_SYNC_STATES.has(syncStatus ?? 'not_sent');
+}
+
+/** A draft task edit: wording, owner, due date and deliverable only — never threshold, sample or budget. */
+export interface ValidationTaskDraftFields {
+  title: string;
+  ownerId: string;
+  /** ISO date (YYYY-MM-DD) or null (no due date yet). */
+  dueOn: string | null;
+  deliverable: string;
+}
+
+export interface DraftTaskProblem {
+  field: 'title' | 'ownerId' | 'dueOn' | 'deliverable';
+  message: string;
+}
+
+/**
+ * Checks a draft task against the experiment: a title and a deliverable, an owner from the directory
+ * (the caller passes whether the person is an active human in the tenant), and a due date inside the
+ * experiment window (inclusive). Returns every problem, in field order.
+ */
+export function checkValidationTaskDraft(
+  t: ValidationTaskDraftFields,
+  ctx: { windowStart: string; windowEnd: string; ownerIsActivePerson: boolean },
+): DraftTaskProblem[] {
+  const problems: DraftTaskProblem[] = [];
+  if (!t.title.trim()) problems.push({ field: 'title', message: 'A task needs a title.' });
+  if (!ctx.ownerIsActivePerson)
+    problems.push({ field: 'ownerId', message: 'Choose an owner from the directory.' });
+  if (t.dueOn !== null && (t.dueOn < ctx.windowStart || t.dueOn > ctx.windowEnd))
+    problems.push({
+      field: 'dueOn',
+      message: `The due date must be inside the experiment window (${ctx.windowStart} to ${ctx.windowEnd}).`,
+    });
+  if (!t.deliverable.trim()) problems.push({ field: 'deliverable', message: 'A task needs a deliverable.' });
+  return problems;
+}
+
+/** The next ordinal for an added task: after every task of the set, removed ones included (D-128). */
+export function nextTaskOrdinal(ordinals: readonly number[]): number {
+  return ordinals.reduce((max, o) => Math.max(max, o), 0) + 1;
+}

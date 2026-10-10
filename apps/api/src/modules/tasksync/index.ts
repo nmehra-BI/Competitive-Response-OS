@@ -5,7 +5,12 @@
  * re-checks authorization at send time; this module never calls `createTask`.
  */
 import { randomUUID } from 'node:crypto';
-import { ConnectorError, createConnectorFactory, type ExternalTaskInput } from '@growth-os/connectors';
+import {
+  ConnectorError,
+  createConnectorFactory,
+  type ConnectionRef,
+  type ExternalTaskInput,
+} from '@growth-os/connectors';
 import { API, type Blocker, type ConnectorStatus, type TaskSyncPreview } from '@growth-os/contracts';
 import { sql, type Tx } from '@growth-os/db';
 import { syncMachine, type ApplyResult, type WorkflowFacts } from '@growth-os/domain';
@@ -28,6 +33,7 @@ import {
 } from './store';
 import { tasksCsv } from './text';
 import { devHandlers } from './dev';
+import { draftEditableFor, taskDraftHandlers } from './drafts';
 
 /** A preview is valid for 30 minutes; after that, preview again before sending. */
 export const PREVIEW_TTL_MS = 30 * 60_000;
@@ -110,7 +116,8 @@ export const taskSyncHandlers: HandlerMap = {
   [API.taskSync.get.id]: query(API.taskSync.get, {
     load: (ctx, tx) => loadTaskSet(tx, ctx.params.id),
     authorize: (ctx, s) => caseVisible(ctx.identity.subject, s.kase),
-    handle: async (_ctx, _t, s) => toTaskSetView(s),
+    handle: async (ctx, { tx }, s) =>
+      toTaskSetView(s, { draftEditable: await draftEditableFor(tx, ctx.identity, s) }),
   }),
 
   // ---- POST /me/task-sets/:id/previews (dry run) -------------------------------------------------
@@ -134,10 +141,13 @@ export const taskSyncHandlers: HandlerMap = {
 
       // Dry run through the connector (no writes in the tool). Runs on the pool, not the business
       // transaction: the tool is a remote system.
-      const connector = createConnectorFactory({ sim: ctx.deps.db })({
+      // The tenant travels with the connection (E5: Jira credentials are row-level secured per tenant).
+      const ref: ConnectionRef & { tenantId: string } = {
         id: s.connection!.id,
         provider: s.connection!.provider,
-      });
+        tenantId: ctx.tenantId,
+      };
+      const connector = createConnectorFactory({ sim: ctx.deps.db })(ref);
       let connectionStatus: ConnectorStatus = s.connection!.status;
       const problems: Blocker[] = [];
       let toolResults: { fields: Record<string, string>; problems: string[] }[] = [];
@@ -415,7 +425,8 @@ export const taskSyncHandlers: HandlerMap = {
         previewId: preview!.id,
         taskIds: eligible.map((e) => e.task.id),
       });
-      return toTaskSetView(await loadTaskSet(t.tx, s.id));
+      const after = await loadTaskSet(t.tx, s.id);
+      return toTaskSetView(after, { draftEditable: await draftEditableFor(t.tx, ctx.identity, after) });
     },
   }),
 
@@ -520,7 +531,8 @@ export const taskSyncHandlers: HandlerMap = {
         summary: `Retry ${failed.length} failed task(s) · ${failed.map((f) => `Task ${f.ordinal}`).join(', ')}`,
         details: { tasks: failed.length, gateRequestId: s.gateRequestId },
       });
-      return toTaskSetView(await loadTaskSet(t.tx, s.id));
+      const after = await loadTaskSet(t.tx, s.id);
+      return toTaskSetView(after, { draftEditable: await draftEditableFor(t.tx, ctx.identity, after) });
     },
   }),
 
@@ -564,5 +576,6 @@ export const taskSyncHandlers: HandlerMap = {
     },
   }),
 
+  ...taskDraftHandlers,
   ...devHandlers,
 };

@@ -42,10 +42,14 @@ import {
   SYNC_STATUS_LABELS,
   TaskStatus,
   TASK_STATUS_LABELS,
+  AssigneeMappingStatus,
+  ASSIGNEE_MAPPING_STATUS_LABELS,
+  THESIS_BLOCKER_STATUS_HINTS,
 } from '@growth-os/contracts';
 import type { ReactElement } from 'react';
 import {
   AiBadge,
+  AssigneeMappingTag,
   AssumptionStatusTag,
   ConditionFlagTag,
   ConditionStatusTag,
@@ -68,6 +72,7 @@ import {
   StagePill,
   SyncStatusTag,
   TaskStatusTag,
+  ThesisBlockerTag,
 } from './status';
 
 afterEach(cleanup);
@@ -264,5 +269,28 @@ describe('marks and chips', () => {
     const link = screen.getByRole('link');
     expect(link.getAttribute('aria-label')).toContain('restricted source');
     expect(link.textContent).not.toContain('None');
+  });
+});
+
+describe('Wave 4 vocabularies (D-119, D-114)', () => {
+  it('thesis blockers name the gate, with the tooltip hint also read by screen readers', () => {
+    const { container } = render(<ThesisBlockerTag status="pending" gate="G2" />);
+    expect(screen.getByText('Pending · G2')).toBeTruthy();
+    expect(container.querySelector('[title]')!.getAttribute('title')).toBe(
+      THESIS_BLOCKER_STATUS_HINTS.pending,
+    );
+    expect(container.textContent).toContain(THESIS_BLOCKER_STATUS_HINTS.pending);
+    expect(container.querySelector('svg')).not.toBeNull();
+    cleanup();
+    render(<ThesisBlockerTag status="blocker" gate="G3" />);
+    expect(screen.getByText('Blocker · G3')).toBeTruthy();
+    cleanup();
+    render(<ThesisBlockerTag status="resolved" gate="G3" />);
+    expect(screen.getByText('Resolved')).toBeTruthy();
+  });
+
+  it('assignee mapping statuses render label and glyph', () => {
+    for (const v of AssigneeMappingStatus.options)
+      expectTextAndGlyph(<AssigneeMappingTag status={v} />, ASSIGNEE_MAPPING_STATUS_LABELS[v]);
   });
 });

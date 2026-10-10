@@ -9,6 +9,9 @@ import { buildRoutes } from '../../app/router';
 import { createQueryClient } from '../../lib/query';
 import { mockServer, resetMockState, resetReplay, session, setScenario } from '../../mocks/node';
 import type { Ws8cPreset } from '../decisions/mock-state';
+import { validationTasks } from '@growth-os/fixtures-aster';
+
+const validationTitle = (n: number) => validationTasks.find((t) => t.ordinal === n)!.title;
 
 // Lazy screens load on first render; allow for a slow, parallel run.
 configure({ asyncUtilTimeout: 5000 });
@@ -123,6 +126,53 @@ describe('S09 Validation', () => {
     expect(await screen.findByText('5 of 5 tasks confirmed in Jira', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText(/VAL-1/)).toBeTruthy();
   });
+
+  it('after G1, Maya edits, adds and removes draft tasks before previewing (D-113)', async () => {
+    preset('g1_approved');
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/validation');
+    expect(await screen.findByRole('heading', { name: 'Validation tasks · Draft' })).toBeTruthy();
+    const list = screen.getByRole('list', { name: 'Validation tasks' });
+    // Edit task 1's title.
+    fireEvent.click(within(list).getByRole('button', { name: /^Edit task: Select 20 sites/ }));
+    const form = screen.getByRole('form', { name: /^Edit task · Select 20 sites/ });
+    fireEvent.change(within(form).getByLabelText(/^Task title/), {
+      target: { value: 'Select 20 sites from the partner list' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save task' }));
+    expect(await within(list).findByText('Select 20 sites from the partner list')).toBeTruthy();
+    expect(screen.getByText('Saved task 1. Preview again before sending.')).toBeTruthy();
+    // A due date outside the experiment window is refused in the form.
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    const add = screen.getByRole('form', { name: 'Add a validation task' });
+    fireEvent.change(within(add).getByLabelText(/^Task title/), { target: { value: 'Call non-responders' } });
+    fireEvent.click(within(add).getByRole('option', { name: /Jonas Klein/ }));
+    fireEvent.change(within(add).getByLabelText(/^Due date/), { target: { value: '2026-12-01' } });
+    fireEvent.change(within(add).getByLabelText(/^Deliverable/), { target: { value: 'Call notes' } });
+    expect(within(add).getByRole('alert').textContent).toContain('inside the experiment window');
+    fireEvent.change(within(add).getByLabelText(/^Due date/), { target: { value: '2026-11-06' } });
+    fireEvent.click(within(add).getByRole('button', { name: 'Add task' }));
+    expect(await within(list).findByText('Call non-responders')).toBeTruthy();
+    // Remove task 4 (unsent): confirm in a dialog; it leaves the list.
+    const task4 = validationTitle(4);
+    fireEvent.click(within(list).getByRole('button', { name: `Remove task: ${task4}` }));
+    const dialog = screen.getByRole('dialog', { name: 'Remove task' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove task' }));
+    await waitFor(() => expect(within(list).queryByText(task4)).toBeNull());
+    // Preview covers the remaining five tasks; nothing is editable while the preview is open.
+    fireEvent.click(screen.getByRole('button', { name: 'Preview tasks' }));
+    expect(await screen.findByRole('button', { name: 'Create 5 tasks in Jira' })).toBeTruthy();
+    expect(within(list).queryByRole('button', { name: /^Edit task:/ })).toBeNull();
+  }, 30_000);
+
+  it('a reviewer sees the tasks read-only (no draft editing)', async () => {
+    preset('g1_approved');
+    session.signIn(people.daniel.id);
+    renderAt('/me/cases/ME-104/validation');
+    expect(await screen.findByRole('heading', { name: 'Validation tasks' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Edit task:/ })).toBeNull();
+  }, 30_000);
 
   it('before EXP-03: Maya creates the experiment and submits G1 (snapshot v1 fingerprint)', async () => {
     preset('start');

@@ -6,7 +6,14 @@
  * `input.<inputKey>`, so the lineage of several engines can be merged and "Used by" spans them
  * (for example, the reachable pool input is used by SOM and by economics).
  */
-import type { EngineInput, LineageNode, ValueUnit } from '@growth-os/contracts';
+import type { EngineInput, LineageNode, LineageRelation, ValueUnit } from '@growth-os/contracts';
+
+/** A non-calculation edge (D-117): this node is checked against another, e.g. reachable pool ≤ SAM. */
+export interface LineageCheckEdge {
+  nodeKey: string;
+  relation: Exclude<LineageRelation, 'input_to'>;
+  text: string;
+}
 
 export function inputNodeKey(inputKey: string): string {
   return `input.${inputKey}`;
@@ -21,6 +28,8 @@ export interface CalculatedNodeSpec {
   formulaText: string;
   formulaWithValues: string | null;
   inputs: readonly string[];
+  /** Upper-bound checks (D-117): recorded in lineage, never a calculation input. */
+  checks?: readonly LineageCheckEdge[];
 }
 
 export interface PlainNodeSpec {
@@ -92,6 +101,7 @@ export class LineageBuilder {
       inputs: [...spec.inputs],
       dependsOnAssumptionCount: 0,
       ref: null,
+      ...(spec.checks?.length ? { checks: spec.checks.map((c) => ({ ...c })) } : {}),
     });
     return spec.nodeKey;
   }
@@ -100,6 +110,10 @@ export class LineageBuilder {
     if (this.nodes.has(node.nodeKey)) throw new Error(`lineage: duplicate node ${node.nodeKey}`);
     for (const k of node.inputs) {
       if (!this.nodes.has(k)) throw new Error(`lineage: ${node.nodeKey} references unknown input ${k}`);
+    }
+    for (const c of node.checks ?? []) {
+      if (!this.nodes.has(c.nodeKey))
+        throw new Error(`lineage: ${node.nodeKey} is checked against unknown node ${c.nodeKey}`);
     }
     node.dependsOnAssumptionCount = this.countAssumptions(node.inputs);
     this.nodes.set(node.nodeKey, node);
@@ -138,8 +152,26 @@ export interface LineageView {
   node: LineageNode;
   /** Precedents, one level ("Inputs · one level"). */
   inputs: LineageNode[];
-  /** Dependents, one level ("Used by"). */
+  /** Dependents, one level ("Used by"): calculation users first, then nodes checked against this one. */
   usedBy: LineageNode[];
+  /** The same dependents with the kind of edge (D-117): "Used by" or "Upper-bound check". */
+  usedByEdges: { node: LineageNode; relation: LineageRelation; detail: string | null }[];
+}
+
+/** Nodes that use `nodeKey`: as a calculation input, or checked against it (D-117). */
+function dependentsOf(
+  nodes: readonly LineageNode[],
+  nodeKey: string,
+): { node: LineageNode; relation: LineageRelation; detail: string | null }[] {
+  const users = nodes
+    .filter((n) => n.inputs.includes(nodeKey))
+    .map((node) => ({ node, relation: 'input_to' as const, detail: null }));
+  const checkers = nodes.flatMap((node) =>
+    (node.checks ?? [])
+      .filter((c) => c.nodeKey === nodeKey && !node.inputs.includes(nodeKey))
+      .map((c) => ({ node, relation: c.relation, detail: c.text })),
+  );
+  return [...users, ...checkers];
 }
 
 /** The lineage drawer for one figure: the node, its inputs one level, and what uses it. */
@@ -147,14 +179,19 @@ export function lineageView(nodes: readonly LineageNode[], nodeKey: string): Lin
   const byKey = new Map(nodes.map((n) => [n.nodeKey, n]));
   const node = byKey.get(nodeKey);
   if (!node) return null;
+  const usedByEdges = dependentsOf(nodes, nodeKey);
   return {
     node,
     inputs: node.inputs.map((k) => byKey.get(k)).filter((n): n is LineageNode => n !== undefined),
-    usedBy: nodes.filter((n) => n.inputs.includes(nodeKey)),
+    usedBy: usedByEdges.map((e) => e.node),
+    usedByEdges,
   };
 }
 
-/** "Show next level": every dependent up to `depth` levels, nearest first, without duplicates. */
+/**
+ * "Show next level": every dependent up to `depth` levels, nearest first, without duplicates. Follows
+ * calculation inputs and upper-bound checks (SAM bounds the reachable pool, which feeds SOM).
+ */
 export function usedByTransitive(
   nodes: readonly LineageNode[],
   nodeKey: string,
@@ -166,7 +203,10 @@ export function usedByTransitive(
   for (let level = 0; level < depth && frontier.length > 0; level++) {
     const next: string[] = [];
     for (const n of nodes) {
-      if (!seen.has(n.nodeKey) && n.inputs.some((k) => frontier.includes(k))) {
+      const depends =
+        n.inputs.some((k) => frontier.includes(k)) ||
+        (n.checks ?? []).some((c) => frontier.includes(c.nodeKey));
+      if (!seen.has(n.nodeKey) && depends) {
         seen.add(n.nodeKey);
         out.push(n);
         next.push(n.nodeKey);

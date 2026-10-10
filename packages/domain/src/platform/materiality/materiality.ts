@@ -148,6 +148,57 @@ export function invalidationNotice(
   return `Approval for v${snapshotVersion} no longer applies: ${reasonShort}.${tasksPaused ? ' Pilot tasks paused.' : ''}`;
 }
 
+/** A pin with the labels the impact copy needs ("G2 · Snapshot v3"). */
+export interface LabelledPin {
+  snapshotId: string;
+  gateRequestId: string;
+  gateCode: string;
+  snapshotVersion: number;
+}
+
+/**
+ * The impact of a change, before it is saved (S14 task mapping editor, D-114 §1): one line per
+ * affected approval or snapshot, plus the unsent external writes that pause. Pure: the caller dry-runs
+ * `evaluate` with the pins and counts the unsent tasks. Gate and version are always paired (D-118).
+ *
+ *   "Approval G2 · Snapshot v3 needs re-approval"
+ *   "G2 · Snapshot v3 goes out of date · approval disabled until refreshed"
+ *   "The sponsor reviews this change; approval G2 · Snapshot v3 stays in force until then"
+ *   "3 unsent tasks pause"
+ */
+export function impactLines(
+  outcome: MaterialityOutcome,
+  pins: readonly LabelledPin[],
+  unsentTasks: number,
+): string[] {
+  const label = (snapshotId: string): string | null => {
+    const p = pins.find((x) => x.snapshotId === snapshotId);
+    return p ? `${p.gateCode} · Snapshot v${p.snapshotVersion}` : null;
+  };
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  const push = (line: string | null) => {
+    if (line && !seen.has(line)) {
+      seen.add(line);
+      lines.push(line);
+    }
+  };
+  for (const im of outcome.impacts) {
+    const l = label(im.snapshotId);
+    if (!l) continue;
+    if (im.effect === 'approval_invalidated') push(`Approval ${l} needs re-approval`);
+    else if (im.effect === 'snapshot_stale')
+      push(`${l} goes out of date · approval disabled until refreshed`);
+    else if (im.effect === 'escalated' && outcome.escalatedApprovalIds.length > 0)
+      push(
+        `The ${outcome.escalateTo === 'investment_committee' ? 'investment committee' : 'sponsor'} reviews this change; approval ${l} stays in force until then`,
+      );
+  }
+  if (outcome.pauseUnsentWrites && unsentTasks > 0)
+    push(`${unsentTasks} unsent task${unsentTasks === 1 ? '' : 's'} pause${unsentTasks === 1 ? 's' : ''}`);
+  return lines;
+}
+
 const APPROVED = new Set(['approved', 'approved_with_conditions']);
 
 function emptyOutcome(

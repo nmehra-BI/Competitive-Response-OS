@@ -90,7 +90,7 @@ describe('My Work', () => {
     expect(
       within(brief).getByText(/limited to the 4 sites with paid commitments \(condition C1\)/),
     ).toBeTruthy();
-    expect(within(brief).getByText('Budget ceiling €120k (G2 v3)')).toBeTruthy();
+    expect(within(brief).getByText('Budget ceiling €120k (G2 · Snapshot v3)')).toBeTruthy();
     expect(within(brief).getByText('Confirmed · PIL-11')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: /Approvals/ }));
     expect(await screen.findByText('No approvals for you')).toBeTruthy();

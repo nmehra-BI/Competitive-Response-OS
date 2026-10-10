@@ -491,16 +491,29 @@ function buildSizingLineage(
 
   const reachIn = lb.addInput(input.reachablePool);
   const reach = dec(input.reachablePool.value);
+  // D-117: the reachable pool is entered (channel and service coverage, PRD §6), not derived from SAM.
+  // It is checked against SAM sites as an upper bound; lineage records the check, not an input edge.
+  const bound = sam ? new Dec(sam.population) : null;
+  const checkText = bound
+    ? `upper-bound check: ${fmtNumber(reach)} ${reach.gt(bound) ? '>' : '≤'} ${fmtNumber(bound)} ${unit}`
+    : null;
   const reachNode = lb.addCalculated({
     nodeKey: 'sizing.reachable_pool',
     label: 'Reachable pool',
     value: reach.toFixed(),
     unit,
     formulaText: `Reachable pool = ${input.reachablePool.label}, at most SAM ${unit} (a count, never money)`,
-    formulaWithValues: sam
-      ? `${fmtNumber(reach)} ${unit} ≤ ${fmtNumber(sam.population)} ${unit}`
+    formulaWithValues: bound
+      ? `${fmtNumber(reach)} ${unit} ${reach.gt(bound) ? '>' : '≤'} ${fmtNumber(bound)} ${unit}`
       : `${fmtNumber(reach)} ${unit}`,
-    inputs: samPopNode ? [reachIn, samPopNode] : [reachIn],
+    inputs: [reachIn],
+    checks:
+      samPopNode && checkText
+        ? [
+            { nodeKey: 'sizing.sam.value', relation: 'checked_against', text: checkText },
+            { nodeKey: samPopNode, relation: 'checked_against', text: checkText },
+          ]
+        : [],
   });
 
   if (som.length > 0) {
