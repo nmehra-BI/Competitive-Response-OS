@@ -167,6 +167,7 @@ export interface MeEconomicsVersion {
   exclusions_text: string;
   horizon_years: number;
   id: Generated<string>;
+  opex_scope_note: string | null;
   price_year: number;
   row_version: Generated<number>;
   sizing_version_id: string;

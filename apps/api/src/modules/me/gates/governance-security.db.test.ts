@@ -2,7 +2,7 @@
  * Security suite for the committee and extension rules (tickets 3 and 4; never-rules 1, 2, 3, 6). Every
  * test is an attempt to get around a rule and asserts it is refused — by the API and, where the database
  * holds the invariant, by the database too:
- *   quorum       replaying an approval, deciding twice, forging a seat, a non-member with authority,
+ *   quorum       replaying an approval, deciding twice, forging a seat (API + DB), a non-member with authority,
  *                swapping seats after deciding, two decisions in one seat (DB), seating oneself (API + DB)
  *   finance seat chair + operations never approve; a finance abstain cannot be bypassed
  *   cap          above 25% / 50%, a new site, prospect outreach, a null cap in a real tenant
@@ -181,6 +181,50 @@ describe('quorum bypass attempts', () => {
           .execute();
       }),
     ).rejects.toThrow(/approval_one_per_seat_idx/);
+  });
+
+  it('the database refuses a forged seat: the approver must hold that seat in the BU (0007, D-148)', async () => {
+    const pkg = await currentPackage(t, w.c.jonas, w.g3);
+    // A seat nobody decided in on this snapshot, so only the seat guard can refuse it.
+    const taken = new Set(
+      (await approvalsOn(w.s, w.g3))
+        .filter((a) => a.committee_seat !== null)
+        .map((a) => a.committee_seat as string),
+    );
+    const seat = (['chair', 'finance', 'operations'] as const).find((x) => !taken.has(x))!;
+    expect(seat).toBeDefined();
+    await expect(
+      inTenant(t, w.s, async (tx) => {
+        const session = await tx
+          .insertInto('platform.session')
+          .values({
+            tenant_id: w.s.tenantId,
+            user_id: w.s.user('jonas'),
+            token_hash: `test-${randomUUID()}`,
+            auth_method: 'dev_persona',
+            interactive: true,
+            expires_at: new Date(Date.now() + 60_000),
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await tx
+          .insertInto('platform.approval')
+          .values({
+            tenant_id: w.s.tenantId,
+            gate_request_id: w.g3,
+            snapshot_id: pkg.snapshot.id,
+            snapshot_hash: pkg.snapshot.contentHash,
+            approver_user_id: w.s.user('jonas'),
+            approver_role: 'investment_committee',
+            session_id: session.id,
+            disposition: 'abstain',
+            rationale: 'Claims a seat he does not hold',
+            idempotency_key: randomUUID(),
+            committee_seat: seat, // Jonas holds no committee seat; the API would never assign one
+          })
+          .execute();
+      }),
+    ).rejects.toThrow(/COMMITTEE_SEAT_NOT_HELD/);
   });
 
   it('an administrator cannot seat themselves (API and database) or seat another administrator', async () => {
