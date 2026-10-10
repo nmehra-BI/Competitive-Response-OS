@@ -16,12 +16,12 @@ import {
   type RunScope,
   type ToolGateway,
 } from '@growth-os/ai';
-import { createDb, withTenant, type Db } from '@growth-os/db';
+import { createDb, sql, withTenant, type Db } from '@growth-os/db';
 import { seedAster, type SeedResult } from '@growth-os/db/seed';
 import { licenses, people } from '@growth-os/fixtures-aster';
 import { createPgRunStore } from './store';
 import { insertRun, readRun } from './testing';
-import { createScopeChecker, createToolHandlers } from './tools';
+import { createScopeChecker, createToolHandlers, licenceAllowsModelContext } from './tools';
 
 let app: Db;
 let worker: Db;
@@ -338,5 +338,52 @@ describe('prompt injection and restricted leakage', () => {
     );
     expect(all).not.toContain('VENDOR-CONFIDENTIAL');
     expect(all).not.toContain('731 million');
+  });
+});
+
+describe('licence rights gate model context (D-120, D-146)', () => {
+  it('a licence row from before the fail-closed constraint never puts passages in model context', async () => {
+    const maya = await scopeFor(demo, 'maya', { caseKey: 'ME-104' });
+    const before = await callTool(maya, 'evidence.get', { sourceKey: 'SRC-014' });
+    expect(before.result).toMatchObject({ ok: true, data: { access: 'excerpt' } });
+    // A pre-0006 row: permissions without a written confirmation. The constraint is NOT VALID (old rows
+    // are not checked), so recreate that state as the owner: drop, write, re-add NOT VALID.
+    const owner = createDb('owner', 1);
+    try {
+      await withTenant(owner, { tenantId: demo.tenantId, userId: null, correlationId: 't' }, async (tx) => {
+        const src = await tx
+          .selectFrom('platform.source')
+          .select('license_id')
+          .where('display_key', '=', 'SRC-014')
+          .executeTakeFirstOrThrow();
+        await sql`ALTER TABLE platform.license DROP CONSTRAINT license_fail_closed`.execute(tx);
+        await tx
+          .updateTable('platform.license')
+          .set({ rights_document_ref: null, rights_confirmed_on: null, allow_model_context: true })
+          .where('id', '=', src.license_id!)
+          .execute();
+        await sql`ALTER TABLE platform.license ADD CONSTRAINT license_fail_closed
+          CHECK ((rights_document_ref IS NOT NULL AND expired_at IS NULL)
+                 OR (max_excerpt_sentences = 0 AND NOT allow_model_context AND NOT allow_embeddings AND NOT allow_export))
+          NOT VALID`.execute(tx);
+      });
+    } finally {
+      await owner.destroy();
+    }
+    const after = await callTool(maya, 'evidence.get', { sourceKey: 'SRC-014' });
+    expect(after.result).toMatchObject({
+      ok: true,
+      data: { access: 'aggregate_only', passages: [] },
+      summary: 'aggregate only · no excerpts',
+    });
+    expect(after.result.ok && after.result.untrusted).toBeFalsy();
+  });
+
+  it('licenceAllowsModelContext needs the permission, a confirmation and no expiry', () => {
+    const ok = { allow_model_context: true, rights_document_ref: 'DOC-1', expired_at: null };
+    expect(licenceAllowsModelContext(ok)).toBe(true);
+    expect(licenceAllowsModelContext({ ...ok, allow_model_context: false })).toBe(false);
+    expect(licenceAllowsModelContext({ ...ok, rights_document_ref: null })).toBe(false);
+    expect(licenceAllowsModelContext({ ...ok, expired_at: new Date() })).toBe(false);
   });
 });

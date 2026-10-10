@@ -89,6 +89,20 @@ const DENIED: ToolResult = {
 };
 const NOT_FOUND: ToolResult = { ok: false, code: 'not_found', summary: 'not found' };
 
+/**
+ * D-120 / D-146: a passage may enter model context only when the licence allows it AND its rights are
+ * confirmed in writing and not expired. The 0006 `license_fail_closed` constraint is NOT VALID, so a
+ * row written before it could still carry the permission without a confirmation; this read fails
+ * closed for it too.
+ */
+export function licenceAllowsModelContext(l: {
+  allow_model_context: boolean;
+  rights_document_ref: string | null;
+  expired_at: Date | string | null;
+}): boolean {
+  return l.allow_model_context && l.rights_document_ref !== null && !l.expired_at;
+}
+
 async function accessFor(
   tx: Tx,
   r: Requester,
@@ -109,7 +123,7 @@ async function accessFor(
           .execute(),
         tx
           .selectFrom('platform.license')
-          .select(['id', 'allow_model_context'])
+          .select(['id', 'allow_model_context', 'rights_document_ref', 'expired_at'])
           .where('id', 'in', licenseIds)
           .execute(),
       ])
@@ -126,7 +140,7 @@ async function accessFor(
         s.id,
         {
           access: effectiveAccess(licence, s),
-          modelContext: licences.find((l) => l.id === s.license_id)?.allow_model_context ?? false,
+          modelContext: licences.some((l) => l.id === s.license_id && licenceAllowsModelContext(l)),
         },
       ];
     }),
