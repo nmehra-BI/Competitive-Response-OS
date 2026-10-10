@@ -210,7 +210,81 @@ export function tripStopRule(caseRef: string, stopRuleId: string, viewerId: stri
   persist();
 }
 
+/** S09 "Add assumption" (D-112 §1, E2): a new register row, Evidence when sources are linked. */
+const QUALITY: Record<string, 'strong' | 'some'> = { 'SRC-014': 'strong', 'SRC-009': 'strong' };
+let asmSeq = 0;
+const addAssumption = mock(API.assumptions.create, ({ params, body, viewerId }) => {
+  const c = cases.find((x) => x.key === params.caseRef || x.id === params.caseRef);
+  if (!c) throw new MockProblem('NOT_FOUND', 'Not found.');
+  if (viewerId !== c.ownerId) throw new MockProblem('FORBIDDEN', 'Only the case owner adds assumptions.');
+  if (body.value === null && !body.valueText?.trim())
+    throw new MockProblem('VALIDATION_FAILED', 'Give a value or describe it in words.');
+  const n = ++asmSeq;
+  const sources = (body.sourceIds ?? []).map((id) => ({
+    sourceId: id,
+    key: `SRC-${id.slice(-3)}`,
+    label: `Source ${id.slice(-3)}`,
+    quality: QUALITY[`SRC-${id.slice(-3)}`] ?? ('some' as const),
+    restricted: false,
+  }));
+  const quality: 'strong' | 'some' | 'none' = sources.some((s) => s.quality === 'strong')
+    ? 'strong'
+    : sources.length
+      ? 'some'
+      : 'none';
+  const id = mockId(4600 + n);
+  const createdAt = nowIso();
+  return {
+    id,
+    key: `ASM-${20 + n}`,
+    caseId: c.id,
+    inputKey: body.inputKey,
+    name: body.name,
+    scenario: null,
+    owner: personRef(body.ownerId),
+    sensitivity: body.sensitivity,
+    decisionCritical: body.decisionCritical,
+    consequenceIfFalse: body.consequenceIfFalse,
+    validationMethod: body.validationMethod,
+    linkedExperimentIds: [],
+    dueOn: body.dueOn,
+    status: 'untested' as const,
+    statusDetail: null,
+    retiredReason: null,
+    current: {
+      id: mockId(4700 + n),
+      assumptionId: id,
+      version: 1,
+      value: body.value,
+      valueText: body.value === null ? body.valueText : null,
+      unit: body.unit,
+      currency: body.currency ?? null,
+      priceYear: body.priceYear ?? null,
+      basis: body.basis,
+      evidenceQuality: quality,
+      sources,
+      origin: 'human' as const,
+      agentRunId: null,
+      changeReason: null,
+      createdBy: personRef(viewerId!),
+      createdAt,
+    },
+    registerGroup:
+      body.sensitivity === 'low'
+        ? ('monitor' as const)
+        : quality === 'none'
+          ? body.sensitivity === 'high'
+            ? ('test_first' as const)
+            : ('test_next' as const)
+          : ('watch' as const),
+    openDispute: null,
+    usedBy: [],
+    rowVersion: 1,
+  };
+});
+
 export const w4Handlers: HttpHandler[] = [
+  addAssumption,
   mock(API.budget.listEntries, ({ params }) => {
     requireCase(params.caseRef);
     return { items: budgetEntries(), meter: budgetMeter() };

@@ -1,6 +1,6 @@
 import type { Assumption } from '@growth-os/contracts';
 import { describe, expect, it } from 'vitest';
-import { compareAssumptions, groupRegister } from './register';
+import { compareAssumptions, decimalValue, groupRegister, percentToFraction } from './register';
 
 const asm = (
   key: string,
@@ -45,5 +45,27 @@ describe('assumption register order', () => {
   it('leaves retired assumptions out of the register', () => {
     const groups = groupRegister([asm('ASM-01', 'high', 'weak', 'test_first', 'retired')]);
     expect(groups).toEqual([]);
+  });
+});
+
+describe('add assumption values (D-112 §1)', () => {
+  it('a percentage becomes a fraction in [0, 1] without float arithmetic', () => {
+    expect(percentToFraction('20')).toBe('0.2');
+    expect(percentToFraction('7.5')).toBe('0.075');
+    expect(percentToFraction('100')).toBe('1');
+    expect(percentToFraction('0')).toBe('0');
+    expect(percentToFraction('33.333')).toBe('0.33333');
+  });
+
+  it('blank, negative, above 100% or unreadable is null (never 0)', () => {
+    for (const bad of ['', ' ', '-5', '100.5', '250', 'twenty', '20%'])
+      expect([bad, percentToFraction(bad)]).toEqual([bad, null]);
+  });
+
+  it('plain decimals keep their digits; group separators are accepted', () => {
+    expect(decimalValue('1,250.5')).toBe('1250.5');
+    expect(decimalValue('500')).toBe('500');
+    expect(decimalValue('')).toBeNull();
+    expect(decimalValue('-1')).toBeNull();
   });
 });

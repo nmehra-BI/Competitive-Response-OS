@@ -15,6 +15,7 @@ import {
   Icon,
   Mono,
   SensitivityTag,
+  SourceChip,
 } from '@growth-os/ui';
 import { useState } from 'react';
 import { dayMonth } from '../decisions/dates';
@@ -100,6 +101,21 @@ export function AssumptionRegisterTable({
                     </td>
                     <td>
                       <EvidenceQualityTag quality={a.current.evidenceQuality} />
+                      {a.current.sources.length ? (
+                        <div className="ws8c-chips" style={{ marginTop: 4 }}>
+                          {a.current.sources.map((s) => (
+                            <SourceChip
+                              key={s.sourceId}
+                              label={s.key}
+                              quality={s.quality}
+                              restricted={s.restricted}
+                              href={`/evidence/${encodeURIComponent(s.key)}`}
+                            />
+                          ))}
+                        </div>
+                      ) : a.current.evidenceQuality === 'none' ? (
+                        <div className="ws8c-small ws8c-muted">Assumption — no evidence</div>
+                      ) : null}
                     </td>
                     <td className="ws8c-secondary">{a.validationMethod}</td>
                     <td>{exp ? <Mono size={12}>{exp}</Mono> : <span className="ws8c-muted">—</span>}</td>

@@ -23,6 +23,7 @@ import { useApiQuery } from '../../lib/query';
 import { useViewer } from '../../lib/session';
 
 import '../decisions/ws8c.css';
+import { AddAssumptionForm } from './AddAssumptionForm';
 import { AssumptionRegister2x2, AssumptionRegisterTable } from './AssumptionRegister';
 import { DisputePanel } from './DisputePanel';
 import { ExperimentCard } from './ExperimentCard';
@@ -133,6 +134,12 @@ export default function ValidationScreen() {
           )}
         </>
       )}
+      <AddAssumptionForm
+        caseKey={caseKey}
+        viewer={viewer}
+        canAdd={isCaseOwner}
+        usedKeys={items.map((a) => a.inputKey)}
+      />
 
       <div className="ws8c-split">
         <div className="ws8c-split__main ws8c-stack" style={{ gap: 12 }}>
