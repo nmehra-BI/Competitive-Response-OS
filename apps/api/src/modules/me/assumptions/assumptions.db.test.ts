@@ -10,6 +10,7 @@ import {
   auditFor,
   convertOpp07,
   inTenant,
+  sourceId,
   world,
   type World,
 } from '../cases/test-support';
@@ -255,5 +256,110 @@ describe('step 19 (aster-demo)', () => {
     // G1's effective approval also pinned the old version: it no longer applies (executed tasks kept).
     expect(out.invalidatedApprovalIds).toHaveLength(1);
     expect(await analyticsFor(w, s, 'approval_invalidated')).toHaveLength(1);
+  });
+});
+
+// Wave 4 (D-112 §1, D-132): S09 "Add assumption" — confidence basis from linked sources.
+describe('S09 add assumption: Evidence or "Assumption — no evidence"', () => {
+  const s = () => w.tenants.a!;
+
+  it('with a licensed source the version is Evidence (quality from the source) and lists the chip', async () => {
+    const before = (await analyticsFor(w, s(), 'assumption_changed')).length;
+    const res = await api(w, API.assumptions.create, await w.cookie('a', 'maya'), {
+      params: { caseRef: caseKey },
+      body: body({
+        inputKey: 'reachable_pool',
+        name: 'Reachable pool 500 sites',
+        value: '500',
+        unit: 'sites',
+        sensitivity: 'medium',
+        decisionCritical: false,
+        sourceIds: [sourceId(s(), 'SRC-014'), sourceId(s(), 'SRC-021')],
+      }),
+    });
+    expect(res.statusCode).toBe(201);
+    const a = Assumption.parse(res.json());
+    expect(a.current.evidenceQuality).toBe('strong'); // the strongest linked source (licensed)
+    expect(a.current.sources.map((x) => [x.key, x.restricted])).toEqual([
+      ['SRC-014', false],
+      ['SRC-021', false],
+    ]);
+    expect((await auditFor(w, s(), a.id)).map((e) => e.action)).toEqual(['assumption.created']);
+    expect(await analyticsFor(w, s(), 'assumption_changed')).toHaveLength(before + 1);
+    // The register shows the same basis; the link is not a thesis claim of the case.
+    const list = await api(w, API.assumptions.list, await w.cookie('a', 'daniel'), {
+      params: { caseRef: caseKey },
+    });
+    const row = API.assumptions.list.response.parse(list.json()).items.find((x) => x.id === a.id)!;
+    expect(row.current.sources.map((x) => x.key)).toEqual(['SRC-014', 'SRC-021']);
+    const thesis = await api(w, API.thesis.get, await w.cookie('a', 'maya'), {
+      params: { caseRef: caseKey },
+    });
+    expect(thesis.body).not.toContain('Reachable pool 500 sites');
+  });
+
+  it('without sources it is "Assumption — no evidence" (quality none); money units carry the editor currency and price year', async () => {
+    const res = await api(w, API.assumptions.create, await w.cookie('a', 'maya'), {
+      params: { caseRef: caseKey },
+      body: body({
+        inputKey: 'annual_spend_per_site',
+        name: 'Annual spend per site €80k',
+        value: '80000',
+        unit: 'currency_per_year_per_site',
+        sensitivity: 'high',
+        sourceIds: [],
+        currency: 'EUR',
+        priceYear: 2026,
+      }),
+    });
+    expect(res.statusCode).toBe(201);
+    const a = Assumption.parse(res.json());
+    expect(a.current).toMatchObject({
+      evidenceQuality: 'none',
+      sources: [],
+      currency: 'EUR',
+      priceYear: 2026,
+      value: '80000.00',
+    });
+    expect(a.registerGroup).toBe('test_first');
+  });
+
+  it('refuses a restricted, unknown or foreign source (400, same message); read-only reviewer 403; cross-tenant 404', async () => {
+    const refuse = async (sourceIds: string[]) => {
+      const r = await api(w, API.assumptions.create, await w.cookie('a', 'maya'), {
+        params: { caseRef: caseKey },
+        body: body({ inputKey: `k-${sourceIds.join()}`, sourceIds }),
+      });
+      expect(r.statusCode).toBe(400);
+      return (r.json() as { title: string }).title;
+    };
+    const titles = [
+      await refuse([sourceId(s(), 'SRC-030')]), // restricted licence
+      await refuse(['00000000-0000-4000-8000-000000000999']),
+      await refuse([sourceId(w.tenants.b!, 'SRC-014')]), // another tenant's source (RLS)
+    ];
+    expect(new Set(titles)).toEqual(new Set(['Link a source you can open.']));
+    const ro = await api(w, API.assumptions.create, await w.cookie('a', 'opsLead'), {
+      params: { caseRef: caseKey },
+      body: body({ inputKey: 'ro' }),
+    });
+    expect(ro.statusCode).toBe(403);
+    const caseId = await inTenant(
+      w,
+      s(),
+      async (tx) =>
+        (
+          await tx
+            .selectFrom('platform.workflow_case')
+            .select('id')
+            .where('display_key', '=', caseKey)
+            .executeTakeFirstOrThrow()
+        ).id,
+    );
+    const cross = await api(w, API.assumptions.create, await w.cookie('b', 'maya'), {
+      params: { caseRef: caseId },
+      body: body({ inputKey: 'cross', sourceIds: [sourceId(s(), 'SRC-014')] }),
+    });
+    expect(cross.statusCode).toBe(404);
   });
 });

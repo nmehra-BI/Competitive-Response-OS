@@ -24,6 +24,7 @@ import {
   trimDecimal,
   type CaseRecord,
 } from '../cases/access';
+import { evidenceBasis, linkEvidence } from './evidence';
 import {
   assumptionLabel,
   caseAssumptions,
@@ -50,13 +51,13 @@ async function loadAssumption(tx: Tx, id: string): Promise<{ a: AssumptionRow; c
   return { a, c: await caseById(tx, a.case_id) };
 }
 
-async function one(tx: Tx, a: AssumptionRow, c: CaseRecord) {
+async function one(tx: Tx, a: AssumptionRow, c: CaseRecord, identity?: Identity) {
   const row = (await tx
     .selectFrom('platform.assumption')
     .selectAll()
     .where('id', '=', a.id)
     .executeTakeFirstOrThrow()) as AssumptionRow;
-  return (await toAssumptions(tx, [row], c.display_key))[0]!;
+  return (await toAssumptions(tx, [row], c.display_key, identity))[0]!;
 }
 
 function checkValue(value: string | null | undefined, unit: string): void {
@@ -118,7 +119,9 @@ export const assumptionHandlers: HandlerMap = {
   [API.assumptions.list.id]: query(API.assumptions.list, {
     load: (ctx, tx) => readableCase(tx, ctx.identity, ctx.params.caseRef),
     authorize: (ctx, c) => readDecision(ctx.identity, c),
-    handle: async (_ctx, { tx }, c) => ({ items: await caseAssumptions(tx, c.id, c.display_key) }),
+    handle: async (ctx, { tx }, c) => ({
+      items: await caseAssumptions(tx, c.id, c.display_key, ctx.identity),
+    }),
   }),
 
   [API.assumptions.create.id]: command(API.assumptions.create, {
@@ -158,7 +161,13 @@ export const assumptionHandlers: HandlerMap = {
         ),
       );
       const scenario = /^adoption_rate\.(downside|base|upside)$/.exec(b.inputKey)?.[1] ?? null;
-      const money = MONEY_UNITS.has(b.unit) ? await priceBasis(tx, c, ctx.now) : null;
+      // Money units carry a currency and price year: the editor's, else the case's sizing boundary.
+      const basis = MONEY_UNITS.has(b.unit) ? await priceBasis(tx, c, ctx.now) : null;
+      const money = basis
+        ? { currency: b.currency ?? basis.currency, priceYear: b.priceYear ?? basis.priceYear }
+        : null;
+      // Confidence basis (D-112 §1): linked sources make it Evidence; none = "Assumption — no evidence".
+      const sources = await evidenceBasis(tx, ctx.identity, b.sourceIds ?? []);
       const a = await tx
         .insertInto('platform.assumption')
         .values({
@@ -191,7 +200,7 @@ export const assumptionHandlers: HandlerMap = {
           currency: money?.currency ?? null,
           price_year: money?.priceYear ?? null,
           basis: b.basis,
-          evidence_quality: 'none',
+          evidence_quality: sources.quality,
           origin: 'human',
           created_by: ctx.userId,
           created_at: ctx.now,
@@ -203,6 +212,7 @@ export const assumptionHandlers: HandlerMap = {
         .set({ current_version_id: v.id })
         .where('id', '=', a.id)
         .execute();
+      await linkEvidence(tx, ctx.tenantId, ctx.userId, ctx.now, a.id, b.name, sources.ids);
       await t.audit({
         action: 'assumption.created',
         objectType: 'assumption',
@@ -210,7 +220,11 @@ export const assumptionHandlers: HandlerMap = {
         objectVersion: 1,
         caseId: c.id,
         summary: `${key} added: ${b.name}`.slice(0, 280),
-        details: { decisionCritical: b.decisionCritical, sensitivity: b.sensitivity },
+        details: {
+          decisionCritical: b.decisionCritical,
+          sensitivity: b.sensitivity,
+          sources: sources.ids.length,
+        },
       });
       await t.analytics(
         'assumption_changed',
@@ -224,7 +238,7 @@ export const assumptionHandlers: HandlerMap = {
         versionId: v.id,
         decisionCritical: b.decisionCritical,
       });
-      const out = await one(tx, a as AssumptionRow, c);
+      const out = await one(tx, a as AssumptionRow, c, ctx.identity);
       ctx.setETag(out.rowVersion);
       return out;
     },
@@ -352,7 +366,7 @@ export const assumptionHandlers: HandlerMap = {
       }
       if (newVersion === null && Object.keys(meta).length === 0)
         throw new ApiError('VALIDATION_FAILED', 'Nothing to change.');
-      const out = await one(tx, a, c);
+      const out = await one(tx, a, c, ctx.identity);
       ctx.setETag(out.rowVersion);
       return { assumption: out, staleSnapshotIds, invalidatedApprovalIds };
     },
@@ -395,7 +409,7 @@ export const assumptionHandlers: HandlerMap = {
         before: { status: a.status },
         after: { status: 'retired' },
       });
-      return one(t.tx, a, c);
+      return one(t.tx, a, c, ctx.identity);
     },
   }),
 
