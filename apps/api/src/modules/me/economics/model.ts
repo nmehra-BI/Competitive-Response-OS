@@ -312,3 +312,22 @@ export async function recalcEconomicsDraft(tx: Tx, tenantId: string, v: Economic
 }
 
 export { timeBasis };
+
+/**
+ * The opex scope note (S08 editor, D-112 §3) is stored with the version's exclusions text
+ * (`economics_version.exclusions_text`, WAVE4 E1) after a fixed marker; the engine's exclusions
+ * sentence stays first. No contract field carries it back, so the ledger shows it as the basis of the
+ * "Annual incremental opex" row (CR-W4-E1-2 asks for `EconomicsVersion.opexScopeNote`).
+ */
+const OPEX_SCOPE_MARKER = '\nOpex scope: ';
+
+export function opexScopeNoteOf(exclusionsText: string): string | null {
+  const i = exclusionsText.indexOf(OPEX_SCOPE_MARKER);
+  return i < 0 ? null : exclusionsText.slice(i + OPEX_SCOPE_MARKER.length);
+}
+
+export function withOpexScopeNote(exclusionsText: string, note: string): string {
+  const i = exclusionsText.indexOf(OPEX_SCOPE_MARKER);
+  const base = i < 0 ? exclusionsText : exclusionsText.slice(0, i);
+  return `${base}${OPEX_SCOPE_MARKER}${note.trim()}`;
+}

@@ -32,9 +32,13 @@ import {
   ensureEconomicsDraft,
   recalcEconomicsDraft,
   timeBasis,
+  withOpexScopeNote,
   type EconomicsVersionRow,
 } from './model';
 import { economicsView, scenarioTable, toEconomicsVersion, toModelReview } from './read';
+
+const invalid = (path: string, code: string, message: string) =>
+  new ApiError('VALIDATION_FAILED', message, { errors: [{ path, code, message }] });
 
 async function loadCase(tx: Tx, ref: string): Promise<CaseRecord> {
   const c = await findCase(tx, ref);
@@ -100,54 +104,139 @@ export const economicsHandlers: HandlerMap = {
     handle: async (ctx, t, c) => {
       const { tx } = t;
       const d = await ensureEconomicsDraft(tx, ctx, c, (rv) => assertIfMatch(ctx, rv));
-      const rows = await driverRows(tx, d.id);
-      const live = await currentAssumptionVersions(
-        tx,
-        rows.flatMap((r) => (r.assumption_id ? [r.assumption_id] : [])),
-      );
-      for (const dr of ctx.body.drivers) {
-        const key = EconomicsDriverKey.safeParse(dr.inputKey);
+      const body = ctx.body;
+      const keyOf = (k: string, path: string): EconomicsDriverKey => {
+        const key = EconomicsDriverKey.safeParse(k);
         if (!key.success)
-          throw new ApiError('VALIDATION_FAILED', `Unknown driver "${dr.inputKey}".`, {
-            errors: [{ path: 'body.drivers', code: 'unknown_driver', message: dr.inputKey }],
+          throw new ApiError('VALIDATION_FAILED', `Unknown driver "${k}".`, {
+            errors: [{ path, code: 'unknown_driver', message: k }],
           });
-        const spec = DRIVERS[key.data];
-        if (spec.unit === 'rate' && (Number(dr.value) < 0 || Number(dr.value) > 1))
-          throw new ApiError('VALIDATION_FAILED', 'A rate is a fraction between 0 and 1.');
-        const row = rows.find((r) => r.input_key === key.data);
-        if (row) {
-          const linked = row.assumption_id ? live.get(row.assumption_id) : undefined;
+        return key.data;
+      };
+      // A blank driver is cleared back to Unknown (never 0): the engine then reports it missing.
+      const clear = [...new Set((body.clearInputKeys ?? []).map((k) => keyOf(k, 'body.clearInputKeys')))];
+      for (const k of clear)
+        if (body.drivers.some((x) => x.inputKey === k))
+          throw invalid('body.clearInputKeys', 'conflict', `"${k}" is both set and cleared in one save.`);
+      if (clear.length)
+        await tx
+          .deleteFrom('me.economics_driver')
+          .where('economics_version_id', '=', d.id)
+          .where('input_key', 'in', clear)
+          .execute();
+      const currency = body.currency ?? d.currency;
+      const rows = await driverRows(tx, d.id);
+      const live = await currentAssumptionVersions(tx, [
+        ...rows.flatMap((r) => (r.assumption_id ? [r.assumption_id] : [])),
+        ...body.drivers.flatMap((x) => (x.assumptionId ? [x.assumptionId] : [])),
+      ]);
+      if (currency !== d.currency)
+        for (const r of rows) {
+          const lv = r.assumption_id ? live.get(r.assumption_id) : undefined;
+          const relinked = body.drivers.some((x) => x.inputKey === r.input_key);
+          if (lv?.currency && lv.currency !== currency && !relinked)
+            throw invalid(
+              'body.currency',
+              'currency_mismatch',
+              `${r.label} is linked to an assumption in ${lv.currency}. Relink or enter it in ${currency} first.`,
+            );
+        }
+      for (const dr of body.drivers) {
+        const key = keyOf(dr.inputKey, 'body.drivers');
+        const spec = DRIVERS[key];
+        if (dr.sourceId)
+          // No column holds a driver's source (CR-W4-E1-1): refuse rather than drop the link silently.
+          throw invalid(
+            'body.drivers.sourceId',
+            'source_link_unsupported',
+            'Link the driver to an assumption; the assumption carries its evidence.',
+          );
+        const row = rows.find((r) => r.input_key === key);
+        let value = dr.value;
+        let assumptionId: string | null;
+        if (dr.assumptionId) {
+          const a = await tx
+            .selectFrom('platform.assumption')
+            .select(['id', 'case_id'])
+            .where('id', '=', dr.assumptionId)
+            .executeTakeFirst();
+          const lv = a && a.case_id === c.id ? live.get(a.id) : undefined;
+          if (!a || !lv)
+            throw invalid(
+              'body.drivers.assumptionId',
+              'unknown_assumption',
+              'The assumption is not in this case register.',
+            );
+          if (lv.value === null)
+            throw invalid('body.drivers.assumptionId', 'no_value', 'The assumption has no numeric value.');
+          // Units keep per-year and one-time money apart (never-rule 3): no /year assumption as an investment.
+          if (lv.unit !== spec.unit)
+            throw invalid(
+              'body.drivers.assumptionId',
+              'unit_mismatch',
+              `${spec.label} needs an assumption in ${spec.unit}; this one is in ${lv.unit}.`,
+            );
+          if (lv.currency && lv.currency !== currency)
+            throw invalid(
+              'body.drivers.assumptionId',
+              'currency_mismatch',
+              `The assumption is in ${lv.currency}; this model is in ${currency}.`,
+            );
+          value = lv.value;
+          assumptionId = a.id;
+        } else {
+          const linked =
+            dr.assumptionId === undefined && row?.assumption_id ? live.get(row.assumption_id) : undefined;
+          // An edited value becomes a draft-only override; the same value keeps the register link.
           const same =
             linked?.value !== undefined &&
             linked.value !== null &&
-            valueString(linked.value, row.unit) === valueString(dr.value, row.unit);
+            valueString(linked.value, spec.unit) === valueString(dr.value, spec.unit) &&
+            (!linked.currency || linked.currency === currency);
+          assumptionId = same && row ? row.assumption_id : null;
+        }
+        if (spec.unit === 'rate' && (Number(value) < 0 || Number(value) > 1))
+          throw new ApiError('VALIDATION_FAILED', 'A rate is a fraction between 0 and 1.');
+        if (Number(value) < 0)
+          throw invalid('body.drivers.value', 'negative', `${spec.label} cannot be negative.`);
+        if (row)
           await tx
             .updateTable('me.economics_driver')
-            .set({ value: dr.value, assumption_id: same ? row.assumption_id : null })
+            .set({ value, assumption_id: assumptionId })
             .where('id', '=', row.id)
             .execute();
-        } else {
+        else
           await tx
             .insertInto('me.economics_driver')
             .values({
               tenant_id: ctx.tenantId,
               economics_version_id: d.id,
-              input_key: key.data,
+              input_key: key,
               label: spec.label,
-              value: dr.value,
+              value,
               unit: spec.unit,
               time_basis: timeBasis(spec.unit),
+              assumption_id: assumptionId,
             })
             .execute();
-        }
       }
-      // Touch the draft so its ETag changes with every edit.
-      await tx
+      // Header (currency and base year once), horizon and the opex scope note. The update also moves
+      // the draft's ETag with every edit.
+      const fresh = (await tx
         .updateTable('me.economics_version')
-        .set({ exclusions_text: d.exclusions_text })
+        .set({
+          currency,
+          price_year: body.priceYear ?? d.price_year,
+          horizon_years: body.horizonYears ?? d.horizon_years,
+          exclusions_text:
+            body.opexScopeNote !== undefined
+              ? withOpexScopeNote(d.exclusions_text, body.opexScopeNote)
+              : d.exclusions_text,
+        })
         .where('id', '=', d.id)
-        .execute();
-      const r = await recalcEconomicsDraft(tx, ctx.tenantId, d, ctx.now);
+        .returningAll()
+        .executeTakeFirstOrThrow()) as EconomicsVersionRow;
+      const r = await recalcEconomicsDraft(tx, ctx.tenantId, fresh, ctx.now);
       const after = (await tx
         .selectFrom('me.economics_version')
         .selectAll()
@@ -161,7 +250,13 @@ export const economicsHandlers: HandlerMap = {
         objectVersion: d.version,
         caseId: c.id,
         summary: `Economics draft v${d.version} edited (${ctx.body.drivers.map((x) => x.inputKey).join(', ') || 'no driver'})`,
-        details: { blocked: r.output ? r.output.blocked : true },
+        details: {
+          blocked: r.output ? r.output.blocked : true,
+          clearedDrivers: clear.length,
+          headerChanged:
+            body.currency !== undefined || body.priceYear !== undefined || body.horizonYears !== undefined,
+          opexScopeNote: body.opexScopeNote !== undefined,
+        },
       });
       return economicsView(tx, ctx.identity, c.id);
     },

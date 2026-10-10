@@ -12,15 +12,17 @@ import {
   enterSizing,
   inTenant,
   registerAssumptions,
+  sourceId,
   world,
   type World,
 } from '../cases/test-support';
+import { agentCookie } from '../gates/testkit';
 
 let w: World;
 let caseKey: string;
 let asm: Record<string, string>;
 beforeAll(async () => {
-  w = await world({ a: 'aster-start', demo: 'aster-demo', b: 'aster-start' });
+  w = await world({ a: 'aster-start', demo: 'aster-demo', b: 'aster-start', e: 'aster-start' });
   caseKey = await convertOpp07(w, 'a');
   asm = await registerAssumptions(w, 'a', caseKey);
 });
@@ -237,5 +239,253 @@ describe('sizing history (aster-demo)', () => {
       tx.selectFrom('platform.material_change').select(['change_type', 'classification']).execute(),
     );
     expect(mc).toEqual([{ change_type: 'model_version_changed', classification: 'material' }]);
+  });
+});
+
+describe('S06 sizing draft editor fields (D-112 §2, D-132)', () => {
+  let key: string;
+  let asmE: Record<string, string>;
+  const mayaE = () => w.cookie('e', 'maya');
+  const get = async () =>
+    SizingView.parse((await api(w, API.sizing.get, await mayaE(), { params: { caseRef: key } })).json());
+  const linked = (k: string, unit: 'sites' | 'rate' | 'customers' | 'currency_per_year_per_site') => ({
+    inputKey: k,
+    value: '0',
+    unit,
+    sourceId: null,
+    assumptionId: asmE[k]!,
+  });
+  const CHANNEL = 'Partner channel: distributors covering German food plants';
+
+  beforeAll(async () => {
+    key = await convertOpp07(w, 'e');
+    asmE = await registerAssumptions(w, 'e', key);
+  });
+
+  it('the first save needs the boundary; every new field round-trips', async () => {
+    const m = await mayaE();
+    const noBoundary = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: 0,
+      body: { horizonYears: 3 },
+    });
+    expect(noBoundary.statusCode).toBe(400);
+    expect(noBoundary.json().code).toBe('VALIDATION_FAILED');
+
+    const s = w.tenants.e!;
+    const res = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: 0,
+      body: {
+        method: 'aggregate_overlap',
+        horizonYears: 3,
+        boundary: {
+          marketUnit: 'annual spend on water monitoring',
+          populationUnit: 'site',
+          currency: 'EUR',
+          priceYear: 2026,
+          annualizationMethod: null,
+          productBoundary: 'Water-quality monitoring sensors and software',
+          includes: { hardware: true, software: true, services: true, replacementCycles: false },
+        },
+        dedupRuleText: 'Dedup run v2: same site ID',
+        inputs: [
+          {
+            inputKey: 'tam_site_count',
+            value: '5000',
+            unit: 'sites',
+            sourceId: sourceId(s, 'SRC-014'),
+            assumptionId: null,
+          },
+          linked('annual_spend_per_site', 'currency_per_year_per_site'),
+          { ...linked('reachable_pool', 'sites'), basisText: CHANNEL },
+          linked('adoption_rate.downside', 'rate'),
+          linked('adoption_rate.base', 'rate'),
+          linked('adoption_rate.upside', 'rate'),
+          linked('capacity', 'customers'),
+        ],
+        cohorts: [
+          {
+            id: null,
+            name: 'Size-qualified',
+            rule: '≥ size threshold',
+            siteCount: 1400,
+            sourceId: sourceId(s, 'SRC-014'),
+          },
+          {
+            id: null,
+            name: 'Process-qualified',
+            rule: 'Uses the target water process',
+            siteCount: 1100,
+            sourceId: sourceId(s, 'SRC-021'),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const v = SizingView.parse(res.json());
+    const [a, b] = v.draft!.cohorts;
+    const ov = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: v.draft!.rowVersion,
+      body: {
+        overlaps: [{ cohortAId: a!.id, cohortBId: b!.id, overlapCount: 500, method: 'Dedup run v2' }],
+      },
+    });
+    expect(ov.statusCode).toBe(200);
+    const d = SizingView.parse(ov.json()).draft!;
+    expect(d.boundary).toMatchObject({
+      productBoundary: 'Water-quality monitoring sensors and software',
+      includes: { hardware: true, software: true, services: true, replacementCycles: false },
+      currency: 'EUR',
+      priceYear: 2026,
+    });
+    expect(d.dedupRuleText).toBe('Dedup run v2: same site ID');
+    expect(d.overlaps).toMatchObject([{ overlapCount: 500, method: 'Dedup run v2' }]);
+    expect(d.ledger.find((l) => l.inputKey === 'reachable_pool')!.basis.text).toBe(CHANNEL);
+    expect(d.result!.ladder.sam.value.amount).toBe('40000000.00');
+    expect(d.result!.ladder.reachablePool.population).toBe(500);
+
+    // A later boundary edit makes a new boundary row (boundaries are immutable) and keeps the rest.
+    const again = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: d.rowVersion,
+      body: { boundary: { includes: { replacementCycles: true } } },
+    });
+    const d2 = SizingView.parse(again.json()).draft!;
+    expect(d2.boundary.id).not.toBe(d.boundary.id);
+    expect(d2.boundary.includes).toEqual({
+      hardware: true,
+      software: true,
+      services: true,
+      replacementCycles: true,
+    });
+    expect(d2.boundary.productBoundary).toBe('Water-quality monitoring sensors and software');
+    const back = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: d2.rowVersion,
+      body: { boundary: { includes: { replacementCycles: false } } },
+    });
+    expect(back.statusCode).toBe(200);
+  });
+
+  it('a blank input is cleared to Unknown: no ladder value (never 0), MISSING_INPUT blocks commit', async () => {
+    const m = await mayaE();
+    const before = await get();
+    const stale = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: before.draft!.rowVersion - 1,
+      body: { clearInputKeys: ['capacity'] },
+    });
+    expect(stale.statusCode).toBe(412);
+    const both = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: before.draft!.rowVersion,
+      body: { clearInputKeys: ['capacity'], inputs: [linked('capacity', 'customers')] },
+    });
+    expect(both.statusCode).toBe(400);
+    const unknown = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: before.draft!.rowVersion,
+      body: { clearInputKeys: ['mystery'] },
+    });
+    expect(unknown.statusCode).toBe(400);
+
+    const res = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: before.draft!.rowVersion,
+      body: { clearInputKeys: ['capacity'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const d = SizingView.parse(res.json()).draft!;
+    expect(d.ledger.map((l) => l.inputKey)).not.toContain('capacity');
+    expect(d.result).toBeNull(); // nothing to show, never a ladder of zeros
+    expect(JSON.stringify(d)).not.toMatch(/"amount":"0(\.00)?"/);
+
+    const calc = await api(w, API.sizing.calculateDraft, m, { params: { caseRef: key } });
+    expect(calc.statusCode).toBe(422);
+    expect(calc.json()).toMatchObject({ code: 'CALCULATION_BLOCKED' });
+    expect(calc.json().checks.map((c: { key: string }) => c.key)).toEqual(['MISSING_INPUT']);
+    const commit = await api(w, API.sizing.commit, m, { params: { caseRef: key } });
+    expect(commit.statusCode).toBe(422);
+    expect(commit.json().checks[0].key).toBe('MISSING_INPUT');
+    expect(commit.json().title).toContain('Installation and support capacity');
+
+    const audit = await auditFor(w, w.tenants.e!, d.id);
+    expect(audit.map((x) => x.action)).toContain('sizing.draft_saved');
+
+    const refill = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: d.rowVersion,
+      body: { inputs: [linked('capacity', 'customers')] },
+    });
+    expect(SizingView.parse(refill.json()).draft!.result!.blocked).toBe(false);
+  });
+
+  it('commit keeps the basis text, product boundary and dedup rule in the immutable version', async () => {
+    const m = await mayaE();
+    const before = (await analyticsFor(w, w.tenants.e!, 'sizing_snapshot_created')).length;
+    const res = await api(w, API.sizing.commit, m, {
+      params: { caseRef: key },
+      idempotencyKey: 'e1-commit',
+    });
+    expect(res.statusCode).toBe(201);
+    const v = SizingVersion.parse(res.json());
+    const replay = await api(w, API.sizing.commit, m, {
+      params: { caseRef: key },
+      idempotencyKey: 'e1-commit',
+    });
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+    expect(v.result!.ladder.sam.value.amount).toBe('40000000.00');
+    expect(v.result!.ladder.reachablePool.population).toBe(500);
+    expect(v.ledger.find((l) => l.inputKey === 'reachable_pool')!.basis.text).toBe(CHANNEL);
+    expect(v.boundary.productBoundary).toBe('Water-quality monitoring sensors and software');
+    expect(v.dedupRuleText).toBe('Dedup run v2: same site ID');
+    const events = await analyticsFor(w, w.tenants.e!, 'sizing_snapshot_created');
+    expect(events).toHaveLength(before + 1);
+    expect((await auditFor(w, w.tenants.e!, v.id)).map((x) => x.action)).toContain(
+      'sizing.version_committed',
+    );
+    // A new draft copies the basis text forward; clearing it there leaves the committed version alone.
+    const d = await api(w, API.sizing.saveDraft, m, {
+      params: { caseRef: key },
+      ifMatch: v.rowVersion,
+      body: { inputs: [{ ...linked('reachable_pool', 'sites'), basisText: null }] },
+    });
+    const view = SizingView.parse(d.json());
+    expect(view.draft!.ledger.find((l) => l.inputKey === 'reachable_pool')!.basis.text).toBe(
+      'Partner coverage list',
+    );
+    expect(view.current!.ledger.find((l) => l.inputKey === 'reachable_pool')!.basis.text).toBe(CHANNEL);
+  });
+
+  it('refuses other tenants (404), a reviewer without model rights (403) and the agent', async () => {
+    const body = { clearInputKeys: ['capacity'] };
+    const other = await api(w, API.sizing.saveDraft, await w.cookie('b', 'maya'), {
+      params: { caseRef: key },
+      ifMatch: 0,
+      body,
+    });
+    expect(other.statusCode).toBe(404);
+    const cur = await get();
+    const lena = await api(w, API.sizing.saveDraft, await w.cookie('e', 'lena'), {
+      params: { caseRef: key },
+      ifMatch: cur.draft!.rowVersion,
+      body,
+    });
+    expect(lena.statusCode).toBe(403);
+    const agent = await agentCookie(w.t, w.tenants.e!);
+    const agentCommit = await api(w, API.sizing.commit, agent, { params: { caseRef: key } });
+    expect(agentCommit.statusCode).toBe(403);
+    expect(agentCommit.json()).toMatchObject({ code: 'AGENT_IDENTITY_FORBIDDEN' });
+    const agentSave = await api(w, API.sizing.saveDraft, agent, {
+      params: { caseRef: key },
+      ifMatch: cur.draft!.rowVersion,
+      body,
+    });
+    expect(agentSave.statusCode).toBe(404); // the agent never sees a case to edit
+    expect(agentSave.json()).toMatchObject({ code: 'NOT_FOUND' });
+    // Nothing changed.
+    expect((await get()).draft!.ledger.map((l) => l.inputKey)).toContain('capacity');
   });
 });

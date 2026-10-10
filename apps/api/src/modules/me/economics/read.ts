@@ -10,7 +10,7 @@ import type { Identity } from '../../../platform/context';
 import { isoDateOrNull, isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
 import { moneyLabel, peopleMap, who } from '../cases/access';
 import { calcOutput, ledgerRows } from '../sizing/read';
-import { driverRows, economicsVersions, type EconomicsVersionRow } from './model';
+import { driverRows, economicsVersions, opexScopeNoteOf, type EconomicsVersionRow } from './model';
 
 export async function toEconomicsVersion(
   tx: Tx,
@@ -20,6 +20,7 @@ export async function toEconomicsVersion(
 ): Promise<EconomicsVersion> {
   const result = await calcOutput<EconomicsOutput>(tx, v.calculation_result_id);
   const rows = await driverRows(tx, v.id);
+  const opexScope = opexScopeNoteOf(v.exclusions_text);
   const drivers = await ledgerRows(
     tx,
     identity,
@@ -34,6 +35,7 @@ export async function toEconomicsVersion(
       assumption_id: r.assumption_id,
       assumption_version_id: r.assumption_version_id,
       evidence_quality: null,
+      basis_text: r.input_key === 'annual_incremental_opex' && opexScope ? `Scope: ${opexScope}` : null,
     })),
     { modelVersion: v.version, versionCreatedAt: v.created_at, lineage: result?.lineage ?? [], compareTo },
   );

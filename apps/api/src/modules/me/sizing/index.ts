@@ -33,6 +33,17 @@ import { redactBlockedSizing, sizingView, toSizingVersion } from './read';
 type Patch = (typeof API.sizing.saveDraft)['body']['_output'];
 
 const MONEY = new Set(['currency_per_year_per_site', 'currency_per_year', 'currency_one_time']);
+const DEFAULT_DEDUP_RULE =
+  'Unique by site ID. Sites of one parent company stay separate when they buy separately.';
+const INCLUDES = {
+  hardware: 'includes_hardware',
+  software: 'includes_software',
+  services: 'includes_services',
+  replacementCycles: 'includes_replacement',
+} as const;
+
+const invalid = (path: string, code: string, message: string) =>
+  new ApiError('VALIDATION_FAILED', message, { errors: [{ path, code, message }] });
 
 async function loadCase(tx: Tx, ref: string): Promise<CaseRecord> {
   const c = await findCase(tx, ref);
@@ -185,10 +196,14 @@ async function ensureDraft(
       population_unit: b.populationUnit!,
       country_code: md.country,
       segment_label: md.segment ?? 'segment not stated',
-      product_boundary: md.product ?? 'product not stated',
+      product_boundary: b.productBoundary ?? md.product ?? 'product not stated',
       currency: b.currency!,
       price_year: b.priceYear!,
       annualization_method: b.annualizationMethod ?? null,
+      includes_hardware: b.includes?.hardware ?? false,
+      includes_software: b.includes?.software ?? false,
+      includes_services: b.includes?.services ?? false,
+      includes_replacement: b.includes?.replacementCycles ?? false,
     })
     .returning('id')
     .executeTakeFirstOrThrow();
@@ -202,8 +217,7 @@ async function ensureDraft(
       method: patch.method ?? 'aggregate_overlap',
       horizon_years: patch.horizonYears ?? md.horizon ?? 3,
       market_boundary_id: boundary.id,
-      dedup_rule_text:
-        'Unique by site ID. Sites of one parent company stay separate when they buy separately.',
+      dedup_rule_text: patch.dedupRuleText ?? DEFAULT_DEDUP_RULE,
       created_by: ctx.userId,
       created_at: ctx.now,
     })
@@ -221,6 +235,8 @@ async function applyPatch(
   const set: Record<string, unknown> = {};
   if (p.method) set.method = p.method;
   if (p.horizonYears) set.horizon_years = p.horizonYears;
+  if (p.dedupRuleText !== undefined && p.dedupRuleText !== d.dedup_rule_text)
+    set.dedup_rule_text = p.dedupRuleText;
   const old = await tx
     .selectFrom('me.market_boundary')
     .selectAll()
@@ -233,7 +249,11 @@ async function applyPatch(
       (b.populationUnit !== undefined && b.populationUnit !== old.population_unit) ||
       (b.currency !== undefined && b.currency !== old.currency) ||
       (b.priceYear !== undefined && b.priceYear !== old.price_year) ||
-      (b.annualizationMethod !== undefined && b.annualizationMethod !== old.annualization_method);
+      (b.annualizationMethod !== undefined && b.annualizationMethod !== old.annualization_method) ||
+      (b.productBoundary !== undefined && b.productBoundary !== old.product_boundary) ||
+      (Object.keys(INCLUDES) as (keyof typeof INCLUDES)[]).some(
+        (k) => b.includes?.[k] !== undefined && b.includes[k] !== old[INCLUDES[k]],
+      );
     if (changed) {
       const { id: _id, created_at: _c, ...rest } = old;
       const nb = await tx
@@ -246,6 +266,11 @@ async function applyPatch(
           price_year: b.priceYear ?? old.price_year,
           annualization_method:
             b.annualizationMethod !== undefined ? b.annualizationMethod : old.annualization_method,
+          product_boundary: b.productBoundary ?? old.product_boundary,
+          includes_hardware: b.includes?.hardware ?? old.includes_hardware,
+          includes_software: b.includes?.software ?? old.includes_software,
+          includes_services: b.includes?.services ?? old.includes_services,
+          includes_replacement: b.includes?.replacementCycles ?? old.includes_replacement,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
@@ -261,6 +286,21 @@ async function applyPatch(
     : old;
   if (Object.keys(set).length)
     await tx.updateTable('me.sizing_version').set(set).where('id', '=', d.id).execute();
+
+  // A blank input is cleared back to Unknown (never 0): the row goes, MISSING_INPUT blocks the commit.
+  const clear = [...new Set(p.clearInputKeys ?? [])];
+  for (const k of clear) {
+    if (!SIZING_INPUT_LABELS[k])
+      throw invalid('body.clearInputKeys', 'unknown_input', `Unknown sizing input "${k}".`);
+    if ((p.inputs ?? []).some((i) => i.inputKey === k))
+      throw invalid('body.clearInputKeys', 'conflict', `"${k}" is both set and cleared in one save.`);
+  }
+  if (clear.length)
+    await tx
+      .deleteFrom('me.sizing_input')
+      .where('sizing_version_id', '=', d.id)
+      .where('input_key', 'in', clear)
+      .execute();
 
   for (const i of p.inputs ?? []) {
     if (!SIZING_INPUT_LABELS[i.inputKey])
@@ -312,11 +352,19 @@ async function applyPatch(
         evidence_quality: s.origin_kind === 'licensed' ? 'strong' : 'some',
       };
     }
-    await tx
+    // Basis text (e.g. the reachable pool's channel definition): absent keeps it, null clears it.
+    const prev = await tx
       .deleteFrom('me.sizing_input')
       .where('sizing_version_id', '=', d.id)
       .where('input_key', '=', i.inputKey)
-      .execute();
+      .returning('basis_text')
+      .executeTakeFirst();
+    const basisText =
+      i.basisText === undefined
+        ? (prev?.basis_text ?? null)
+        : i.basisText?.trim()
+          ? i.basisText.trim()
+          : null;
     await tx
       .insertInto('me.sizing_input')
       .values({
@@ -325,6 +373,7 @@ async function applyPatch(
         input_key: i.inputKey,
         label: SIZING_INPUT_LABELS[i.inputKey]!,
         ...(row as { kind: string; value: string; unit: string }),
+        basis_text: basisText,
       })
       .execute();
   }
@@ -385,7 +434,7 @@ async function applyPatch(
           cohort_a_id: o.cohortAId,
           cohort_b_id: o.cohortBId,
           overlap_count: o.overlapCount,
-          method_text: 'Entered in the draft',
+          method_text: o.method ?? 'Entered in the draft',
         })
         .execute();
     }
@@ -481,6 +530,7 @@ export const sizingHandlers: HandlerMap = {
         {
           blocked: r.output ? r.output.blocked : true,
           blockingChecks: r.checks.filter((x) => x.blocking).length,
+          clearedInputs: ctx.body.clearInputKeys?.length ?? 0,
         },
       );
       return sizingView(t.tx, ctx.identity, c.id);
@@ -681,6 +731,8 @@ export const sizingHandlers: HandlerMap = {
           'Market boundary',
           (v: typeof va) => `${v.boundary.marketUnit} · ${v.boundary.currency} ${v.boundary.priceYear}`,
         ],
+        ['productBoundary', 'Product boundary', (v: typeof va) => v.boundary.productBoundary],
+        ['dedupRuleText', 'Dedup rule', (v: typeof va) => v.dedupRuleText],
       ] as const)
         if (f(va) !== f(vb)) changes.push({ inputKey: k, label, from: f(va), to: f(vb) });
       return { changes };
