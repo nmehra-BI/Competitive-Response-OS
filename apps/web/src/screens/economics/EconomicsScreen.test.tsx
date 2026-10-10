@@ -110,6 +110,42 @@ describe('S08 Economics', () => {
     expect(screen.getByText(/Snapshot v2 · committed .* read-only/)).toBeTruthy();
   });
 
+  it('editor (D-112 §3): header once, links, the one-time investment apart; a blank is Unknown, never 0', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/economics');
+    const header = await screen.findByRole('group', { name: 'Model header' });
+    expect((within(header).getByRole('textbox', { name: 'Currency' }) as HTMLInputElement).value).toBe('EUR');
+    expect((within(header).getByRole('textbox', { name: 'Base year' }) as HTMLInputElement).value).toBe(
+      '2026',
+    );
+    expect(screen.getByRole('textbox', { name: /^Opex scope note/ })).toBeTruthy();
+    // Each driver follows an assumption of the register (same unit) or holds a draft value.
+    const marginLink = screen.getByRole('combobox', {
+      name: 'Gross margin · assumption',
+    }) as HTMLSelectElement;
+    await waitFor(() => expect(marginLink.selectedOptions[0]!.textContent).toBe('ASM-09 · Gross margin 60%'));
+    // The one-time investment has its own block, outside the /year drivers table.
+    const drivers = screen.getByRole('table', { name: 'Economics drivers' });
+    expect(within(drivers).queryByText(/investment/i)).toBeNull();
+    const once = screen.getByRole('group', { name: 'One-time scale-entry investment' });
+    const field = within(once).getByRole('textbox', {
+      name: 'One-time scale-entry investment',
+    }) as HTMLInputElement;
+    expect(field.value).toBe('400');
+    const table = screen.getByRole('table', { name: 'Scenario table' });
+    await waitFor(() => expect(rowCells(table, 'Annual revenue')).toEqual(['€1.0m', '€2.0m', '€2.4m']));
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.blur(field);
+    expect(
+      (await screen.findAllByText('Not available — one-time investment not entered.')).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText('€0k one-time')).toBeNull();
+    expect(field.placeholder).toBe('Unknown');
+    // The /year scenarios do not move: one-time money was never part of them.
+    expect(rowCells(table, 'Annual revenue')).toEqual(['€1.0m', '€2.0m', '€2.4m']);
+    expect(screen.getByText('Recommendation incomplete')).toBeTruthy();
+  });
+
   it('shows Recommendation incomplete when the one-time investment is invalid', async () => {
     session.signIn(people.maya.id);
     renderAt('/me/cases/ME-104/economics');

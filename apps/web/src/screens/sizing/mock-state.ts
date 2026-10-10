@@ -229,6 +229,8 @@ export interface EconomicsDraftState {
   rowVersion: number;
   createdAt: string;
   input: EconomicsInput;
+  /** S08 editor (D-112 §3): what the annual incremental opex covers. */
+  opexScopeNote?: string;
 }
 export interface EconomicsCommitted {
   id: string;
@@ -236,6 +238,7 @@ export interface EconomicsCommitted {
   input: EconomicsInput;
   committedAt: string;
   committedBy: string;
+  opexScopeNote?: string;
 }
 
 // ---------------------------------------------------------------------------

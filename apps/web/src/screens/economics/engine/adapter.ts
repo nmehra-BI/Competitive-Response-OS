@@ -110,6 +110,20 @@ export const DRIVER_FIELDS: Readonly<Partial<Record<EconomicsDriverKey, DriverFi
     scale: 0.01,
     kind: 'rate',
   },
+  'adoption_rate.downside': {
+    inputKey: 'adoption_rate.downside',
+    prefix: '',
+    suffix: '%',
+    scale: 0.01,
+    kind: 'rate',
+  },
+  'adoption_rate.upside': {
+    inputKey: 'adoption_rate.upside',
+    prefix: '',
+    suffix: '%',
+    scale: 0.01,
+    kind: 'rate',
+  },
   gross_margin: { inputKey: 'gross_margin', prefix: '', suffix: '%', scale: 0.01, kind: 'rate' },
   annual_incremental_opex: {
     inputKey: 'annual_incremental_opex',

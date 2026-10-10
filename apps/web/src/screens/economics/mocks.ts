@@ -20,7 +20,15 @@ import {
 import { scoped } from '../mandate/mock-kit';
 import { assumptionList } from '../validation/mock-data';
 import { economicsEngine } from './engine/adapter';
-import { committedVersion, economicsCurrent, economicsView, financeReview, setDriver } from './mock-builders';
+import {
+  clearDriver,
+  committedVersion,
+  economicsCurrent,
+  economicsView,
+  financeReview,
+  registerValue,
+  setDriver,
+} from './mock-builders';
 
 const notFound = () => new MockProblem('NOT_FOUND', 'Not found.');
 /** The fixture adoption dispute's thread is WS8c journey state (../validation); these claim the rest. */
@@ -52,14 +60,30 @@ export const handlers: HttpHandler[] = [
     if (ifMatch !== d.rowVersion)
       throw new MockProblem('VERSION_CONFLICT', 'The economics draft changed elsewhere.');
     const next = structuredClone(d.input);
+    for (const k of body.clearInputKeys ?? []) {
+      if (body.drivers.some((x) => x.inputKey === k))
+        throw new MockProblem('VALIDATION_FAILED', `"${k}" is both set and cleared in one save.`);
+      if (!clearDriver(next, k))
+        throw new MockProblem('VALIDATION_FAILED', `Driver ${k} cannot be cleared in the demo.`);
+    }
     for (const x of body.drivers) {
       if (x.inputKey === 'reachable_pool') {
         throw new MockProblem('VALIDATION_FAILED', 'The reachable pool is edited in Sizing.');
       }
-      if (!setDriver(next, x.inputKey, x.value)) {
+      if (x.sourceId)
+        throw new MockProblem(
+          'VALIDATION_FAILED',
+          'Link the driver to an assumption; the assumption carries its evidence.',
+        );
+      const value = (x.assumptionId ? registerValue(x.assumptionId) : null) ?? x.value;
+      if (!setDriver(next, x.inputKey, value)) {
         throw new MockProblem('VALIDATION_FAILED', `Driver ${x.inputKey} cannot be edited.`);
       }
     }
+    if (body.currency) next.currency = body.currency;
+    if (body.priceYear) next.priceYear = body.priceYear;
+    if (body.horizonYears) next.horizonYears = body.horizonYears;
+    if (body.opexScopeNote) d.opexScopeNote = body.opexScopeNote;
     d.input = next;
     d.rowVersion += 1;
     return economicsView();
@@ -95,6 +119,7 @@ export const handlers: HttpHandler[] = [
       input: structuredClone(d.input),
       committedAt: nowIso(),
       committedBy: viewerId!,
+      opexScopeNote: d.opexScopeNote,
     };
     assessment.economics.committed.push(committed);
     assessment.economics.draft = {
@@ -103,6 +128,7 @@ export const handlers: HttpHandler[] = [
       rowVersion: 1,
       createdAt: committed.committedAt,
       input: structuredClone(d.input),
+      opexScopeNote: d.opexScopeNote,
     };
     return committedVersion(committed);
   }),

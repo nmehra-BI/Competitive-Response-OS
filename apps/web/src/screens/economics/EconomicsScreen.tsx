@@ -8,6 +8,7 @@
  */
 import {
   API,
+  MONEY_MEASURE_LABELS,
   REVIEWER_POSITION_LABELS,
   SCENARIO_LABELS,
   type Assumption,
@@ -24,6 +25,7 @@ import {
   ChartTable,
   Icon,
   KindTag,
+  Mono,
   ScenarioMark,
   SectionHeader,
   SegmentedControl,
@@ -38,15 +40,25 @@ import {
   formatScenarioRevenue,
 } from '@growth-os/ui';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { LineageDrawer } from '../../app/connected/LineageDrawer';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
-import { api, buildPath, queryKey } from '../../lib/api-client';
+import { api, ApiProblem, buildPath, queryKey } from '../../lib/api-client';
 import { usePublishAutosave, useDraft, type Versioned } from '../../lib/drafts';
 import { useApiQuery, useCommand } from '../../lib/query';
 import { useViewer } from '../../lib/session';
 import { FinanceReviewRequest, FinanceSignForm } from './FinanceReview';
+import {
+  DRIVER_SPECS,
+  econFormOf,
+  enteredValues,
+  missingDrivers,
+  ONE_TIME_KEY,
+  RECURRING_ORDER,
+  saveBody,
+  type EconForm,
+} from './editor-model';
 import '../sizing/assessment.css';
 import {
   DRIVER_FIELDS,
@@ -71,14 +83,7 @@ import {
 type Values = Record<string, string>;
 
 const MARK: Record<Scenario, string> = { downside: '▼', base: '●', upside: '▲' };
-const EDIT_ORDER = [
-  'annual_price',
-  'adoption_rate.base',
-  'gross_margin',
-  'annual_incremental_opex',
-  'capacity',
-  'one_time_investment',
-] as const;
+const EDIT_ORDER = [...RECURRING_ORDER, ONE_TIME_KEY] as const;
 
 function valuesOf(drivers: LedgerRow[]): Values {
   return Object.fromEntries(drivers.map((d) => [d.inputKey, d.value]));
@@ -108,7 +113,11 @@ function useLocalResult(draft: EconomicsVersion | null | undefined, values: Valu
   useEffect(() => {
     if (!draft || !values) return undefined;
     let live = true;
-    const input = economicsInputFromDrivers(draft, values);
+    const entered = enteredValues(values);
+    const input = economicsInputFromDrivers(
+      { ...draft, drivers: draft.drivers.filter((d) => d.inputKey in entered) },
+      entered,
+    );
     economicsEngine
       .calculate(input)
       .then((out) => {
@@ -129,7 +138,8 @@ function useLocalResult(draft: EconomicsVersion | null | undefined, values: Valu
 // ---------------------------------------------------------------------------
 
 function DriverInput({
-  row,
+  inputKey,
+  label,
   field,
   value,
   committedValue,
@@ -137,30 +147,42 @@ function DriverInput({
   onBlur,
   readOnly,
 }: {
-  row: LedgerRow;
+  inputKey: string;
+  label: string;
   field: DriverField;
+  /** '' = not entered (Unknown). */
   value: string;
   committedValue: string | undefined;
   onChange: (decimal: string | null, text: string) => void;
   onBlur: () => void;
   readOnly: boolean;
 }) {
-  const id = `in-${row.inputKey.replace(/\./g, '-')}`;
+  const id = `in-${inputKey.replace(/\./g, '-')}`;
   const errId = `${id}-err`;
-  const [text, setText] = useState(() => fieldText(field, value));
+  const [text, setText] = useState(() => (value === '' ? '' : fieldText(field, value)));
   const [invalid, setInvalid] = useState(false);
-  // Follow outside changes (reset, server echo) unless the field holds an invalid entry.
+  // Follow outside changes (reset, server echo, a new link) unless the field holds an invalid entry.
   useEffect(() => {
-    const parsed = fieldValue(field, text, value);
+    if (value === '') {
+      if (!invalid && text.trim() !== '') setText('');
+      return;
+    }
+    const parsed = text.trim() === '' ? null : fieldValue(field, text, value);
     if (!invalid && parsed !== value) setText(fieldText(field, value));
   }, [value]);
   const changed = differs(value, committedValue);
   if (readOnly) {
     return (
       <span className="gos-mono" style={{ fontSize: 13 }}>
-        {field.prefix}
-        {fieldText(field, value)}
-        {field.suffix === '%' ? '%' : ` ${field.suffix}`}
+        {value === '' ? (
+          'Unknown'
+        ) : (
+          <>
+            {field.prefix}
+            {fieldText(field, value)}
+            {field.suffix === '%' ? '%' : ` ${field.suffix}`}
+          </>
+        )}
       </span>
     );
   }
@@ -180,12 +202,20 @@ function DriverInput({
         className={changed ? 'as-num-input as-num-input--changed' : 'as-num-input'}
         inputMode="decimal"
         value={text}
+        placeholder="Unknown"
+        aria-label={label}
         aria-invalid={invalid || undefined}
         aria-describedby={invalid ? errId : undefined}
         onChange={(e) => {
           const t = e.target.value;
           setText(t);
-          const parsed = fieldValue(field, t, value);
+          // A blank clears the driver: it stays Unknown, never 0.
+          if (t.trim() === '') {
+            setInvalid(false);
+            onChange('', t);
+            return;
+          }
+          const parsed = fieldValue(field, t, value === '' ? '0' : value);
           setInvalid(parsed === null);
           onChange(parsed, t);
         }}
@@ -201,12 +231,51 @@ function DriverInput({
   );
 }
 
+/** "ASM-09 · Gross margin 60%" or a draft value: the driver's link to the assumption register. */
+function LinkSelect({
+  label,
+  unit,
+  value,
+  register,
+  onLink,
+  onBlur,
+}: {
+  label: string;
+  unit: string;
+  value: string | null;
+  register: readonly Assumption[];
+  onLink: (assumption: Assumption | null) => void;
+  onBlur: () => void;
+}) {
+  const fits = register.filter((a) => a.current.unit === unit && a.current.value !== null);
+  return (
+    <select
+      className="gos-select"
+      style={{ fontSize: 12.5, padding: '4px 6px', maxWidth: 260 }}
+      aria-label={`${label} · assumption`}
+      value={value ?? ''}
+      onChange={(e) => onLink(fits.find((a) => a.id === e.target.value) ?? null)}
+      onBlur={onBlur}
+    >
+      <option value="">Draft value · not linked</option>
+      {fits.map((a) => (
+        <option key={a.id} value={a.id}>
+          {`${a.key} · ${a.name}`}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function Drivers({
   shown,
-  values,
+  form,
   committed,
   readOnly,
+  register,
   onValue,
+  onLink,
+  onForm,
   onBlur,
   onReset,
   adoption,
@@ -214,21 +283,28 @@ function Drivers({
   onDispute,
 }: {
   shown: EconomicsVersion;
-  values: Values;
+  form: EconForm;
   committed: EconomicsVersion | null;
   readOnly: boolean;
+  register: readonly Assumption[];
   onValue: (key: string, decimal: string) => void;
+  onLink: (key: string, a: Assumption | null) => void;
+  onForm: (next: Partial<EconForm>) => void;
   onBlur: () => void;
   onReset: () => void;
   adoption: Assumption | undefined;
   canDispute: boolean;
   onDispute: () => void;
 }) {
+  const values = form.values;
   const committedValues = committed ? valuesOf(committed.drivers) : {};
   const changedCount = readOnly
     ? 0
-    : EDIT_ORDER.filter((k) => values[k] !== undefined && differs(values[k], committedValues[k])).length;
+    : [...RECURRING_ORDER, ONE_TIME_KEY].filter(
+        (k) => values[k] !== undefined && differs(values[k], committedValues[k]),
+      ).length;
   const reach = shown.drivers.find((d) => d.inputKey === 'reachable_pool');
+  const versionWord = committed ? `snapshot v${committed.version}` : 'no snapshot yet';
   return (
     <section aria-labelledby="dr">
       <SectionHeader
@@ -237,7 +313,7 @@ function Drivers({
         subtitle={
           readOnly
             ? `Snapshot v${shown.version} is read-only. The approved snapshot never recalculates.`
-            : 'Edit in draft. The approved snapshot never recalculates.'
+            : 'Edit in draft. A blank driver stays Unknown. The approved snapshot never recalculates.'
         }
         right={
           readOnly ? null : (
@@ -250,22 +326,69 @@ function Drivers({
                   fontWeight: changedCount ? 500 : 400,
                 }}
               >
-                {changedCount
-                  ? `Draft · ${changedCount} driver${changedCount > 1 ? 's' : ''} differ from snapshot v${committed?.version ?? ''}`
-                  : `Matches snapshot v${committed?.version ?? ''}`}
+                {!committed
+                  ? 'Draft · no snapshot yet'
+                  : changedCount
+                    ? `Draft · ${changedCount} driver${changedCount > 1 ? 's' : ''} differ from ${versionWord}`
+                    : `Matches ${versionWord}`}
               </span>
-              <Button
-                variant="ghost"
-                onClick={onReset}
-                disabled={!changedCount}
-                disabledReason={changedCount ? undefined : 'Nothing to reset'}
-              >
-                {`Reset to v${committed?.version ?? ''}`}
-              </Button>
+              {committed ? (
+                <Button
+                  variant="ghost"
+                  onClick={onReset}
+                  disabled={!changedCount}
+                  disabledReason={changedCount ? undefined : 'Nothing to reset'}
+                >
+                  {`Reset to v${committed.version}`}
+                </Button>
+              ) : null}
             </span>
           )
         }
       />
+      <div className="as-strip" role="group" aria-label="Model header">
+        {readOnly ? (
+          <Mono size={12.5} strong>
+            {shown.currency} · {shown.priceYear} prices · horizon {shown.horizonYears} years
+          </Mono>
+        ) : (
+          <>
+            <label className="as-row" style={{ gap: 6 }}>
+              <span className="as-faint">Currency</span>
+              <input
+                className="gos-input"
+                style={{ width: 70, padding: '4px 8px' }}
+                maxLength={3}
+                value={form.currency}
+                onChange={(e) => onForm({ currency: e.target.value.toUpperCase() })}
+                onBlur={onBlur}
+              />
+            </label>
+            <label className="as-row" style={{ gap: 6 }}>
+              <span className="as-faint">Base year</span>
+              <input
+                className="gos-input"
+                style={{ width: 80, padding: '4px 8px' }}
+                inputMode="numeric"
+                value={form.priceYear}
+                onChange={(e) => onForm({ priceYear: e.target.value })}
+                onBlur={onBlur}
+              />
+            </label>
+            <label className="as-row" style={{ gap: 6 }}>
+              <span className="as-faint">Horizon (years)</span>
+              <input
+                className="gos-input"
+                style={{ width: 60, padding: '4px 8px' }}
+                inputMode="numeric"
+                value={form.horizonYears}
+                onChange={(e) => onForm({ horizonYears: e.target.value })}
+                onBlur={onBlur}
+              />
+            </label>
+          </>
+        )}
+      </div>
       <Card>
         <div className="gos-table-scroll">
           <table className="gos-table" aria-label="Economics drivers" style={{ minWidth: 720 }}>
@@ -278,11 +401,11 @@ function Drivers({
               </tr>
             </thead>
             <tbody>
-              {EDIT_ORDER.map((k) => {
+              {RECURRING_ORDER.map((k) => {
                 const row = shown.drivers.find((d) => d.inputKey === k);
                 const field = DRIVER_FIELDS[k];
-                if (!row || !field) return null;
-                const id = `in-${k.replace(/\./g, '-')}`;
+                if (!field || (readOnly && !row)) return null;
+                const label = row?.name ?? DRIVER_SPECS[k].label;
                 return (
                   <tr key={k}>
                     <th
@@ -294,13 +417,14 @@ function Drivers({
                         fontWeight: 500,
                       }}
                     >
-                      {readOnly ? row.name : <label htmlFor={id}>{row.name}</label>}
+                      {label}
                     </th>
                     <td>
                       <DriverInput
-                        row={row}
+                        inputKey={k}
+                        label={label}
                         field={field}
-                        value={values[k] ?? row.value}
+                        value={values[k] ?? row?.value ?? ''}
                         committedValue={committedValues[k]}
                         onChange={(d) => {
                           if (d !== null) onValue(k, d);
@@ -311,7 +435,11 @@ function Drivers({
                     </td>
                     <td>
                       <span className="as-row" style={{ gap: 6 }}>
-                        <KindTag kind={row.kind} detail={row.basis.owner?.displayName} small />
+                        {row ? (
+                          <KindTag kind={row.kind} detail={row.basis.owner?.displayName} small />
+                        ) : (
+                          <span className="as-muted">Not entered</span>
+                        )}
                         {k === 'adoption_rate.base' && adoption?.openDispute ? (
                           <a href="#dispute" className="as-flag">
                             <Icon name="message" size={12} />
@@ -330,30 +458,50 @@ function Drivers({
                         ) : null}
                       </span>
                     </td>
-                    <td style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>{row.basis.text}</td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>
+                      {readOnly ? (
+                        row?.basis.text
+                      ) : (
+                        <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <LinkSelect
+                            label={label}
+                            unit={DRIVER_SPECS[k].unit}
+                            value={form.links[k] ?? null}
+                            register={register}
+                            onLink={(a) => onLink(k, a)}
+                            onBlur={onBlur}
+                          />
+                          {row?.basis.text ? <span>{row.basis.text}</span> : null}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
-              {reach ? (
-                <tr>
-                  <th
-                    scope="row"
-                    style={{
-                      background: 'transparent',
-                      fontSize: 13,
-                      color: 'var(--text-secondary)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {reach.name}
-                  </th>
-                  <td className="gos-mono" style={{ fontSize: 13 }}>
-                    {formatCount(Number(reach.value))} sites
-                  </td>
-                  <td>
+              <tr>
+                <th
+                  scope="row"
+                  style={{
+                    background: 'transparent',
+                    fontSize: 13,
+                    color: 'var(--text-secondary)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {reach?.name ?? DRIVER_SPECS.reachable_pool.label}
+                </th>
+                <td className="gos-mono" style={{ fontSize: 13 }}>
+                  {reach ? `${formatCount(Number(reach.value))} sites` : 'Unknown'}
+                </td>
+                <td>
+                  {reach ? (
                     <KindTag kind={reach.kind} detail={reach.basis.owner?.displayName} small />
-                  </td>
-                  <td style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>
+                  ) : (
+                    <span className="as-muted">Not entered</span>
+                  )}
+                </td>
+                <td style={{ color: 'var(--text-secondary)', fontSize: 12.5 }}>
+                  {reach ? (
                     <Link
                       to="../sizing?input=input.reachable_pool&view=lineage"
                       relative="path"
@@ -361,13 +509,99 @@ function Drivers({
                     >
                       {reach.basis.text}
                     </Link>
-                  </td>
-                </tr>
-              ) : null}
+                  ) : readOnly ? null : (
+                    <LinkSelect
+                      label={DRIVER_SPECS.reachable_pool.label}
+                      unit="sites"
+                      value={form.links['reachable_pool'] ?? null}
+                      register={register}
+                      onLink={(a) => onLink('reachable_pool', a)}
+                      onBlur={onBlur}
+                    />
+                  )}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
       </Card>
+      {readOnly ? null : (
+        <div style={{ marginTop: 10 }} onBlur={onBlur}>
+          <TextAreaField
+            label="Opex scope note"
+            hint="what the annual incremental opex covers"
+            rows={2}
+            value={form.opexScopeNote}
+            onChange={(v) => onForm({ opexScopeNote: v })}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The one-time investment in its own block: never next to, added to or compared with /year money. */
+function OneTimeDriver({
+  shown,
+  form,
+  committed,
+  readOnly,
+  register,
+  onValue,
+  onLink,
+  onBlur,
+}: {
+  shown: EconomicsVersion;
+  form: EconForm;
+  committed: EconomicsVersion | null;
+  readOnly: boolean;
+  register: readonly Assumption[];
+  onValue: (key: string, decimal: string) => void;
+  onLink: (key: string, a: Assumption | null) => void;
+  onBlur: () => void;
+}) {
+  const row = shown.drivers.find((d) => d.inputKey === ONE_TIME_KEY);
+  const field = DRIVER_FIELDS[ONE_TIME_KEY]!;
+  const label = MONEY_MEASURE_LABELS.one_time_investment;
+  const value = form.values[ONE_TIME_KEY] ?? row?.value ?? '';
+  return (
+    <section aria-labelledby="ot" className="as-section">
+      <SectionHeader
+        id="ot"
+        title="One-time investment"
+        subtitle="Kept apart from every /year figure: never added, subtracted or compared."
+      />
+      <div className="as-box as-editor-onetime" role="group" aria-label={label}>
+        <div className="as-row" style={{ gap: '8px 16px' }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>{label}</span>
+          <DriverInput
+            inputKey={ONE_TIME_KEY}
+            label={label}
+            field={field}
+            value={value}
+            committedValue={committed?.drivers.find((d) => d.inputKey === ONE_TIME_KEY)?.value}
+            onChange={(d) => {
+              if (d !== null) onValue(ONE_TIME_KEY, d);
+            }}
+            onBlur={onBlur}
+            readOnly={readOnly}
+          />
+          {readOnly ? (
+            <span className="as-muted" style={{ fontSize: 12.5 }}>
+              {row?.basis.text}
+            </span>
+          ) : (
+            <LinkSelect
+              label={label}
+              unit="currency_one_time"
+              value={form.links[ONE_TIME_KEY] ?? null}
+              register={register}
+              onLink={(a) => onLink(ONE_TIME_KEY, a)}
+              onBlur={onBlur}
+            />
+          )}
+        </div>
+      </div>
     </section>
   );
 }
@@ -924,40 +1158,46 @@ export default function EconomicsScreen() {
   // The view carries the latest committed snapshot; `version` pins the read-only view of it.
   const pinned = current && versionParam === String(current.version) ? current.version : null;
 
-  const server: Versioned<Values> | undefined = useMemo(
-    () => (draftV ? { value: valuesOf(draftV.drivers), rowVersion: draftV.rowVersion } : undefined),
+  const server: Versioned<EconForm> | undefined = useMemo(
+    () => (draftV ? { value: econFormOf(draftV), rowVersion: draftV.rowVersion } : undefined),
     [draftV],
   );
-  const draft = useDraft<Values>({
+  const serverDraft = useRef(draftV);
+  serverDraft.current = draftV;
+  const draft = useDraft<EconForm>({
     storageKey:
-      draftV && viewer.data ? `${viewer.data.tenant.id}:economics:${caseKey}:v${draftV.version}` : null,
+      draftV && viewer.data
+        ? `${viewer.data.tenant.id}:economics-editor:${caseKey}:v${draftV.version}`
+        : null,
     server,
     save: async (value, rowVersion) => {
-      const body = {
-        drivers: EDIT_ORDER.filter((k) => value[k] !== undefined).map((k) => ({
-          inputKey: k,
-          value: value[k]!,
-        })),
-      };
-      const view = await api(API.economics.saveDraft, {
-        params: { caseRef: caseKey },
-        body,
-        ifMatch: rowVersion,
-      });
-      qc.setQueryData(queryKey(API.economics.get, { caseRef: caseKey }, undefined), view);
-      return { value: valuesOf(view.draft!.drivers), rowVersion: view.draft!.rowVersion };
+      setSaveError(null);
+      try {
+        const view = await api(API.economics.saveDraft, {
+          params: { caseRef: caseKey },
+          body: saveBody(value, serverDraft.current!),
+          ifMatch: rowVersion,
+        });
+        serverDraft.current = view.draft;
+        qc.setQueryData(queryKey(API.economics.get, { caseRef: caseKey }, undefined), view);
+        return { value: econFormOf(view.draft!), rowVersion: view.draft!.rowVersion };
+      } catch (e) {
+        if (!(e instanceof ApiProblem && e.code === 'VERSION_CONFLICT')) setSaveError(e);
+        throw e;
+      }
     },
     reload: async () => {
       const view = await api(API.economics.get, { params: { caseRef: caseKey } });
-      return view.draft
-        ? { value: valuesOf(view.draft.drivers), rowVersion: view.draft.rowVersion }
-        : undefined;
+      return view.draft ? { value: econFormOf(view.draft), rowVersion: view.draft.rowVersion } : undefined;
     },
   });
   usePublishAutosave(pinned === null && draftV ? draft.status : null);
 
-  const local = useLocalResult(draftV, draft.value);
+  const local = useLocalResult(draftV, draft.value?.values);
   const commit = useCommand(API.economics.commit);
+  const [saveError, setSaveError] = useState<unknown>(null);
+  // Start a draft: from the register and the committed sizing (first), or from the snapshot.
+  const start = useCommand(API.economics.saveDraft);
 
   if (q.isPending) {
     return (
@@ -977,6 +1217,8 @@ export default function EconomicsScreen() {
 
   const readOnly = pinned !== null || !draftV;
   const shown: EconomicsVersion | null = readOnly ? current : draftV;
+  const startDraft = (ifMatch: number) =>
+    start.mutate({ params: { caseRef: caseKey }, ifMatch, body: { drivers: [] } });
   if (!shown) {
     return (
       <div className="as-page">
@@ -984,18 +1226,42 @@ export default function EconomicsScreen() {
         <Banner
           tone="neutral"
           title="No economics yet"
-          body="Commit sizing first; economics starts from the committed ladder."
+          body="Commit sizing first; economics starts from the committed ladder and the assumption register."
+          actions={
+            <Button
+              variant="primary"
+              icon="pencilruler"
+              onClick={() => startDraft(0)}
+              disabled={start.isPending}
+              disabledReason={start.isPending ? 'Starting…' : undefined}
+            >
+              Start the economics model
+            </Button>
+          }
         />
+        {start.error ? <ProblemBanner error={start.error} /> : null}
       </div>
     );
   }
-  const values: Values = readOnly ? valuesOf(shown.drivers) : (draft.value ?? valuesOf(shown.drivers));
-  const result: EconomicsOutput | null = readOnly ? shown.result : (local ?? shown.result);
+  const form: EconForm = readOnly ? econFormOf(shown) : (draft.value ?? econFormOf(shown));
+  const values: Values = enteredValues(form.values);
+  const missing = readOnly ? [] : missingDrivers(form);
+  const result: EconomicsOutput | null = readOnly
+    ? shown.result
+    : missing.length
+      ? null
+      : (local ?? shown.result);
   const snapshotResult = current?.result ?? null;
   const adoption = register.data?.items.find((a) => a.inputKey === 'adoption_rate.base');
   const canDispute = !!viewerId && !!adoption && adoption.owner.id !== viewerId;
   const changed =
-    !readOnly && EDIT_ORDER.some((k) => current && differs(values[k], valuesOf(current.drivers)[k]));
+    !readOnly &&
+    (!current ||
+      EDIT_ORDER.some((k) => differs(form.values[k], valuesOf(current.drivers)[k])) ||
+      form.currency !== current.currency ||
+      form.priceYear !== String(current.priceYear) ||
+      form.horizonYears !== String(current.horizonYears));
+  const setForm = (next: Partial<EconForm>) => draft.set((p) => ({ ...p, ...next }));
   const blocking = result?.checks.filter((c) => c.blocking) ?? [];
   const capped = result?.checks.filter((c) => c.key === 'CAPACITY_CAP_APPLIED') ?? [];
 
@@ -1026,12 +1292,31 @@ export default function EconomicsScreen() {
           live={false}
         />
       ) : null}
-      {blocking.length ? (
+      {readOnly && pinned === null && current && !draftV ? (
+        <div className="as-row">
+          <Button
+            variant="secondary"
+            icon="pencil"
+            onClick={() => startDraft(current.rowVersion)}
+            disabled={start.isPending}
+            disabledReason={start.isPending ? 'Starting…' : undefined}
+          >
+            {`Edit drivers in draft v${current.version + 1}`}
+          </Button>
+          {start.error ? <ProblemBanner error={start.error} /> : null}
+        </div>
+      ) : null}
+      {blocking.length || missing.length ? (
         <Banner
           tone="warn"
           title="Recommendation incomplete"
           body={
             <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {missing.length ? (
+                <li>
+                  {`Not available — add ${missing.map((k) => DRIVER_SPECS[k].label).join(', ')} before calculating.`}
+                </li>
+              ) : null}
               {blocking.map((c) => (
                 <li key={`${c.key}-${c.inputKeys.join()}`}>{c.message}</li>
               ))}
@@ -1039,6 +1324,7 @@ export default function EconomicsScreen() {
           }
         />
       ) : null}
+      {saveError ? <ProblemBanner error={saveError} /> : null}
       {draft.conflict ? (
         <Banner
           tone="warn"
@@ -1060,12 +1346,28 @@ export default function EconomicsScreen() {
         <div className="as-main">
           <Drivers
             shown={shown}
-            values={values}
+            form={form}
             committed={current}
             readOnly={readOnly}
-            onValue={(k, v) => draft.set((prev) => ({ ...prev, [k]: v }))}
+            register={register.data?.items ?? []}
+            onValue={(k, v) =>
+              draft.set((prev) => ({
+                ...prev,
+                values: { ...prev.values, [k]: v },
+                // A typed value is a draft value: the server unlinks it unless it equals the register.
+                links: v === '' ? { ...prev.links, [k]: null } : prev.links,
+              }))
+            }
+            onLink={(k, a) =>
+              draft.set((prev) => ({
+                ...prev,
+                links: { ...prev.links, [k]: a?.id ?? null },
+                values: a?.current.value ? { ...prev.values, [k]: a.current.value } : prev.values,
+              }))
+            }
+            onForm={setForm}
             onBlur={() => void draft.flush()}
-            onReset={() => current && draft.set(() => valuesOf(current.drivers))}
+            onReset={() => current && draft.set(() => econFormOf(current))}
             adoption={adoption}
             canDispute={canDispute}
             onDispute={() => setDisputing(true)}
@@ -1080,7 +1382,9 @@ export default function EconomicsScreen() {
           <ScenarioTable
             result={result}
             snapshot={snapshotResult}
-            drivers={shown.drivers.map((d) => ({ ...d, value: values[d.inputKey] ?? d.value }))}
+            drivers={shown.drivers
+              .filter((d) => readOnly || d.inputKey in values)
+              .map((d) => ({ ...d, value: values[d.inputKey] ?? d.value }))}
             readOnly={readOnly}
             onLineage={(node) => patch({ input: node, view: 'lineage' })}
           />
@@ -1089,6 +1393,28 @@ export default function EconomicsScreen() {
               {capped.map((c) => c.message).join(' ')}
             </p>
           ) : null}
+          <OneTimeDriver
+            shown={shown}
+            form={form}
+            committed={current}
+            readOnly={readOnly}
+            register={register.data?.items ?? []}
+            onValue={(k, v) =>
+              draft.set((prev) => ({
+                ...prev,
+                values: { ...prev.values, [k]: v },
+                links: v === '' ? { ...prev.links, [k]: null } : prev.links,
+              }))
+            }
+            onLink={(k, a) =>
+              draft.set((prev) => ({
+                ...prev,
+                links: { ...prev.links, [k]: a?.id ?? null },
+                values: a?.current.value ? { ...prev.values, [k]: a.current.value } : prev.values,
+              }))
+            }
+            onBlur={() => void draft.flush()}
+          />
           <MoneyCards result={result} scenario={scenario} values={values} />
           <div className="as-actions">
             <FinanceReviewRequest
@@ -1103,9 +1429,9 @@ export default function EconomicsScreen() {
                   await draft.flush();
                   commit.mutate({ params: { caseRef: caseKey } });
                 }}
-                disabled={!changed || blocking.length > 0 || commit.isPending}
+                disabled={!changed || blocking.length > 0 || missing.length > 0 || commit.isPending}
                 disabledReason={
-                  blocking.length
+                  blocking.length || missing.length
                     ? 'Blocked: recommendation incomplete.'
                     : !changed
                       ? `No changes from snapshot v${current?.version ?? ''}.`
@@ -1141,7 +1467,9 @@ export default function EconomicsScreen() {
           <WhatMustBeTrue result={result} values={values} version={shown} />
           <CustomersChart
             result={result}
-            drivers={shown.drivers.map((d) => ({ ...d, value: values[d.inputKey] ?? d.value }))}
+            drivers={shown.drivers
+              .filter((d) => readOnly || d.inputKey in values)
+              .map((d) => ({ ...d, value: values[d.inputKey] ?? d.value }))}
           />
           {data.financeReview ? (
             <aside

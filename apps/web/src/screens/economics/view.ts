@@ -75,7 +75,12 @@ export function cellText(s: EconomicsScenarioOutput, m: MeasureKey, capacity: nu
 
 /** True when the cell differs from the committed snapshot (decimal comparison, not string). */
 export function differs(a: string | undefined, b: string | undefined): boolean {
-  if (a === undefined || b === undefined) return a !== b;
+  // '' is a cleared driver (Unknown): it differs from any entered value and is never read as 0.
+  const x = a === '' ? undefined : a;
+  const y = b === '' ? undefined : b;
+  if (x === undefined || y === undefined) return x !== y;
+  a = x;
+  b = y;
   return !new Decimal(a).eq(new Decimal(b));
 }
 
