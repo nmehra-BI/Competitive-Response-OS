@@ -82,6 +82,8 @@ export interface MockJiraOptions {
   holdMs?: number;
   port?: number;
   host?: string;
+  /** Ignore `properties` in create requests (to test the read-back and fallback). */
+  dropCreateProperties?: boolean;
   /** Scopes the consent grants (default: what was asked). */
   grantedScopes?: string[];
 }
@@ -376,6 +378,8 @@ export async function startMockJira(opts: MockJiraOptions = {}): Promise<MockJir
       }
       const f = fault('property_put');
       if (f === 'http_5xx') return reply(503, { errorMessages: ['Service unavailable'] });
+      if (f === 'permission_denied')
+        return reply(403, { errorMessages: ['Edit issues permission required'] });
       const existed = prop in issue.properties;
       issue.properties[prop] = body;
       return reply(existed ? 200 : 201);
@@ -413,11 +417,14 @@ export async function startMockJira(opts: MockJiraOptions = {}): Promise<MockJir
       assigneeAccountId: assignee,
       duedate: typeof fields.duedate === 'string' ? fields.duedate : null,
       labels: Array.isArray(fields.labels) ? fields.labels.map(String) : [],
-      properties: Object.fromEntries(
-        (Array.isArray(body?.properties) ? (body!.properties as { key: string; value: unknown }[]) : []).map(
-          (x) => [x.key, x.value],
-        ),
-      ),
+      properties: opts.dropCreateProperties
+        ? {}
+        : Object.fromEntries(
+            (Array.isArray(body?.properties)
+              ? (body!.properties as { key: string; value: unknown }[])
+              : []
+            ).map((x) => [x.key, x.value]),
+          ),
       createdAt: new Date().toISOString(),
     };
     issues.push(issue);

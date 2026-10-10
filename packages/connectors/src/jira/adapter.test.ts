@@ -94,8 +94,10 @@ describe('createTask and reconcile', () => {
     expect(issue!.assigneeAccountId).toBe(mock.accountIdOf(JONAS));
     expect(issue!.duedate).toBe('2026-12-04');
     expect(JSON.stringify(issue!.description)).toContain('ME-104 · approved under G2 · Snapshot v3');
-    // The property is written in the create request and confirmed with a PUT before success.
-    expect(mock.calls.filter((x) => x.op === 'property_put')).toHaveLength(1);
+    // The property is written in the create request and read back before success; no edit needed
+    // (the integration account has Browse, Create and Assign only).
+    expect(mock.calls.filter((x) => x.op === 'property_get')).toHaveLength(1);
+    expect(mock.calls.filter((x) => x.op === 'property_put')).toHaveLength(0);
   });
 
   it('is idempotent by key: a repeat finds the issue instead of creating another', async () => {
@@ -106,6 +108,18 @@ describe('createTask and reconcile', () => {
     expect(creates()).toBe(1);
     expect(await c.findByIdempotencyKey(input(1).idempotencyKey)).toEqual(a);
     expect(await c.findByIdempotencyKey(input(2).idempotencyKey)).toBeNull();
+  });
+
+  it('if Jira drops the property at create, it is set; without Edit issues the label still finds it', async () => {
+    await mock.close();
+    await setup({ dropCreateProperties: true });
+    await c.createTask(input(1));
+    expect(mock.issues()[0]!.properties[IDEMPOTENCY_PROPERTY]).toEqual({ key: input(1).idempotencyKey });
+    mock.setFaults([{ mode: 'permission_denied', match: { op: 'property_put' } }]);
+    const ref = await c.createTask(input(2));
+    expect(mock.issues()[1]!.properties[IDEMPOTENCY_PROPERTY]).toBeUndefined();
+    expect(await c.findByIdempotencyKey(input(2).idempotencyKey)).toEqual(ref);
+    expect(mock.issues()).toHaveLength(2);
   });
 
   it('concurrent calls for one key create one issue', async () => {

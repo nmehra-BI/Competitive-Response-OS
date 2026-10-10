@@ -244,12 +244,19 @@ export function createJiraConnector(opts: JiraConnectorOptions): TaskConnector {
     let out: AssigneeLookup;
     if (exact ?? only) out = { accountId: (exact ?? only)!.accountId };
     else {
-      const all = await call('GET', `/user/search?query=${q}&maxResults=5`, {
-        ...d,
-        action: 'look up users',
-      });
+      // Searching all users needs the global "Browse users and groups" permission; without it (403)
+      // the person may exist, so the problem is reported against the project.
+      const all = await call(
+        'GET',
+        `/user/search?query=${q}&maxResults=5`,
+        { ...d, action: 'look up users' },
+        undefined,
+        (st) => st === 200 || st === 403,
+      );
       const found = (Array.isArray(all.body) ? all.body : []) as JiraUser[];
-      out = { problem: found.length ? 'assignee_not_in_project' : 'assignee_not_found' };
+      out = {
+        problem: found.length || all.status === 403 ? 'assignee_not_in_project' : 'assignee_not_found',
+      };
     }
     assignees.set(cacheKey, out);
     return out;
@@ -327,15 +334,27 @@ export function createJiraConnector(opts: JiraConnectorOptions): TaskConnector {
     });
     const issueKey = (created.body as { key?: unknown } | null)?.key;
     if (typeof issueKey !== 'string') throw new ConnectorError('timeout_ambiguous', MESSAGES.timeout);
-    // Set the property again (idempotent PUT) so success is reported only with the key on the issue.
-    // The issue exists either way: any failure here is ambiguous and goes to reconcile, which finds it.
+    // Success is reported only with the key on the issue: read the property back (Browse only). If
+    // Jira dropped it, set it (needs Edit issues, which D-121 does not grant: a 403 leaves the key
+    // label, written in the same create request, as the reconcile handle). The issue exists either
+    // way, so any other failure here is ambiguous and goes to reconcile, which finds it by label.
     try {
-      await call(
-        'PUT',
+      const prop = await call(
+        'GET',
         `/issue/${encodeURIComponent(issueKey)}/properties/${IDEMPOTENCY_PROPERTY}`,
-        { ...d, action: 'set the issue property' },
-        { key },
+        { ...d, write: false, action: 'read the issue property' },
+        undefined,
+        (st) => st === 200 || st === 404,
       );
+      const value = (prop.body as { value?: { key?: unknown } } | null)?.value;
+      if (prop.status === 404 || value?.key !== key)
+        await call(
+          'PUT',
+          `/issue/${encodeURIComponent(issueKey)}/properties/${IDEMPOTENCY_PROPERTY}`,
+          { ...d, action: 'set the issue property' },
+          { key },
+          (st) => (st >= 200 && st < 300) || st === 403,
+        );
     } catch (e) {
       if (e instanceof ConnectorError && e.kind === 'token_expired') throw e;
       throw new ConnectorError('timeout_ambiguous', MESSAGES.timeout);
