@@ -7,7 +7,7 @@
 import { API } from '@growth-os/contracts';
 import { assumptions, cases, people } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
-import { findCase } from '../../mocks/data';
+import { adminConnections, findCase, personRef } from '../../mocks/data';
 import { mock, MockProblem } from '../../mocks/define';
 import { state } from '../../mocks/state';
 import { g2Package } from '../decisions/mock-data';
@@ -22,6 +22,7 @@ import {
   PREVIEW_HASH,
   PREVIEW_ID,
   TASK_SET_ID,
+  taskDrafts,
   taskPreview,
   taskSet,
 } from './mock-data';
@@ -269,4 +270,142 @@ export const handlers: HttpHandler[] = [
       }),
     ),
   ),
+
+  // ----- S09 "Validation tasks · Draft" (D-113): edit, add or remove unsent tasks -----
+  mock(API.taskSync.addDraftTask, ({ params, body, viewerId }) => {
+    const set = requireDraftSet(params.id, viewerId);
+    const d = taskDrafts();
+    const ordinal = Math.max(0, ...set.tasks.map((t) => t.ordinal), ...d.added.map((t) => t.ordinal)) + 1;
+    const base = set.tasks[0]!;
+    d.added.push({
+      ...base,
+      id: `a57eb840-0000-4000-8000-${String(ordinal).padStart(12, '0')}`,
+      ordinal,
+      title: body.title,
+      owner: personRef(body.ownerId),
+      dueOn: body.dueOn,
+      deliverable: body.deliverable,
+      function: body.function ?? 'strategy',
+      status: 'not_started',
+      sync: { ...base.sync, status: 'not_sent', externalKey: null, attempts: 0, confirmedAt: null },
+      rowVersion: 1,
+    });
+    return taskSet(viewerId);
+  }),
+  mock(API.taskSync.editDraftTask, ({ params, body, ifMatch, viewerId }) => {
+    const set = requireDraftSet(TASK_SET_ID, viewerId);
+    const t = requireUnsent(set.tasks.find((x) => x.id === params.id));
+    if (ifMatch !== null && ifMatch !== t.rowVersion)
+      throw new MockProblem('VERSION_CONFLICT', 'This draft changed since you opened it.');
+    const d = taskDrafts();
+    const next = {
+      title: body.title ?? t.title,
+      ownerId: body.ownerId ?? t.owner!.id,
+      dueOn: body.dueOn !== undefined ? body.dueOn : t.dueOn,
+      deliverable: body.deliverable ?? t.deliverable,
+    };
+    const added = d.added.find((x) => x.id === t.id);
+    if (added)
+      Object.assign(added, { ...next, owner: personRef(next.ownerId), rowVersion: t.rowVersion + 1 });
+    else {
+      d.edits.set(t.id, next);
+      d.rowVersions.set(t.id, t.rowVersion + 1);
+    }
+    return taskSet(viewerId).tasks.find((x) => x.id === t.id)!;
+  }),
+  mock(API.taskSync.removeDraftTask, ({ params, ifMatch, viewerId }) => {
+    const set = requireDraftSet(TASK_SET_ID, viewerId);
+    const t = requireUnsent(set.tasks.find((x) => x.id === params.id));
+    if (ifMatch !== null && ifMatch !== t.rowVersion)
+      throw new MockProblem('VERSION_CONFLICT', 'This draft changed since you opened it.');
+    const d = taskDrafts();
+    d.added = d.added.filter((x) => x.id !== t.id);
+    d.removed.add(t.id);
+    return taskSet(viewerId);
+  }),
 ];
+
+// ----- S14 task mapping editor (D-114 §1; E4). Collected with every screen's handlers. -----
+const MAPPED_PEOPLE = [people.maya, people.jonas, people.opsLead];
+const NOT_IN_PROJECT = new Set<string>([people.opsLead.email]);
+
+function mappingCheck(
+  id: string,
+  body: {
+    destinationProject: string;
+    issueType: string;
+    purpose: string;
+    assigneeMap: Record<string, string>;
+  },
+) {
+  const m = adminConnections().mappings.find((x) => x.id === id);
+  if (!m) throw notFound();
+  const moved = body.destinationProject !== m.destinationProject || body.issueType !== m.issueType;
+  return {
+    mappingId: id,
+    project: { key: body.destinationProject, name: null, found: true },
+    issueType: { name: body.issueType, found: true },
+    assignees: MAPPED_PEOPLE.map((p) => {
+      const account = body.assigneeMap[p.id] ?? null;
+      const notFoundHere = !!account && NOT_IN_PROJECT.has(account);
+      return {
+        userId: p.id,
+        person: personRef(p.id),
+        roleText:
+          p.id === people.maya.id ? 'Case owner' : p.id === people.jonas.id ? 'Pilot owner' : 'Operations',
+        externalAccount: account,
+        status: !account
+          ? ('unmapped' as const)
+          : notFoundHere
+            ? ('not_found' as const)
+            : ('mapped' as const),
+        message: !account
+          ? 'No account in the task tool'
+          : notFoundHere
+            ? `assignee ${account} is not a member of project ${body.destinationProject}`
+            : null,
+      };
+    }),
+    impact:
+      moved && body.purpose === 'pilot_tasks'
+        ? {
+            material: true,
+            changeType: 'plan_destination_changed' as const,
+            lines: ['Approval G2 · Snapshot v3 needs re-approval', '6 unsent tasks pause'],
+            affectedGateRequestIds: [],
+          }
+        : null,
+    connectionStatus: 'connected' as const,
+    checkedAt: now(),
+  };
+}
+
+export const mappingHandlers: HttpHandler[] = [
+  mock(API.admin.checkMapping, ({ params, body }) => mappingCheck(params.id, body)),
+  mock(API.admin.setMapping, ({ params, body }) => {
+    const c = mappingCheck(params.id, body);
+    if (c.impact && !body.acknowledgeMaterialImpact)
+      throw new MockProblem('PRECONDITIONS_UNMET', 'Review the impact and confirm it.', {
+        blockers: c.impact.lines.map((message, i) => ({ key: `impact-${i + 1}`, message })),
+      });
+    const { acknowledgeMaterialImpact: _ack, ...rest } = body;
+    return { id: params.id, ...rest };
+  }),
+];
+handlers.push(...mappingHandlers);
+
+function requireDraftSet(id: string, viewerId: string | null) {
+  const w = ws();
+  if (id !== TASK_SET_ID || w.exp !== 'locked') throw notFound();
+  const set = taskSet(viewerId);
+  if (!set.draftEditable)
+    throw new MockProblem('FORBIDDEN', 'Only the experiment owner or the case owner edits draft tasks.');
+  return set;
+}
+
+function requireUnsent<T extends { sync: { status: string } }>(t: T | undefined): T {
+  if (!t) throw notFound();
+  if (t.sync.status !== 'not_sent' && t.sync.status !== 'in_preview')
+    throw new MockProblem('INVALID_TRANSITION', 'This task was sent to the task tool and is read-only here.');
+  return t;
+}

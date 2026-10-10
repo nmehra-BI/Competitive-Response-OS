@@ -17,7 +17,7 @@ const MILESTONE = ['M1 Kick-off', 'M2 Run and measure', 'M3 Review'];
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 const STAY_INSIDE = [
   'Up to 4 sites · Germany · 1 Dec 2026 – 28 Feb 2027',
-  `Budget ceiling €120k (G2 v3)`,
+  `Budget ceiling €120k (G2 · Snapshot v3)`,
   'Outbound messages stay drafts — not authorized to send',
 ];
 const dueText = (iso: string, rule: string | null) =>
@@ -95,7 +95,7 @@ export function workItemsFor(viewerId: string | null): WorkItem[] {
         syncText: `Confirmed · ${t.externalKey}`,
         why: 'Validation outreach to 20 sites.',
         doneLooksLike: t.deliverable,
-        stayInside: ['20 sites · Germany', 'Budget ceiling €15k (G1 v1)'],
+        stayInside: ['20 sites · Germany', 'Budget ceiling €15k (G1 · Snapshot v1)'],
         measuredAgainst: 'Interviews ≥ 8 · commitments ≥ 4.',
       },
     }));

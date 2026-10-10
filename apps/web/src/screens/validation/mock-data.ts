@@ -31,6 +31,7 @@ import {
   validationTasks,
 } from '@growth-os/fixtures-aster';
 import { hashFor, personRef, P } from '../../mocks/data';
+import { state as mockState } from '../../mocks/state';
 import { hasResults, ws, type Ws8cState } from '../decisions/mock-state';
 import { assumptionDisputes, scenario as assessmentScenario } from '../sizing/mock-state';
 
@@ -399,7 +400,27 @@ export function exampleExperiment(): Experiment {
 // Validation tasks (ME-VAL)
 // ---------------------------------------------------------------------------
 
-export function taskSet(): TaskSet {
+/**
+ * S09 draft edits (D-113) for this mock session: edits, removals and added tasks. Keyed on the mock
+ * scenario object, which `resetMockState()` replaces, so every test and page load starts clean.
+ */
+export interface TaskDrafts {
+  edits: Map<string, Pick<Task, 'title' | 'dueOn' | 'deliverable'> & { ownerId: string }>;
+  removed: Set<string>;
+  added: Task[];
+  rowVersions: Map<string, number>;
+}
+const draftsBySession = new WeakMap<object, TaskDrafts>();
+export function taskDrafts(): TaskDrafts {
+  let d = draftsBySession.get(mockState.scenario);
+  if (!d) {
+    d = { edits: new Map(), removed: new Set(), added: [], rowVersions: new Map() };
+    draftsBySession.set(mockState.scenario, d);
+  }
+  return d;
+}
+
+export function taskSet(viewerId: string | null = mockState.viewerId): TaskSet {
   const w = ws();
   const done = hasResults(w);
   const tasks: Task[] = validationTasks.map((t) => {
@@ -442,6 +463,14 @@ export function taskSet(): TaskSet {
       rowVersion: 1,
     };
   });
+  // Draft edits apply to unsent tasks only; removed tasks leave the set (kept in history).
+  const d = taskDrafts();
+  for (const t of tasks) {
+    const e = d.edits.get(t.id);
+    if (e) Object.assign(t, { ...e, owner: personRef(e.ownerId) });
+    t.rowVersion = d.rowVersions.get(t.id) ?? t.rowVersion;
+  }
+  tasks.splice(0, tasks.length, ...tasks.filter((t) => !d.removed.has(t.id)), ...d.added);
   const confirmed = tasks.filter((t) => t.sync.status === 'confirmed').length;
   const pending = tasks.length - confirmed;
   return {
@@ -453,6 +482,8 @@ export function taskSet(): TaskSet {
     connectionId: JIRA.id,
     destinationLabel: 'Jira · project ME-VAL',
     tasks,
+    // Maya owns EXP-03 and the case; after G1 she may edit the unsent tasks (D-113).
+    draftEditable: w.exp === 'locked' && viewerId === people.maya.id,
     summary: { total: tasks.length, confirmed, failed: 0, pending, paused: 0 },
     summaryText:
       w.tasks === 'sent'
@@ -473,17 +504,20 @@ export function taskPreview(): TaskSyncPreview {
     planVersionId: null,
     contentHash: PREVIEW_HASH,
     destination: { tool: 'Jira', project: 'ME-VAL', projectName: null },
-    willCreate: set.tasks.length,
-    linkText: `each linked to ${ME104.key} · EXP-03`,
+    willCreate: set.tasks.filter((t) => t.sync.status === 'not_sent' || t.sync.status === 'in_preview')
+      .length,
+    linkText: `each linked to ${ME104.key} · G1 · Snapshot v1`,
     assigneesText: 'assignees mapped by email',
     permissionsText: 'permission: create issues',
     repeatsText: 'Each task has a fixed reference; retrying never duplicates',
-    items: set.tasks.map((t) => ({
-      taskId: t.id,
-      title: t.title,
-      assignee: t.owner?.displayName ?? null,
-      fields: { due: t.dueOn ?? '', deliverable: t.deliverable },
-    })),
+    items: set.tasks
+      .filter((t) => t.sync.status === 'not_sent' || t.sync.status === 'in_preview')
+      .map((t) => ({
+        taskId: t.id,
+        title: t.title,
+        assignee: t.owner?.displayName ?? null,
+        fields: { due: t.dueOn ?? '', deliverable: t.deliverable },
+      })),
     problems: [],
     connectionStatus: 'connected',
     createdAt: '2026-10-16T14:15:00+02:00',

@@ -3,7 +3,7 @@
  * journey up to the G2 package forms the base; every command the WS8d mocks accept (pilot,
  * sync, outcomes, evidence, admin) appends exactly one event with actor, role and version.
  */
-import { API, type AuditEvent } from '@growth-os/contracts';
+import { API, snapshotLabel, type AuditEvent } from '@growth-os/contracts';
 import { cases, exp03, fid, gates, journeyMoments as J, people } from '@growth-os/fixtures-aster';
 import type { HttpHandler } from 'msw';
 import type { z } from 'zod';
@@ -136,7 +136,7 @@ function baseline(): JourneyAudit[] {
       'gate_snapshot',
       G2_SNAPSHOT_ID,
       3,
-      'Submitted G2 package · snapshot v3',
+      `Submitted package · ${snapshotLabel('G2', 3)}`,
       'gate.submit',
     ),
   ];
@@ -152,7 +152,7 @@ function baseline(): JourneyAudit[] {
       objectType: 'gate_snapshot',
       objectId: G2_SNAPSHOT_ID,
       objectVersion: 3,
-      summary: `Decided G2 on snapshot v3 · ${d.disposition.replace(/_/g, ' ')}`,
+      summary: `Decided ${snapshotLabel('G2', 3)} · ${d.disposition.replace(/_/g, ' ')}`,
       rule: 'gate.decide · sponsor',
     });
   } else if (s.audit.some((e) => !e.objectType.startsWith('source') && e.objectType !== 'connection')) {
