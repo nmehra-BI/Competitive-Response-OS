@@ -4,9 +4,16 @@
  * the hashed snapshots and tenant isolation between two seeded tenants.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { EconomicsOutput, SizingOutput } from '@growth-os/contracts';
+import { EconomicsOutput, SizingOutput, ThesisFields } from '@growth-os/contracts';
 import { ECONOMICS_ENGINE_VERSION, SIZING_ENGINE_VERSION } from '@growth-os/domain';
-import { expectedSizing, gates, mandate as md21, people, sources } from '@growth-os/fixtures-aster';
+import {
+  expectedSizing,
+  gates,
+  mandate as md21,
+  people,
+  sources,
+  thesisV1,
+} from '@growth-os/fixtures-aster';
 import { createDb, sql, withTenant, type Db } from '../src';
 import { AlreadySeededError, randomRemap, seedAster, type SeedResult } from '../src/seed';
 import { economicsGoldenMismatches, sizingGoldenMismatches } from '../src/seed/outputs';
@@ -255,6 +262,29 @@ describe('aster-demo', () => {
         .select(['version', 'state'])
         .executeTakeFirstOrThrow();
       expect(sv).toEqual({ version: 2, state: 'committed' });
+    });
+  });
+
+  it('commits ME-104 thesis v1 with the prototype copy and the No entry alternative (D-150)', async () => {
+    await inTenant(demo, async (tx) => {
+      const rows = await tx
+        .selectFrom('me.thesis_version')
+        .select(['version', 'state', 'fields', 'committed_at'])
+        .execute();
+      expect(rows).toHaveLength(1);
+      const t = ThesisFields.parse(rows[0]!.fields);
+      expect(rows[0]).toMatchObject({ version: 1, state: 'committed' });
+      expect(t.proposition.value).toBe(thesisV1.fields.proposition.value);
+      expect(t.alternatives.some((a) => a.isNoEntry)).toBe(true);
+      expect(t.claimIds).toEqual([]);
+      // Linked assumptions resolve in this tenant (ids remapped like every other row).
+      const linked = t.reasonsToWin.map((r) => r.linkedAssumptionId!);
+      const found = await tx.selectFrom('platform.assumption').select('id').where('id', 'in', linked).execute();
+      expect(found).toHaveLength(3);
+    });
+    // aster-start has no ME-104, so no thesis.
+    await inTenant(start, async (tx) => {
+      expect(await tx.selectFrom('me.thesis_version').select('id').execute()).toEqual([]);
     });
   });
 

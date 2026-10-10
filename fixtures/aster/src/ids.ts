@@ -42,6 +42,7 @@ const KINDS = {
   boundary: '0025',
   committeeMember: '0026',
   stopRule: '0027',
+  thesis: '0028',
 } as const;
 
 export type FixtureKind = keyof typeof KINDS;

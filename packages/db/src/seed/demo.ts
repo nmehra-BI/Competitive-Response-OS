@@ -1,7 +1,7 @@
 /**
  * Profile `aster-demo` = aster-start + ME-104 history up to 26 Nov 2026 (BUILD_PLAN §7):
  * OPP-07 converted to ME-104 (OPP-12 merged), comparison, assumption register with Daniel's dispute,
- * sizing v2 and economics v2 committed, finance review signed, feasibility with Lena's scoped
+ * sizing v2 and economics v2 committed, thesis v1 committed, finance review signed, feasibility with Lena's scoped
  * sign-off, EXP-03 locked by G1 with amendment 1 and results, validation tasks confirmed VAL-1…5,
  * G2 snapshot v2 superseded and v3 awaiting Elena's decision with positions and dissent, and the
  * pilot plan draft (6 tasks). Stage: pilot_approval_pending.
@@ -36,6 +36,7 @@ import {
   sources,
   specialistQuestion,
   specialistSignOff,
+  thesisV1,
   validationTasks,
 } from '@growth-os/fixtures-aster';
 import { at, seedAudit, type SeedCtx } from './context';
@@ -472,6 +473,22 @@ export async function seedDemo(s: SeedCtx): Promise<void> {
       statement:
         'Supports with conditions: margin definition, opex scope and EUR 2026 checked; ramp and cash timing not in the model.',
       signed_at: at('2026-11-24T16:30:00+01:00'),
+    })
+    .execute();
+
+  // --- Thesis v1 (S05), committed by Maya before G1 (D-150) ---------------------------------------
+  await tx
+    .insertInto('me.thesis_version')
+    .values({
+      id: R.id(thesisV1.id),
+      tenant_id: tenantId,
+      case_id: caseId,
+      version: thesisV1.version,
+      state: 'committed',
+      fields: JSON.stringify(R.json(thesisV1.fields)),
+      committed_at: at(thesisV1.committedAt),
+      created_by: R.id(thesisV1.createdBy),
+      created_at: at(thesisV1.createdAt),
     })
     .execute();
 

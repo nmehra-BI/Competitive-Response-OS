@@ -15,25 +15,6 @@ test.beforeAll(() => resetStack('aster-demo'));
 
 const CASE = '/me/cases/ME-104';
 
-/** aster-demo seeds no thesis for ME-104: Maya starts a draft so S05 renders (API; S05 edits are WS4a). */
-async function ensureThesis(page: Page) {
-  const r = await apiCall(
-    page,
-    'PATCH',
-    '/me/cases/ME-104/thesis/draft',
-    {
-      fields: {
-        proposition: {
-          value: 'Offer our existing water-monitoring system to German food-processing sites.',
-          origin: 'human',
-        },
-      },
-    },
-    { 'If-Match': '"0"' },
-  );
-  expect([200, 412]).toContain(r.status);
-}
-
 async function settled(page: Page) {
   await page.getByRole('main').waitFor();
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
@@ -51,9 +32,15 @@ test('thesis blockers name their gate: "Pending · G2" and "Blocker · G3" with 
       WHERE c.display_key = 'ME-104'`,
   );
   await loginAs('maya', `${CASE}/thesis`);
-  await ensureThesis(page);
   await page.reload();
   await settled(page);
+  // aster-demo seeds the committed thesis v1 (D-150): S05 renders it, not "No thesis yet".
+  await expect(page.getByText('No thesis yet')).toHaveCount(0);
+  await expect(
+    page.getByText('Offer our existing water-monitoring system to German food-processing plants', {
+      exact: false,
+    }),
+  ).toBeVisible();
   const blockers = page.getByRole('heading', { name: 'Blockers' }).locator('xpath=ancestor::section[1]');
   await expect(blockers.getByText('Pending · G2')).toBeVisible();
   await expect(blockers.getByText('Blocker · G3')).toBeVisible();

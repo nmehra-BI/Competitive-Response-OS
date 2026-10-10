@@ -42,6 +42,7 @@ export const asterFixture = {
   sizingV2Input: assessment.sizingV2Input,
   economicsV2Input: assessment.economicsV2Input,
   feasibility: assessment.feasibility,
+  thesisV1: assessment.thesisV1,
   exp03: decisions.exp03,
   validationTasks: decisions.validationTasks,
   gates: decisions.gates,

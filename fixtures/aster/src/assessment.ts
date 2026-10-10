@@ -270,6 +270,95 @@ const ref = (
 // Sizing v2 (S06). PRD §6 sizing table, exactly.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Thesis v1 (S05), committed by Maya after sizing v2 and before G1 (D-150, CR-PE-W4-1). aster-demo only.
+// Copy is the approved prototype's (S05); no claims are attached (claims come from evidence and AI
+// proposals in the journey). The thesis version is never pinned in a snapshot, so no golden hash moves.
+// ---------------------------------------------------------------------------
+
+const human = (value: string) => ({ value, origin: 'human' as const, agentRunId: null, editedBy: null });
+
+export const thesisV1 = {
+  id: fid('thesis', 1),
+  version: 1,
+  createdBy: people.maya.id,
+  createdAt: '2026-10-14T09:10:00+02:00',
+  committedAt: '2026-10-14T09:40:00+02:00',
+  fields: {
+    proposition: human(
+      'Offer our existing water-monitoring system to German food-processing plants as a monitored service, at about €20k per site per year.',
+    ),
+    intendedCustomer: human(
+      'Plant and quality managers at food-processing sites with a process-water treatment step.',
+    ),
+    whyNow: human(
+      'Two 2026 trade sources report rising attention to process-water monitoring in food plants. Our partner already covers part of the segment.',
+    ),
+    reasonsToWin: [
+      {
+        id: fid('thesis', 101),
+        text: human('The existing product already monitors comparable process-water steps.'),
+        linkedAssumptionId: fid('assumption', 7),
+        linkedFeasibilityDimension: 'product_fit',
+        statusText: 'Pending · demo with Priya Shah',
+      },
+      {
+        id: fid('thesis', 102),
+        text: human('Partner coverage of food plants in Germany.'),
+        linkedAssumptionId: fid('assumption', 5),
+        linkedFeasibilityDimension: null,
+        statusText: null,
+      },
+      {
+        id: fid('thesis', 103),
+        text: human('Installation and support capacity sized for a bounded entry.'),
+        linkedAssumptionId: fid('assumption', 8),
+        linkedFeasibilityDimension: null,
+        statusText: null,
+      },
+    ],
+    alternatives: [
+      {
+        id: fid('thesis', 201),
+        name: 'No entry',
+        meaning: 'Keep focus on current segments. No spend now; we forgo the learning.',
+        status: 'considered_fallback' as const,
+        statusText: 'Considered · kept as fallback',
+        isNoEntry: true,
+      },
+      {
+        id: fid('thesis', 202),
+        name: 'Partner resale only',
+        meaning: 'Partner sells; we do not run a pilot. Lower spend, weaker evidence on deployment effort.',
+        status: 'considered_not_preferred' as const,
+        statusText: 'Considered · not preferred',
+        isNoEntry: false,
+      },
+      {
+        id: fid('thesis', 203),
+        name: 'Dutch food-processing plants first',
+        meaning: 'Same segment, other market. Channel access unknown.',
+        status: 'not_ranked' as const,
+        statusText: 'Not ranked · 1 input missing',
+        isNoEntry: false,
+      },
+      {
+        id: fid('thesis', 204),
+        name: 'Validate, then request a pilot',
+        meaning: 'G1 validation €15k now; G2 pilot only if thresholds are met.',
+        status: 'recommended' as const,
+        statusText: 'Recommended',
+        isNoEntry: false,
+      },
+    ],
+    recommendation: human(
+      'Request G1 validation of €15k: approach 20 selected sites through the partner channel and aim for 8 completed interviews and 4 paid pilot commitments before any pilot request.',
+    ),
+    recommendationBy: people.maya.id,
+    claimIds: [] as string[],
+  },
+};
+
 export const COHORT_SIZE_ID = fid('cohort', 1);
 export const COHORT_PROCESS_ID = fid('cohort', 2);
 export const COHORT_PROCESS_IMPORTED_ID = fid('cohort', 3); // duplicate-cohort variant only
