@@ -1988,3 +1988,247 @@ Aster fixture values (grants, expiry, X1 €30k · 45 days, 16/22 hours per site
 CR-PD-4 `OutcomeTargetInput.measureType`; CR-PD-5 `stopRules` on `gates.createRequest`; CR-PD-6 draft validation task
 endpoints; CR-PD-7 `License` term end and on-expiry action; CR-PD-8 tenant live-analysis setting; CR-PD-9
 `acceptAsFact` on `analysis.decideProposal`. All are additive.
+
+---
+
+## Stage: Build — Wave 4 change requests (2026-10-10)
+
+The Principal Architect reviewed CR-PD-1 to CR-PD-9 (Product decisions stage, D-109 to D-121) under D-031 and went
+through backlog tickets 1–15 of `docs/market-expansion/PRODUCT_DECISIONS.md` to find every contract the five Wave 4
+streams would otherwise have to invent. Every change below is **additive and backward compatible**: new optional
+fields, new endpoints, new enums with label maps, new tables and nullable columns in migration
+`0006_product_decisions.sql`. Old request bodies, stored rows and frozen snapshots still validate and keep their
+hashes. New endpoints are registered and answer "Not implemented" (500 problem+json, `INTERNAL`) until their stream
+lands the handler. No never-rule is relaxed. The engineering brief is `docs/market-expansion/build/WAVE4.md`.
+
+### D-122 — CR-PD-1 accepted, adjusted: gate policy carries the committee, expiry flag, matrix row and X rule
+- Date: 2026-10-10 · Stage: Build · Status: Accepted (Principal Architect)
+- Decision: `GatePolicyBody` gains optional `committeeSeats`, `requiredSeats` (quorum stays `requiredApprovals`),
+  `approvalExpires` (false for G0 and G3, D-109 §4), `authority` (`AuthorityTemplate`: sponsor and committee ceiling
+  of the default matrix, one-time EUR) and, for X, `extension` (`ExtensionRule`: `maxBudgetShare` "0.25",
+  `maxDurationShare` "0.50", `minDurationDays` 14, `maxPerParent` 1, `cumulativeWithinSponsorCeiling`,
+  `capRequiredInRealTenants`). New enums `CommitteeSeat`, `CommitteeSeatState`, `ApprovalRoute` with label maps.
+- Adjustments to the CR: (1) all new fields are optional rather than defaulted, so a parsed policy written before
+  D-122 keeps its exact shape and no consumer's type widens; the domain applies the D-109/D-110 defaults when a field
+  is absent. (2) `approvalExpiryDays` stays a positive number; "never expires" is the separate `approvalExpires`
+  flag (making the number nullable would break every consumer that does date arithmetic on it). (3) Per-person
+  ceilings stay on authority grants; `authority` is the template row S14 shows and new tenants start from.
+  (4) Pre-approved frozen-domain edits for E3 (D-031 item 3): `ME_GATES.X.buttonLabel` adds the duration
+  ("Approve extension €30k · 45 days"); `ME_GATES.X.preconditionKeys` may add `extension_within_rule` and
+  `one_extension_per_parent`, with the same keys added to the Aster X policy in the same PR.
+- Rationale: one policy object per gate already drives preconditions and expiry; the committee and X rule are
+  per-gate policy, not new policy kinds. `approval_expiry.default` stays the fallback for a gate without a value.
+
+### D-123 — CR-PD-2 accepted: `AuthorityGrant.doaReference`
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: optional `doaReference` on `AuthorityGrant` and on the `admin.setAuthority` body; column
+  `platform.authority_grant.doa_reference`. Real grants default to 12 months' validity (`validTo`) when entered in
+  S14 (E3). The illustrative Aster grants carry `DoA-2026-01 · BU Water · illustrative` and stay open-ended
+  (`validTo` null) so the dated journey and the database tests never expire with the calendar.
+
+### D-124 — Extra contract: committee membership is separate from authority
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Context: CR-PD-1 named seats on the policy but not who holds them, and D-109 §5 needs "Committee named · G3
+  authority not granted" to show with no G3 grant seeded.
+- Decision: `CommitteeMember` (user, BU, seat, validity, DoA reference, entered by, revoked) with `admin.committee`
+  (GET) and `admin.setCommitteeMember` (PUT); table `platform.committee_member` (RLS; one live holder per seat per
+  BU; only humans; the entering administrator never seats themselves). Membership is not authority: a member decides
+  only with a grant for the gate, BU and amount. `Approval.seat` and column `approval.committee_seat` (one decision
+  per seat per snapshot) record the seat a committee decision counted for. `ApprovalPanelState.route` and
+  `.committee` (quorum, required seats, per-seat state on the **current** snapshot, `statusText` "Waiting on second
+  approver · finance seat"); `GateRequest.route`. Approvals on an earlier snapshot show as `lapsed` (never-rule 2).
+
+### D-125 — CR-PD-3 accepted, adjusted: Aster fixture values, committee personas and narrative
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision (fixtures/aster, seeded by both profiles):
+  - Grants (D-109 §5): Elena G0, G1 €50k, G2 €150k, X €50k, each with the DoA reference. No G3 grant.
+  - Gate policies: expiry G1 30 · G2 30 · X 14 days; G0 and G3 `approvalExpires: false`; G3 `requiredApprovals: 2`,
+    seats chair/finance/operations, finance required; matrix rows (sponsor €50k/€150k/€50k, committee
+    €250k/€1m/€250k/€2m); the X rule.
+  - Committee (PQ-14): Katrin Vogel (CFO, finance seat) and Thomas Berger (COO, operations seat) with the
+    `investment_committee` role, Elena as chair; ids `user` 10 and 11. Because the API's persona picker lists every
+    holder of a deciding role, both appear in the dev picker after the six personas (`devPersonaOrder` and the e2e
+    `PERSONAS` updated) — E3 needs them to walk the quorum.
+  - X1 (D-110 §2): €30k · 45 days, 1 Mar – 14 Apr 2027, the 4 pilot sites only, re-testing paid use and deployment
+    effort; button "Approve extension €30k · 45 days".
+  - Deployment effort (D-110 §4): "Within 16 hours per site" (16, `lte`), actual "22 hours per site" → Not met.
+  - Measure types on the three pilot targets (demand, delivery effort, buyer fit); structured stop rules SR1–SR3 on
+    the G2 request (stored in the request scope and frozen into the aster-demo G2 v3 snapshot).
+  - Licences (D-120): site census and authorized uploads carry an illustrative written confirmation; the vendor
+    estimate has none and stays metadata only. Term end 31 Dec 2027 for the census.
+  - MD-21 v1 (PQ-4, D-118): "Returned to change the owner and confirm EUR." v1 now names Jonas Klein as owner (v2:
+    Maya Rao) and keeps every exclusion; the interim "v2 minus the outreach exclusion" is retired.
+  - Narrative (PQ-15, PQ-19): the retried task 2 takes `PIL-17`; preview link text "ME-104 · G2 · Snapshot v3";
+    `gates.g2.expiresAt` 27 Dec 2026 (27 Nov + 30 days).
+  - Golden additions in `expected.ts`: `expectedLineage` (SAM "Used by: Reachable pool, upper-bound check: 500 ≤
+    2,000 sites"), `expectedExtension`, `expectedScaleGate` (the D-111 investment wording), `expectedCommittee`,
+    `expectedBlocking.reachableExceedsSam`.
+- Test assertions updated to the decided values (not weakened): G2 approval expiry 14 → 30 days
+  (`gates.db.test.ts` step 20; S10 unit and mock e2e "If unused by 27 Dec 2026", D-109); persona list and role
+  count (+2, D-109 §5); S12 unit, mock and real journey record "22 hours per site" against "Within 16 hours per site"
+  (D-110 §4); journey step 27 and the mock S12 spec request X1 at €30k · 45 days and assert
+  `requested_amount = 30000.00`, `duration_days = 45` (D-110 §2).
+
+### D-126 — CR-PD-4 accepted: `measureType`; the G3 demand clause reads the Demand type
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: enum `MeasureType` (demand, delivery_effort, buyer_fit, spend, other; labels "Demand", "Delivery
+  effort", "Buyer fit", "Spend against budget", "Other"); optional `measureType` on `OutcomeTarget` (so on
+  `OutcomeTargetInput`) and on `SnapshotContent.outcomeTargets[]`; column `outcome_target.measure_type`.
+- Landed with the fixture CR (it could not wait): giving deployment effort a number (D-125) would otherwise turn it
+  into a fifth G3 blocker. `preconditions.ts` now gates `pilot_actuals_vs_thresholds` on Demand targets only
+  (`isDemandTarget`: by type, or by the demand metric key for targets registered before D-122), with a unit test.
+  E3 owns the rest of ticket 12 (S10 form, API storage, loading the type into the G3 facts).
+
+### D-127 — CR-PD-5 accepted, adjusted: structured stop rules, frozen like thresholds; trips ask the sponsor
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `StopRuleInput` (trigger {kind threshold|event, metricKey, text}, consequence
+  `pause_and_request_review` | `recommend_stop`, ownerId) and `StopRule` (+ id, key `SR1`…). Optional `stopRules` on
+  the `gates.createRequest` body (G2), on `GateRequest`, and on `SnapshotContent` (the readable lines stay in
+  `budgetAndStopRules`). `PilotPlanView.stopRules` (`StopRuleState`: status, tripped at/by, the sponsor review item).
+  New endpoint `pilot.tripStopRule` (POST `/me/cases/:caseRef/stop-rules/:stopRuleId/trips`, human, idempotent):
+  records the trip as a `review_request` (area `sponsor`, target `stop_rule`) and changes no task, gate or case
+  state (never-rule 7). No table: rules live in the request scope and the snapshot, trips in `review_request`.
+- Adjustment: the CR named only the request field; without a trip endpoint and a view field no stream could build
+  "a tripped rule asks the sponsor". `budget_and_stop_rules` needs ≥ 1 structured rule on a G2 created after D-122.
+
+### D-128 — CR-PD-6 accepted, adjusted: three draft-task endpoints; removal keeps the row
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `tasks.addDraft` (POST `/me/task-sets/:id/tasks`), `tasks.editDraft` (PATCH `/me/tasks/:id/draft`,
+  If-Match) and `tasks.removeDraft` (POST `/me/tasks/:id/removal`, If-Match) with `ValidationTaskDraftInput` (title,
+  owner, due date, deliverable, optional function — never threshold, sample or budget). `TaskSet.draftEditable`.
+  Columns `task.removed_at`, `task.removed_by`; a guard refuses removing a task whose external link is past
+  `in_preview` and refuses un-removing. Registered in the `taskSync` group so S09 refreshes the task set.
+- Adjustment: removal is a mark, not a DELETE (audit and the outbox keep a stable row; no DELETE route exists).
+
+### D-129 — CR-PD-7 accepted, adjusted: licence rights, term end and on-expiry action; fail closed in the database
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `License` gains optional `rightsConfirmation` (document ref, date, recorded by), `termEndsOn`,
+  `onExpiry` (`LicenseExpiryAction`: remove content keep metadata | delete copy keep audit), derived `rightsStatus`
+  and `expiredAt`; `LicenseInput`; `admin.licenses` (GET) and `admin.setLicense` (PUT). Columns on
+  `platform.license`; constraint `license_fail_closed` (NOT VALID, so it binds every new or changed row): permissions
+  above metadata only need a written confirmation and no expiry. Job id `timers.license_expiry` (daily 02:15) added
+  to the catalogue and crontab; it runs once E3 registers its handler.
+
+### D-130 — CR-PD-8 accepted: tenant "Live analysis" setting
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `LiveAnalysisSetting` with `admin.liveAnalysis` (GET) and `admin.setLiveAnalysis` (PUT `/admin/settings/
+  live-analysis`, human, idempotent); table `platform.tenant_ai_setting` (RLS): off by default; the database refuses
+  `live_enabled` without the addendum reference and date and a passing eval run reference and time. The model name
+  stays configuration (`ANALYSIS_MODEL`); the setting records documents, never a model identifier.
+
+### D-131 — CR-PD-9 accepted: one-step "Accept as fact"
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: optional `acceptAsFact` on the `analysis.decideProposal` body; `Proposal.oneStepAccept {available,
+  reason}` tells S05 whether to offer it (claim proposal, unedited, every citation opens for the viewer). The API
+  refuses `acceptAsFact` with `editedPayload` or an unopenable citation (VALIDATION_FAILED); both audit events are
+  written in one transaction (never-rule 11 stays: one human act).
+
+### D-132 — Extra contracts for the five data-entry editors (ticket 1, D-112)
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: S06 — `SizingDraftPatch` (now exported) adds `boundary.productBoundary`, `boundary.includes`,
+  `inputs[].basisText` (e.g. the reachable pool's channel definition; column `sizing_input.basis_text`),
+  `dedupRuleText`, `overlaps[].method`, `clearInputKeys` (a blank is Unknown, never 0). S08 — `economics.saveDraft`
+  adds `currency`, `priceYear`, `horizonYears`, `opexScopeNote`, `clearInputKeys`, `drivers[].assumptionId` /
+  `sourceId` (one-time investment stays its own driver; never summed). S09 — `assumptions.create` adds `sourceIds`
+  (Evidence vs "Assumption — no evidence"), `currency`, `priceYear`. S07 — new `feasibility.addDimension` (POST
+  `/me/cases/:caseRef/feasibility/dimensions`; column `feasibility_assessment.question_detail`). S11 —
+  `TaskDraftInput` (exported) adds `milestoneOrdinal`, `dependsOnOrdinals`, `budgetLine`; milestones add `dueOn`,
+  `evidenceExpected` (columns on `milestone`, `task`); `Task.budgetLine`, `Milestone.dueOn/evidenceExpected`.
+
+### D-133 — Extra contracts for "Record spend" (ticket 9, D-114 §2)
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `budget.recordEntry` adds `reference` and `taskId`; new `budget.listEntries` (GET, entries + meter) and
+  `budget.reverseEntry` (POST `/me/budget-entries/:id/reversals`, reason required); `BudgetEntry` adds reference,
+  task, reversal links and `recordedAt`; `PilotPlanView.budgetEntries`; `BUDGET_ENTRY_KIND_LABELS`. Database:
+  reversal columns, a guard (same gate, kind, amount, currency; a reversal is never reversed), one reversal per
+  entry. The meter subtracts reversals; amounts stay non-negative one-time money.
+
+### D-134 — Extra contracts for the S14 task mapping editor (ticket 8, D-114 §1)
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `admin.checkMapping` (POST `/admin/connector-mappings/:id/check`, no writes) → `ConnectorMappingCheck`
+  (project, issue type, per-person `AssigneeMappingStatus` Mapped/Unmapped/Not found, material impact lines);
+  `admin.setMapping` body adds `acknowledgeMaterialImpact`. `TaskConnector` stays frozen: the check runs through
+  `preview()`; `PreviewItemResult` gains optional `problemCodes` (`assignee_not_found`, …) that both adapters set.
+
+### D-135 — Extra contracts for the Jira Cloud adapter (ticket 2, D-121)
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `Connection.jira` (site, cloud id, integration account name, scopes, token expiry, authorized by/at;
+  never a token); `admin.createConnection`, `admin.authorizeConnection` (consent URL + one-time state) and
+  `admin.completeAuthorization` (code + state); tables `platform.connection_credential` (AES-256-GCM ciphertext and
+  key id only) and `platform.connector_oauth_state` (sha256 of the state, single use), both RLS. The OAuth redirect
+  lands on the existing S14 route `/admin/connections?connection=…&code=…&state=…` (route query list extended; no
+  new route). Selection: `TASK_CONNECTOR=jira` registers provider `jira_cloud` in `createConnectorFactory`; the
+  simulated connector stays the default. New env: `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET`, `JIRA_REDIRECT_URI`,
+  `CONNECTOR_TOKEN_KEY`, `JIRA_API_BASE_URL` (tests point it at the local mock server; there is no network to Jira).
+
+### D-136 — Extra contracts for the extension rule (ticket 4, D-110)
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `outcomes.requestExtension` adds optional `windowStart`, `windowEnd`, `retestTargetIds`, `maxSites`;
+  `OutcomeReviewView.extensionLimits` (parent amount and window, max amount and days, extensions used/allowed, the
+  sponsor's cumulative ceiling, text "Up to €30k (25% of €120k) · up to 45 days"). A null cap stays submittable
+  only in illustrative tenants; real tenants are refused "State the extension cap and duration" (VALIDATION_FAILED).
+
+### D-137 — Extra contracts for labels and lineage (tickets 11, 13, 15)
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `thesisBlockerLabel(status, gate)` ("Pending · G2", "Blocker · G3"), `THESIS_BLOCKER_STATUS_HINTS`
+  (tooltip copy), `snapshotLabel(gate, version)` ("G2 · Snapshot v2") in `enums.ts`. `LineageRelation`
+  (input_to | checked_against; "Used by" / "Upper-bound check"), `LineageNode.checks`, and `relation` / `detail` on
+  `lineage.get` `usedBy[]`; the engine check `REACHABLE_EXCEEDS_SAM` already existed. Ticket 13 (G3 blocker names
+  the €400k one-time investment) needs no contract: `OutcomeReviewView.scaleGate.summary` and `Blocker.message`
+  carry the text; the golden wording is `expectedScaleGate`.
+
+### D-138 — Migration 0006, registry 165, shared registrations done once
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: `0006_product_decisions.sql` is additive (see DATA_MODEL "Wave 4 additions"): 4 new tables with forced
+  RLS and explicit grants, 22 new columns on 9 existing tables, 3 guard triggers, 2 NOT VALID licence constraints, 7 indexes. Generated
+  types regenerated. Registry 148 → **165** endpoints (17 new). The Principal Architect made every shared one-line
+  registration now so no stream edits a shared file for them: web `INVALIDATES` entries for the 11 new commands, the
+  admin route query list, e2e personas, `JOBS.timersLicenseExpiry` + crontab, and `WAVE4_PENDING` in the WS4a
+  tenancy coverage test (E2 removes `feasibility.addDimension` from it when the handler lands).
+
+### D-139 — Wave 4 streams and why the split moved
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: five streams (E1 editors A, E2 editors B + S11, E3 governance, E4 workflow UX, E5 Jira Cloud) with
+  non-overlapping owned paths, databases `growth_os_ws4` / `ws4b` / `ws5` / `ws8` / `ws6` (re-migrated to 0006) and
+  per-stream e2e databases `growth_os_<db>_e2e` with distinct e2e ports, all in
+  `docs/market-expansion/build/WAVE4.md`. Two moves from the proposal: (1) **ticket 7 is split at the module
+  boundary** — the request side (`stopRules` on `gates.createRequest`, snapshot freezing, the
+  `budget_and_stop_rules` precondition, the S10 "Stop rules · pre-registered" section) goes to E3, which already owns
+  `modules/me/gates` and the S10 prepare form for ticket 12 and the quorum for ticket 3; E2 keeps the execution side
+  (S11 display and `pilot.tripStopRule`), tested against the stop rules seeded in aster-demo G2 v3. One stream per
+  form and per journey step (17). (2) **Ticket 11 has no single module**: E4 owns it and changes the files it owns;
+  E3 applies `snapshotLabel` in the gate files it owns. The admin module is split by file (`admin/index.ts` E3,
+  `admin/mapping.ts` E4, `admin/connections.ts` E5; replacing handlers are spread after `adminHandlers`).
+
+### D-140 — CI of this stage
+- Date: 2026-10-10 · Stage: Build · Status: Accepted
+- Decision: full CI on `growth_os_pe` (reset, migrate 0001–0006): install, typecheck, lint and format pass; unit 60
+  files / 2,137 tests; test:db 54 files / 352 tests (new: `packages/db/test/product-decisions.test.ts` — RLS on the
+  four new tables, committee guard, licence fail-closed, live-analysis check, budget reversal guard, task removal
+  guard; seed assertions for the D-109/D-110/D-120 values and MD-21 v1); evals:smoke 14 suites pass; web build;
+  real e2e 54 passed (journey with analysis on and off, alternate paths, axe, p95); mock e2e 36 passed. Registry 165
+  endpoints. The five stream databases `growth_os_ws4`, `ws4b`, `ws5`, `ws6`, `ws8` were reset and migrated to 0006,
+  and per-stream e2e databases `growth_os_<db>_e2e` were created.
+
+### Change-request register — Wave 4 (product decisions)
+
+| CR | Request | Decision | Record |
+|---|---|---|---|
+| CR-PD-1 | `GatePolicyBody` seats, quorum, X limits | **Accepted, adjusted** (optional fields; expiry flag; matrix row; ME_GATES X label/keys pre-approved) | D-122 |
+| CR-PD-2 | `AuthorityGrant.doaReference` | **Accepted** | D-123 |
+| CR-PD-3 | Aster fixture values, personas, narrative | **Accepted, adjusted** (open-ended illustrative grants; v1 owner Jonas; assertions moved to decided values) | D-125 |
+| CR-PD-4 | `OutcomeTargetInput.measureType` | **Accepted** (+ G3 demand clause by type, landed now) | D-126 |
+| CR-PD-5 | `stopRules` on `gates.createRequest` | **Accepted, adjusted** (+ snapshot, view and `pilot.tripStopRule`) | D-127 |
+| CR-PD-6 | Draft validation task endpoints | **Accepted, adjusted** (removal marks the row) | D-128 |
+| CR-PD-7 | `License` term end, on-expiry action | **Accepted, adjusted** (+ written confirmation, DB fail-closed constraint, expiry job id) | D-129 |
+| CR-PD-8 | Tenant live-analysis setting | **Accepted** | D-130 |
+| CR-PD-9 | `acceptAsFact` on `analysis.decideProposal` | **Accepted** (+ `Proposal.oneStepAccept`) | D-131 |
+| PA-W4-1 | Committee membership (not in the CR list) | **Added** | D-124 |
+| PA-W4-2 | Data-entry editor fields, `feasibility.addDimension` | **Added** | D-132 |
+| PA-W4-3 | Record spend: reference, task, reversals, list | **Added** | D-133 |
+| PA-W4-4 | Mapping check, impact acknowledgement, problem codes | **Added** | D-134 |
+| PA-W4-5 | Jira Cloud connection, OAuth, credential tables | **Added** | D-135 |
+| PA-W4-6 | Extension request fields and limits view | **Added** | D-136 |
+| PA-W4-7 | Gate-paired labels, lineage relation | **Added** | D-137 |
+
+None rejected. The CR-PD list in the Product decisions stage is closed by this register.

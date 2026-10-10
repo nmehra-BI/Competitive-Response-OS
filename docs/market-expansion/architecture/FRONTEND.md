@@ -81,7 +81,7 @@ user selects something, so any view is shareable.
 | `/my-work` | My Work | `tab`, `item` |
 | `/reviews` | Reviews inbox | `tab=awaiting\|assigned\|economics`, `request` |
 | `/evidence`, `/evidence/:sourceKey` | S13 Evidence | `case`, `claim`, `passage` |
-| `/admin/:section` | S14 Administration | `run` (diagnostics) |
+| `/admin/:section` | S14 Administration | `run` (diagnostics); `connection`, `code`, `state` (Jira OAuth 3LO redirect to `/admin/connections`, D-135) |
 | `/design-system` | DesignSystem artboard (living reference) | — |
 
 `/me/cases/:caseKey` redirects to `thesis`. Case keys (`ME-104`), source keys (`SRC-014`), opportunity

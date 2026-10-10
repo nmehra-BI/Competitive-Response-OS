@@ -297,6 +297,166 @@ MVP API.
 
 ---
 
+## Wave 4 additions — migration `0006_product_decisions.sql` (D-122 … D-138)
+
+Additive only. Four new tenant-scoped tables (RLS forced, explicit grants because 0001's loop only covered the tables
+that existed then), 22 new nullable or defaulted columns on 9 existing tables, three guard triggers, two NOT VALID
+licence constraints and seven indexes. No existing column, constraint, trigger or policy changed. Appendix A
+predates 0004–0006; this section is the reference for 0006 (generated from the migrated schema).
+
+| Decision | Table / column | Rule enforced in the database |
+|---|---|---|
+| D-123 | `platform.authority_grant.doa_reference` | non-empty when present |
+| D-124 | `platform.committee_member` | humans only; one live holder per seat per BU; an admin never seats themselves |
+| D-124 | `platform.approval.committee_seat` | one of chair/finance/operations; one decision per seat per snapshot (`approval_one_per_seat_idx`) |
+| D-126 | `platform.outcome_target.measure_type` | one of demand, delivery_effort, buyer_fit, spend, other |
+| D-129 | `platform.license.rights_*`, `term_ends_on`, `on_expiry_action`, `expired_at` | `license_fail_closed`: permissions above metadata only need a written confirmation and no expiry; `license_confirmation_complete` (NOT VALID: binds new and changed rows) |
+| D-130 | `platform.tenant_ai_setting` | live analysis on only with addendum reference + date and eval run reference + time |
+| D-132 | `me.sizing_input.basis_text`, `me.feasibility_assessment.question_detail`, `platform.milestone.due_on/evidence_expected`, `platform.task.budget_*` | task budget amount ≥ 0 and its currency together |
+| D-128 | `platform.task.removed_at/removed_by` | `task_removal_guard`: a sent task cannot be removed; removal is final; never a DELETE |
+| D-133 | `me.budget_entry.reference/task_id/reverses_entry_id/reversal_reason` | `budget_entry_reversal_guard`: same gate, kind, amount, currency; a reversal is never reversed; one reversal per entry; reason required |
+| D-135 | `platform.connection_credential`, `platform.connector_oauth_state` | ciphertext only; state stored as a hash and used once |
+
+
+#### `me.budget_entry` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `reference` | text | yes |  |
+| `task_id` | uuid | yes | → `platform.task` |
+| `reverses_entry_id` | uuid | yes | → `me.budget_entry` |
+| `reversal_reason` | text | yes |  |
+
+#### `me.feasibility_assessment` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `question_detail` | text | yes |  |
+
+#### `me.sizing_input` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `basis_text` | text | yes |  |
+
+#### `platform.approval` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `committee_seat` | text | yes |  |
+
+#### `platform.authority_grant` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `doa_reference` | text | yes |  |
+
+#### `platform.committee_member`
+
+PK (id) · Unique live seat `committee_member_one_live_seat_idx` (tenant_id, business_unit_id, seat) WHERE revoked_at IS NULL · Index `committee_member_user_idx` · Checks: valid_to ≥ valid_from, entered_by ≠ user_id · Trigger committee_member_guard (humans only) · RLS `tenant_isolation`
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `id` | uuid | no | default `gen_random_uuid()` |
+| `tenant_id` | uuid | no | → `platform.tenant` |
+| `business_unit_id` | uuid | no | → `platform.business_unit` |
+| `user_id` | uuid | no | → `platform.app_user` |
+| `seat` | text | no |  |
+| `valid_from` | date | no |  |
+| `valid_to` | date | yes |  |
+| `doa_reference` | text | yes |  |
+| `entered_by` | uuid | no | → `platform.app_user` |
+| `created_at` | timestamptz | no | default `now()` |
+| `revoked_at` | timestamptz | yes |  |
+
+#### `platform.connection_credential`
+
+PK (connection_id) · ciphertext and key id only (AES-256-GCM in the application) · RLS `tenant_isolation` · me_worker SELECT, UPDATE (token refresh)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `connection_id` | uuid | no | → `platform.connection` |
+| `tenant_id` | uuid | no | → `platform.tenant` |
+| `kind` | text | no | default `'oauth2_3lo'::text` |
+| `access_token_ciphertext` | bytea | no |  |
+| `refresh_token_ciphertext` | bytea | yes |  |
+| `key_id` | text | no |  |
+| `token_expires_at` | timestamptz | no |  |
+| `scopes` | text[] | no | default `'{}'::text[]` |
+| `site_url` | text | no |  |
+| `cloud_id` | text | no |  |
+| `account_id` | text | yes |  |
+| `account_display_name` | text | yes |  |
+| `authorized_by` | uuid | no | → `platform.app_user` |
+| `authorized_at` | timestamptz | no | default `now()` |
+| `refreshed_at` | timestamptz | yes |  |
+| `revoked_at` | timestamptz | yes |  |
+
+#### `platform.connector_oauth_state`
+
+PK (state_hash = sha256(state)) · Index `connector_oauth_state_expiry_idx` · single use (`used_at`) · RLS `tenant_isolation`
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `state_hash` | char(64) | no |  |
+| `tenant_id` | uuid | no | → `platform.tenant` |
+| `connection_id` | uuid | no | → `platform.connection` |
+| `user_id` | uuid | no | → `platform.app_user` |
+| `created_at` | timestamptz | no | default `now()` |
+| `expires_at` | timestamptz | no |  |
+| `used_at` | timestamptz | yes |  |
+
+#### `platform.license` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `rights_document_ref` | text | yes |  |
+| `rights_confirmed_on` | date | yes |  |
+| `rights_recorded_by` | uuid | yes | → `platform.app_user` |
+| `term_ends_on` | date | yes |  |
+| `on_expiry_action` | text | no | default `'remove_content_keep_metadata'::text` |
+| `expired_at` | timestamptz | yes |  |
+
+#### `platform.milestone` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `due_on` | date | yes |  |
+| `evidence_expected` | text | yes |  |
+
+#### `platform.outcome_target` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `measure_type` | text | yes |  |
+
+#### `platform.task` (new columns)
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `budget_amount` | numeric(18,2) | yes |  |
+| `budget_currency` | char(3) | yes |  |
+| `budget_note` | text | yes |  |
+| `removed_at` | timestamptz | yes |  |
+| `removed_by` | uuid | yes | → `platform.app_user` |
+
+#### `platform.tenant_ai_setting`
+
+PK (tenant_id) · Check: live_enabled ⇒ addendum_ref, addendum_signed_on, eval_run_ref, eval_passed_at · RLS `tenant_isolation`
+
+| Column | Type | Null | Default / reference |
+|---|---|---|---|
+| `tenant_id` | uuid | no | → `platform.tenant` |
+| `live_enabled` | boolean | no | default `false` |
+| `addendum_ref` | text | yes |  |
+| `addendum_signed_on` | date | yes |  |
+| `eval_run_ref` | text | yes |  |
+| `eval_passed_at` | timestamptz | yes |  |
+| `changed_by` | uuid | yes | → `platform.app_user` |
+| `changed_at` | timestamptz | no | default `now()` |
+
+---
+
 ## Appendix A — Column reference (generated from the migrated schema)
 
 Legend: `→` is a foreign key. Every `platform`/`me` table carries RLS policy `tenant_isolation`.

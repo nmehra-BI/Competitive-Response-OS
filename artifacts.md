@@ -25,6 +25,23 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
 
 
+### Update — Wave 4 contracts landed (2026-10-10)
+
+The product decisions D-109…D-121 are now contracts (decisions.md D-122…D-139, migration 0006); handlers come from
+the Wave 4 streams (`docs/market-expansion/build/WAVE4.md`). What changes per workflow once they land:
+
+| ID | Change | Stream | Record |
+|---|---|---|---|
+| WF-01 | MD-21 v1 "Returned to change the owner and confirm EUR" (v1 owner Jonas Klein); committee personas exist | — (fixture, done) | D-125 |
+| WF-03 | S06 sizing editor replaces API entry; reachable pool `checked_against` SAM in lineage | E1, E4 | D-132, D-137 |
+| WF-04 | S08 economics driver editor; one-time block apart | E1 | D-132 |
+| WF-05 | S09 add assumption; "Validation tasks · Draft" editor | E2, E4 | D-128, D-132 |
+| WF-06 | Matrix routing, G3 quorum 2 of 3 with the finance seat, approvals lapse on a stale snapshot, per-gate expiry (G2 30 days), stop rules frozen with the G2 snapshot, measure types | E3 | D-122…D-127 |
+| WF-07 | S11 plan editor, record spend with reversals, stop-rule trips → sponsor review; S14 task mapping editor; Jira Cloud adapter behind `TaskConnector` | E2, E4, E5 | D-127, D-133…D-135 |
+| WF-08 | X rule (25% / 50% / one per parent), X1 €30k · 45 days; G3 blocker names the €400k one-time investment; G3 reads the Demand type (done) | E3 | D-126, D-136 |
+| WF-09 | "Accept as fact" in one step; tenant "Live analysis" off until the addendum and an eval run are recorded | E4, E3 | D-130, D-131 |
+| WF-10 | Licences fail closed (written confirmation, term end, on-expiry action) | E3 | D-129 |
+
 ### Build status overview (end-to-end, 2026-10-09)
 
 Every workflow now runs end to end on the **real stack**: the API, the worker and Vite with MSW off, against a

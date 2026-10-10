@@ -7,7 +7,8 @@ the PRD requirements it serves. The API registers routes from that registry (`ap
 web client calls them through the same definitions (`apps/web/src/lib/api-client.ts`), and
 `packages/contracts/src/contracts.test.ts` checks the registry (unique ids and paths, screen and PRD
 coverage, idempotency on decisions and external writes). The endpoint tables in §9 are generated from the
-registry.
+registry. **Registry: 165 endpoints** (Wave 4 added 17 and extended request and response shapes additively; see §11
+and decisions.md D-122…D-138).
 
 ---
 
@@ -327,6 +328,7 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 | `feasibility.sign` | `POST /me/cases/:caseRef/feasibility/:dimension/reviews` | Named reviewer records a scoped position. Human only; the agent cannot sign. → 201 | S07, REVIEWS | ME-06 | Idempotency-Key, human session |
 | `feasibility.recordDisagreement` | `POST /me/cases/:caseRef/feasibility/:dimension/disagreements` | Record a signed disagreement; it is carried into G1/G2 packages. → 201 | S07 | ME-06, ME-10 | Idempotency-Key, human session |
 | `feasibility.resolveBlocker` | `POST /me/blockers/:id/resolution` | Resolve a blocker with a reason, or restrict scope (which needs an approved gate scope restriction). → 200 | S07 | ME-06 | Idempotency-Key, human session |
+| `feasibility.addDimension` | `POST /me/cases/:caseRef/feasibility/dimensions` | S07 "Add dimension / Request review" (D-112 §4): a dimension from the fixed list with a named reviewer, due date, question and scope of review. AI may draft the question, never the answer. Added by D-127. → 201 | S07 | ME-06 | Idempotency-Key, human session |
 
 ### Economics (S08)
 
@@ -397,6 +399,7 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 | `pilot.requestScopeChange` | `POST /me/cases/:caseRef/scope-change-requests` | Changing budget, sites or dates needs a new authorization; this opens one. → 201 | S11 | ME-11, §4 | Idempotency-Key, human session |
 | `pilot.messageDrafts` | `GET /me/cases/:caseRef/message-drafts` | Outbound message drafts. There is no send endpoint in MVP. → 200 | S11 | §3, S11 | — |
 | `pilot.updateMessageDraft` | `PATCH /me/message-drafts/:id` | Edit a draft. Stays a draft. → 200 | S11 | S11 | If-Match |
+| `pilot.tripStopRule` | `POST /me/cases/:caseRef/stop-rules/:stopRuleId/trips` | Report that a pre-registered stop rule tripped, with evidence. Creates a review item for the sponsor; never stops the case, pauses execution or passes a gate by itself (D-112). Added by D-126. → 201 | S11, MYWORK | ME-12, §4 | Idempotency-Key, human session |
 
 ### Task sync via outbox (S09, S11)
 
@@ -407,12 +410,17 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 | `taskSync.send` | `POST /me/task-sets/:id/sync` | Create the approved tasks from a current preview. Writes one outbox row per task with a stable idempotency key, in one transaction. Returns immediately (202). → 202 | S09, S11 | ME-13, ME-11 | Idempotency-Key, human session |
 | `taskSync.retry` | `POST /me/task-sets/:id/retry` | Retry only failed tasks (same idempotency keys). Confirmed tasks are never re-sent. → 202 | S09, S11 | ME-13 | Idempotency-Key, human session |
 | `taskSync.exportCsv` | `GET /me/task-sets/:id/export.csv` | Outage fallback: export the approved tasks as CSV (PRD §10). → 200 | S11 | ME-13, §10 | — |
+| `tasks.addDraft` | `POST /me/task-sets/:id/tasks` | S09 "Validation tasks · Draft": add an unsent task to a validation task set. Never carries threshold, sample or budget (D-113). Added by D-128. → 201 | S09 | ME-09, ME-13 | Idempotency-Key, human session |
+| `tasks.editDraft` | `PATCH /me/tasks/:id/draft` | Edit title, owner, due date or deliverable of an unsent validation task. A sent task is read-only (INVALID_TRANSITION). Audited as task.updated; not material (D-113). Added by D-128. → 200 | S09 | ME-09, ME-13 | If-Match, human session |
+| `tasks.removeDraft` | `POST /me/tasks/:id/removal` | Remove an unsent validation draft task (kept in history, never deleted). A sent task cannot be removed (D-113). Added by D-128. → 200 | S09 | ME-09, ME-13 | Idempotency-Key, If-Match, human session |
 
 ### Budget (S11)
 
 | Operation | Method and path | Request → response | Screens | PRD | Headers |
 |---|---|---|---|---|---|
 | `budget.recordEntry` | `POST /me/cases/:caseRef/budget-entries` | Manual committed/spent entry against an approved gate budget. Over-cap spend is rejected; use a scope change. → 201 | S11 | ME-14 | Idempotency-Key, human session |
+| `budget.listEntries` | `GET /me/cases/:caseRef/budget-entries` | Budget entries (committed and spent, with reversals) and the meter for an approved gate budget. Added by D-129. → 200 | S11 | ME-14 | — |
+| `budget.reverseEntry` | `POST /me/budget-entries/:id/reversals` | Correct an entry with a reversing entry and a reason (append-only; the original stays). An entry is reversed at most once; a reversal cannot be reversed. Added by D-129. → 201 | S11 | ME-14 | Idempotency-Key, human session |
 
 ### Outcomes and review decisions (S12)
 
@@ -466,6 +474,16 @@ decision brief), `MYWORK`, `REVIEWS`, `LOGIN`, `SHELL`, `SEARCH`.
 | `admin.setMapping` | `PUT /admin/connector-mappings/:id` | Destination project, issue type and assignee map. → 200 | S14 | ME-13 | Idempotency-Key, human session |
 | `admin.runDiagnostics` | `GET /admin/diagnostics/runs/:id` | Admin-only trace: structured outputs and tool events, never hidden reasoning. → 200 | S14 | S14, §13 | — |
 | `admin.audit` | `GET /admin/audit` | Scoped audit search. → 200 | S14 | ME-17 | — |
+| `admin.committee` | `GET /admin/committee-members` | Investment committee seats per business unit (chair, finance, operations) and gaps ("Committee named · G3 authority not granted"). Added by D-124. → 200 | S14 | §4, S14 | — |
+| `admin.setCommitteeMember` | `PUT /admin/committee-members/:id` | Name or revoke a committee seat holder from the DoA document. Membership is not authority; an administrator never seats themselves. Added by D-124. → 200 | S14 | §4, S14 | Idempotency-Key, human session |
+| `admin.licenses` | `GET /admin/licenses` | Licences with written-rights status, term end and on-expiry action (fail closed: unconfirmed = metadata only). Added by D-130. → 200 | S14 | ME-02, ME-16, S13 | — |
+| `admin.setLicense` | `PUT /admin/licenses/:id` | Edit a licence: permissions, written confirmation, term end and on-expiry action. Permissions above metadata only need a written confirmation. Audited. Added by D-130. → 200 | S14 | ME-02, ME-16 | Idempotency-Key, human session |
+| `admin.liveAnalysis` | `GET /admin/settings/live-analysis` | The tenant "Live analysis" setting (off by default) with its document reference. Added by D-131. → 200 | S14 | §8, §13 | — |
+| `admin.setLiveAnalysis` | `PUT /admin/settings/live-analysis` | Turn live analysis on or off. On requires the signed addendum (reference and date) and a passing manual eval run on the configured provider. Audited. Added by D-131. → 200 | S14 | §8, §13 | Idempotency-Key, human session |
+| `admin.checkMapping` | `POST /admin/connector-mappings/:id/check` | "Check with Jira": dry lookup of project, issue type and assignees through the connector (no writes), and the material-change impact of saving. Added by D-132. → 200 | S14 | ME-13, S14 | human session |
+| `admin.createConnection` | `POST /admin/connections` | Add a Jira Cloud task-tool connection (status Expired until authorized). Added by D-133. → 201 | S14 | ME-13, S14 | Idempotency-Key, human session |
+| `admin.authorizeConnection` | `POST /admin/connections/:id/authorization` | Start OAuth 2.0 (3LO) as the dedicated integration account: returns the Atlassian consent URL with a one-time state. Added by D-133. → 201 | S14 | ME-13 | Idempotency-Key, human session |
+| `admin.completeAuthorization` | `POST /admin/connections/:id/authorization/callback` | Finish 3LO: exchange the code (state checked once), store tokens encrypted, record site, account and scopes, then health-check. Added by D-133. → 200 | S14 | ME-13 | Idempotency-Key, human session |
 
 ### Dev-only simulator controls
 
@@ -486,13 +504,51 @@ Every prototype action has an endpoint. Summary by screen (see the catalogue for
 | S04 Compare | preview / apply weights, exclude until normalized, inspect evidence, select | `comparisons.*`, `evidence.get` |
 | S05 Thesis | edit, request analysis, assign reviewer, challenge claim, accept AI draft, submit G1 | `thesis.*`, `claims.*`, `analysis.start`, `cases.requestReview`, `gates.createRequest`, `gates.submit` |
 | S06 Sizing | edit assumption, inspect population, attach source, compare versions, lineage, resolve duplicate cohort, snapshot | `sizing.*`, `lineage.get`, `assumptions.update`, `evidence.upload` |
-| S07 Feasibility | request review, attach assessment, record disagreement, resolve blocker / restrict scope | `feasibility.*`, `cases.requestReview` |
+| S07 Feasibility | add dimension / request review, attach assessment, record disagreement, resolve blocker / restrict scope | `feasibility.*` (incl. `feasibility.addDimension`), `cases.requestReview` |
 | S08 Economics | edit drivers in draft, what must be true, finance review, snapshot, export | `economics.*`, `lineage.get` |
-| S09 Validation | dispute thread, resolve with reason, approve plan (G1), amend, record result, preview / create / retry tasks | `assumptions.*`, `challenges.*`, `experiments.*`, `gates.*`, `taskSync.*` |
+| S09 Validation | add assumption, dispute thread, resolve with reason, approve plan (G1), amend, record result, edit / add / remove draft validation tasks, preview / create / retry tasks | `assumptions.*`, `challenges.*`, `experiments.*`, `gates.*`, `taskSync.*`, `tasks.addDraft` / `editDraft` / `removeDraft` |
 | S10 Decisions / brief | approve within authority, return, not approved, abstain, delegate, conditions, see what changed, refresh, withdraw | `gates.package`, `gates.decide`, `gates.snapshotDiff`, `gates.refreshSnapshot`, `gates.withdraw`, `gates.recordPosition` |
-| S11 Pilot | activate, preview, create tasks, retry failed, export CSV, update progress, report blocker, scope change, edit draft message (no send) | `pilot.*`, `tasks.*`, `taskSync.*`, `conditions.markMet`, `budget.recordEntry` |
+| S11 Pilot | edit plan (milestones, tasks, budget lines), activate, preview, create tasks, retry failed, export CSV, update progress, report blocker, report a stop-rule trip, record spend and reverse it, scope change, edit draft message (no send) | `pilot.*` (incl. `pilot.tripStopRule`), `tasks.*`, `taskSync.*`, `conditions.markMet`, `budget.*` |
 | S12 Outcomes | record actuals, stop, revise, request extension with own cap, scale request disabled with reasons | `outcomes.*`, `gates.preconditions` (G3) |
 | S13 Evidence | challenge, mark stale, replace, inspect impacted cases, request access | `evidence.*` |
-| S14 Admin | roles, delegated authority, gate policies, materiality, entitlements, connections test/reconnect, run budget, diagnostics, audit | `admin.*`, `dev.*` (dev only) |
+| S14 Admin | roles, delegated authority (DoA), committee seats, gate policies, materiality, licences (rights, term end, on expiry), live analysis, entitlements, connections test/reconnect, Jira Cloud connect (3LO), task mapping editor with "Check with Jira", run budget, diagnostics, audit | `admin.*`, `dev.*` (dev only) |
 | My Work | tasks, brief, mark in progress / done, report blocker, record actuals | `work.mine`, `tasks.*`, `outcomes.recordObservation` |
 | Reviews | awaiting decision, assigned reviews, confirm / dispute / abstain | `reviews.inbox`, `reviews.respond`, `feasibility.sign`, `economics.signFinanceReview` |
+
+## 11. Wave 4 additions (D-122 … D-140)
+
+All additions are optional fields or new endpoints; a client written before them still works, and stored rows and
+frozen snapshots keep validating (and keep their hashes). New endpoints answer `500 INTERNAL "Not implemented yet"`
+until their Wave 4 stream lands them (`docs/market-expansion/build/WAVE4.md`).
+
+| Endpoint or shape | Addition | Decision |
+|---|---|---|
+| `admin.publishPolicy` · `GatePolicyBody` | `approvalExpires`, `committeeSeats`, `requiredSeats` (quorum = `requiredApprovals`), `authority` (matrix row), `extension` (X rule) | D-122 |
+| `admin.setAuthority` · `AuthorityGrant` | `doaReference` | D-123 |
+| `admin.committee`, `admin.setCommitteeMember` · `CommitteeMember` | committee seats per BU; membership is not authority | D-124 |
+| `gates.package` · `ApprovalPanelState` | `route`, `committee` (quorum, required seats, per-seat state on the current snapshot, `statusText`) | D-124 |
+| `Approval`, `GateRequest` | `Approval.seat`; `GateRequest.route`, `GateRequest.stopRules` | D-124, D-127 |
+| `gates.createRequest` | `stopRules: StopRuleInput[]` (G2); `outcomeTargets[].measureType` | D-127, D-126 |
+| `SnapshotContent` | `stopRules`, `outcomeTargets[].measureType` | D-127, D-126 |
+| `pilot.get` · `PilotPlanView` | `stopRules: StopRuleState[]`, `budgetEntries` | D-127, D-133 |
+| `pilot.tripStopRule` | trip a stop rule with evidence → sponsor review item; no state change | D-127 |
+| `tasks.addDraft`, `tasks.editDraft`, `tasks.removeDraft` · `TaskSet.draftEditable` | S09 validation task draft editor | D-128 |
+| `admin.licenses`, `admin.setLicense` · `License` | `rightsConfirmation`, `termEndsOn`, `onExpiry`, `rightsStatus`, `expiredAt`; fail closed | D-129 |
+| `admin.liveAnalysis`, `admin.setLiveAnalysis` · `LiveAnalysisSetting` | tenant "Live analysis" (off by default) | D-130 |
+| `analysis.decideProposal` · `Proposal` | `acceptAsFact`; `oneStepAccept` | D-131 |
+| `sizing.saveDraft` · `SizingDraftPatch` | `boundary.productBoundary`, `boundary.includes`, `inputs[].basisText`, `clearInputKeys`, `dedupRuleText`, `overlaps[].method` | D-132 |
+| `economics.saveDraft` | `currency`, `priceYear`, `horizonYears`, `opexScopeNote`, `clearInputKeys`, `drivers[].assumptionId/sourceId` | D-132 |
+| `assumptions.create` | `sourceIds`, `currency`, `priceYear` | D-132 |
+| `feasibility.addDimension` | S07 add dimension / request review | D-132 |
+| `pilot.saveDraft` · `Task`, `Milestone` | `TaskDraftInput.milestoneOrdinal/dependsOnOrdinals/budgetLine`; milestone `dueOn/evidenceExpected` | D-132 |
+| `budget.recordEntry`, `budget.listEntries`, `budget.reverseEntry` · `BudgetEntry` | `reference`, `taskId`; reversals with a reason; list + meter | D-133 |
+| `admin.checkMapping`, `admin.setMapping` | dry lookup + material impact; `acknowledgeMaterialImpact` | D-134 |
+| `admin.createConnection`, `admin.authorizeConnection`, `admin.completeAuthorization` · `Connection.jira` | Jira Cloud OAuth 2.0 (3LO) integration account | D-135 |
+| `outcomes.requestExtension` · `OutcomeReviewView` | `windowStart`, `windowEnd`, `retestTargetIds`, `maxSites`; `extensionLimits` | D-136 |
+| `lineage.get` · `LineageNode` | `usedBy[].relation/detail`; `checks` (`checked_against`) | D-137 |
+
+New enums and label maps: `CommitteeSeat`, `CommitteeSeatState`, `ApprovalRoute`, `MeasureType`,
+`StopRuleTriggerKind`, `StopRuleConsequence`, `StopRuleStatus`, `LicenseRightsStatus`, `LicenseExpiryAction`,
+`AssigneeMappingStatus`, `LineageRelation`, and `BUDGET_ENTRY_KIND_LABELS`; helpers `thesisBlockerLabel` ("Pending ·
+G2") and `snapshotLabel` ("G2 · Snapshot v2").
+

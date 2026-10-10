@@ -66,6 +66,9 @@ All Aster values are illustrative.
 | 15 | Reachable pool upper-bound check and lineage edge | S | During pilot |
 
 Contract and fixture changes go through the D-031 change-request process (CR-PD-1 to CR-PD-9 in `decisions.md`). All are additive.
+**Status (10 Oct 2026):** all nine CRs accepted (D-122…D-131) with the extra contracts the backlog needed (D-132…D-137);
+migration 0006 and the Aster fixture values have landed. The tickets are assigned to five streams in
+`docs/market-expansion/build/WAVE4.md`.
 
 ## Questions that still need an external party
 
