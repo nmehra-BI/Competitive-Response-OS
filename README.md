@@ -43,7 +43,7 @@ MSW fixtures without an API.
 ```bash
 curl localhost:5173/api/v1/auth/dev-personas                         # persona user ids
 curl -c cookies.txt -H 'content-type: application/json' \
-  -d '{"userId":"a57e0003-0000-4000-8000-000000000005"}' localhost:5173/api/v1/auth/dev-login   # Jonas
+  -d '{"userId":"a57e0003-0000-4000-8000-000000000004"}' localhost:5173/api/v1/auth/dev-login   # Jonas
 # connection id: GET /api/v1/admin/connections as the administrator, or the task set's connectionId
 curl -X PUT localhost:5173/api/v1/dev/simulator/faults -b cookies.txt -H 'content-type: application/json' \
   -d '{"connectionId":"<id>","rules":[{"mode":"permission_denied","match":{"assignee":"operations.lead@aster.example"},"times":1}]}'
