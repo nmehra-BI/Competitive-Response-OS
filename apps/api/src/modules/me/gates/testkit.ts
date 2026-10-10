@@ -320,3 +320,53 @@ export async function activatePilot(t: TestApp, s: SeededTenant): Promise<void> 
   });
   if (res.statusCode !== 200) throw new Error(`activate ${res.statusCode} ${res.body}`);
 }
+
+/** Two typed G2 thresholds (D-115) as S10 sends them. */
+export function g2Targets() {
+  return [
+    {
+      metricKey: 'paid_use_continuation',
+      name: 'Paid use and continuation',
+      thresholdText: '4 of 4 pilot customers',
+      operator: 'gte' as const,
+      thresholdValue: '4',
+      unit: 'customers',
+      windowText: 'Dec 2026 – Feb 2027',
+      measureType: 'demand' as const,
+    },
+    {
+      metricKey: 'deployment_effort',
+      name: 'Deployment effort per site',
+      thresholdText: 'Within 16 hours per site',
+      operator: 'lte' as const,
+      thresholdValue: '16',
+      unit: 'hours per site',
+      windowText: 'Dec 2026 – Feb 2027',
+      measureType: 'delivery_effort' as const,
+    },
+  ];
+}
+
+/** Two structured stop rules (D-112) as S10 sends them; SR2 watches the demand threshold. */
+export function g2StopRules(s: SeededTenant) {
+  return [
+    {
+      trigger: {
+        kind: 'event' as const,
+        metricKey: null,
+        text: 'Spend would exceed the approved €120k ceiling',
+      },
+      consequence: 'pause_and_request_review' as const,
+      ownerId: s.user('jonas'),
+    },
+    {
+      trigger: {
+        kind: 'threshold' as const,
+        metricKey: 'paid_use_continuation',
+        text: 'Fewer than 2 of 4 pilot customers in paid use at day 45',
+      },
+      consequence: 'recommend_stop' as const,
+      ownerId: s.user('jonas'),
+    },
+  ];
+}

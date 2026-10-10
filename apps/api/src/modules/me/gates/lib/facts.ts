@@ -7,14 +7,18 @@ import type { DecisionOutcome, GateCode, GateRequestStatus, GateStatus } from '@
 import { sql, type Tx } from '@growth-os/db';
 import {
   deriveGateDisplayStatus,
+  effectiveGatePolicy,
   evaluateGate,
+  type ExtensionContext,
+  type ExtensionRequestFacts,
   type GateEvaluation,
   type GateFacts,
   type SignOffFact,
   type TargetFact,
 } from '@growth-os/domain';
+import type { MeasureType, ThresholdResult } from '@growth-os/contracts';
 import { gatePolicy, type CaseLite } from './common';
-import { GATE_COLUMNS, scopeOf, type GateRow } from './serialize';
+import { GATE_COLUMNS, scopeOf, stopRulesOf, type GateRow } from './serialize';
 
 /** numeric(24,8) → shortest exact text ("4.00000000" → "4"). */
 export function trimDecimal(v: string | null): string | null {
@@ -138,6 +142,7 @@ export async function targetFacts(tx: Tx, caseId: string): Promise<TargetFact[]>
       thresholdValue: trimDecimal(t.threshold_value),
       observedValue: obs ? trimDecimal(obs.value ?? null) : null,
       result: (obs?.result ?? null) as TargetFact['result'],
+      measureType: (t.measure_type ?? null) as MeasureType | null, // D-115: the G3 demand clause reads it
     });
   }
   return out;
@@ -176,6 +181,11 @@ export interface FactInput {
   gateCode: GateCode;
   caseRow: CaseLite | null;
   gate: GateRow | null;
+  /**
+   * D-111: whether the viewer may read the committed economics. The G3 scale-budget blocker names the
+   * one-time investment only then. Default true (every caller has already checked case access).
+   */
+  economicsReadable?: boolean;
   /** Scope for gates not yet requested (preconditions view). */
   scopeOverride?: {
     amount: string | null;
@@ -277,7 +287,8 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         .where('e.illustrative', '=', false)
         .execute();
       const econ = await latestCommittedEconomics(tx, caseId);
-      const stopRules = await stopRulesOf(tx, f.gate);
+      const stopRules = await stopRuleLines(tx, f.gate);
+      const structured = f.gate ? stopRulesOf(f.gate) : [];
       return {
         gateCode: 'G2',
         validationResults: exps.map((e) => ({ experimentKey: e.display_key, resultRecorded: e.has_result })),
@@ -285,6 +296,8 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         specialistSignOff: await specialistSignOff(tx, caseId),
         scope: s,
         stopRules,
+        // D-112: null = a request from before structured stop rules (its text lines still count).
+        structuredStopRules: structured === null ? null : structured.length,
       };
     }
     case 'G3': {
@@ -305,6 +318,7 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         economicsUpdatedAfterPilot: updated,
         capacityReviewed: updated,
         scope: { amount: s.amount, currency: s.currency },
+        scaleInvestment: f.economicsReadable === false ? null : scaleInvestmentOf(econ),
       };
     }
     case 'X': {
@@ -323,13 +337,121 @@ export async function loadGateFacts(tx: Tx, f: FactInput): Promise<GateFacts> {
         outcomeDecision: await latestDecisionOutcome(tx, caseId),
         scope: { amount: s.amount, currency: s.currency, ownerId: s.ownerId },
         capPlaceholder: s.amount === null,
+        extension: f.gate?.parent_gate_request_id ? await extensionFactsOf(tx, f.gate) : null,
       };
     }
   }
 }
 
-/** Stop rules of a request: its snapshot's budget and stop rules, else the proposed scope text. */
-async function stopRulesOf(tx: Tx, gate: GateRow | null): Promise<string[]> {
+/** The committed economics' one-time scale-entry investment (D-111), or null. One-time money only. */
+export function scaleInvestmentOf(
+  econ: { version: number; output: unknown } | undefined,
+): { economicsVersion: number; amount: string; currency: string } | null {
+  const inv = (econ?.output as { oneTimeInvestment?: { amount?: string; currency?: string } } | null)
+    ?.oneTimeInvestment;
+  if (!econ || !inv?.amount || !inv.currency) return null;
+  return { economicsVersion: econ.version, amount: inv.amount, currency: inv.currency };
+}
+
+/** Whether the tenant is illustrative (training data: an extension cap may stay a placeholder). */
+export async function tenantIllustrative(tx: Tx): Promise<boolean> {
+  const t = await tx.selectFrom('platform.tenant').select('illustrative').executeTakeFirst();
+  return t?.illustrative ?? false;
+}
+
+const ACTIVE_X = ['draft', 'awaiting_decision', 'stale', 'approved', 'approved_with_conditions'] as const;
+
+/** Parent pilot facts and the extensions already asked of it (other than `excludeGateId`). */
+export async function extensionParentOf(tx: Tx, parentId: string, excludeGateId: string | null) {
+  const parent = await tx
+    .selectFrom('platform.gate_request')
+    .select([...GATE_COLUMNS])
+    .where('id', '=', parentId)
+    .executeTakeFirst();
+  if (!parent) return null;
+  let q = tx
+    .selectFrom('platform.gate_request')
+    .select(['id', 'display_key'])
+    .where('parent_gate_request_id', '=', parentId)
+    .where('gate_code', '=', 'X')
+    .where('status', 'in', [...ACTIVE_X]);
+  if (excludeGateId) q = q.where('id', '<>', excludeGateId);
+  const others = await q.execute();
+  const ps = scopeOf(parent as GateRow);
+  return {
+    row: parent as GateRow,
+    facts: {
+      amount: parent.requested_amount,
+      currency: parent.currency,
+      durationDays: parent.duration_days ?? ps.durationDays,
+      maxSites: ps.maxSites,
+    },
+    others,
+  };
+}
+
+/** Parent targets with their latest result (for "re-tests unmet or inconclusive thresholds"). */
+export async function parentTargetResults(tx: Tx, parent: GateRow) {
+  if (!parent.current_snapshot_id) return [];
+  const targets = await tx
+    .selectFrom('platform.outcome_target')
+    .select(['id', 'name', 'metric_key'])
+    .where('snapshot_id', '=', parent.current_snapshot_id)
+    .orderBy('metric_key')
+    .execute();
+  const out: { id: string; metricKey: string; name: string; result: ThresholdResult | null }[] = [];
+  for (const t of targets) {
+    const o = await latestObservation(tx, t.id);
+    out.push({
+      id: t.id,
+      metricKey: t.metric_key,
+      name: t.name,
+      result: (o?.result ?? null) as ThresholdResult | null,
+    });
+  }
+  return out;
+}
+
+/** Retest target ids stored with an X request (D-136). */
+export function retestTargetIdsOf(g: Pick<GateRow, 'scope'>): string[] | null {
+  const ids = (g.scope as { retestTargetIds?: unknown } | null)?.retestTargetIds;
+  return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : null;
+}
+
+/** The D-110 rule facts of an X request (pure check in `checkExtensionRequest`). */
+export async function extensionFactsOf(
+  tx: Tx,
+  gate: GateRow,
+): Promise<{ context: ExtensionContext; request: ExtensionRequestFacts } | null> {
+  if (!gate.parent_gate_request_id) return null;
+  const parent = await extensionParentOf(tx, gate.parent_gate_request_id, gate.id);
+  if (!parent) return null;
+  const rule = effectiveGatePolicy(await gatePolicy(tx, 'X')).extension!;
+  const scope = scopeOf(gate);
+  const targets = await parentTargetResults(tx, parent.row);
+  const ids = retestTargetIdsOf(gate);
+  const retest = ids ? targets.filter((t) => ids.includes(t.id)) : targets.filter((t) => t.result !== 'met');
+  return {
+    context: {
+      rule,
+      parent: parent.facts,
+      // An extension decided before this one still counts; withdrawn and refused ones do not.
+      otherExtensions: parent.others.length,
+      illustrative: await tenantIllustrative(tx),
+    },
+    request: {
+      amount: scope.amount,
+      currency: scope.currency,
+      durationDays: scope.durationDays,
+      maxSites: scope.maxSites,
+      scopeItems: scope.authorizes,
+      retestTargets: retest.map((t) => ({ name: t.name, result: t.result })),
+    },
+  };
+}
+
+/** Readable stop-rule lines of a request: its snapshot's budget and stop rules, else the scope text. */
+async function stopRuleLines(tx: Tx, gate: GateRow | null): Promise<string[]> {
   if (!gate) return [];
   if (gate.current_snapshot_id) {
     const s = await tx
@@ -382,9 +504,19 @@ export interface CaseGateState {
  * The single source of a case gate's preconditions and display status (D-072): `gates.preconditions`,
  * the case header rail and the overview all call this, so they cannot disagree.
  */
-export async function caseGateState(tx: Tx, caseRow: CaseLite, code: GateCode): Promise<CaseGateState> {
+export async function caseGateState(
+  tx: Tx,
+  caseRow: CaseLite,
+  code: GateCode,
+  opts?: { economicsReadable?: boolean },
+): Promise<CaseGateState> {
   const gate = await latestCaseGate(tx, caseRow.id, code);
-  const evaluation = await evaluate(tx, { gateCode: code, caseRow, gate });
+  const evaluation = await evaluate(tx, {
+    gateCode: code,
+    caseRow,
+    gate,
+    economicsReadable: opts?.economicsReadable,
+  });
   const status = deriveGateDisplayStatus({
     gateCode: code,
     requestStatus: (gate?.status as GateRequestStatus | undefined) ?? null,

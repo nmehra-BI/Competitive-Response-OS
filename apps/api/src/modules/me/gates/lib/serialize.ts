@@ -5,6 +5,7 @@ import {
   GateScope,
   RoleCode,
   SnapshotContent,
+  StopRule,
   toFingerprint,
   type Approval,
   type Condition,
@@ -20,7 +21,8 @@ import type { Tx } from '@growth-os/db';
 import { deriveGateDisplayStatus, ME_GATES, type GateEvaluation } from '@growth-os/domain';
 import { z } from 'zod';
 import { isoDate, isoDateOrNull, isoDateTime, isoDateTimeOrNull } from '../../../../platform/serialize';
-import { fmtMoneyShort, peopleOf, type People } from './common';
+import { asOfDate, caseById, fmtMoneyShort, peopleOf, type People } from './common';
+import { loadGovernance } from './governance';
 
 export interface GateRow {
   id: string;
@@ -87,7 +89,17 @@ export async function gateById(tx: Tx, id: string): Promise<GateRow | null> {
 const StoredScope = GateScope.extend({
   proposedConditions: z.array(ConditionInput).default([]),
   outcomeTargets: z.array(OutcomeTargetInput).default([]),
+  /** D-112 / D-127: structured stop rules (G2). Absent on requests stored before D-122. */
+  stopRules: z.array(StopRule).optional(),
 });
+
+/**
+ * The structured stop rules stored with a request: [] when a post-D-122 request has none, null when
+ * the request predates structured rules (its readable lines in the snapshot still apply).
+ */
+export function stopRulesOf(g: Pick<GateRow, 'scope'>): StopRule[] | null {
+  return StoredScope.parse(g.scope).stopRules ?? null;
+}
 
 export function outcomeTargetsOf(g: Pick<GateRow, 'scope'>): OutcomeTargetInput[] {
   return StoredScope.parse(g.scope).outcomeTargets;
@@ -178,10 +190,29 @@ export async function toGateRequest(
   tx: Tx,
   g: GateRow,
   evaluation?: Pick<GateEvaluation, 'allMet' | 'metCount'>,
+  opts?: { asOf?: string },
 ): Promise<GateRequest> {
   const conds = await conditionRows(tx, [g.id]);
   const people = await peopleOf(tx, [g.submitted_by, ...conds.flatMap((c) => [c.owner_user_id, c.added_by])]);
   const scope = scopeOf(g);
+  const stopRules = stopRulesOf(g);
+  // D-109 §1: who decides under the matrix (sponsor, committee or authority gap), on today's date.
+  const caseRow = g.case_id ? await caseById(tx, g.case_id) : null;
+  const sponsorId =
+    caseRow?.sponsorUserId ??
+    (g.subject_type === 'mandate'
+      ? ((
+          await tx
+            .selectFrom('me.mandate as m')
+            .leftJoin('me.mandate_version as v', (j) =>
+              j.on((eb) => eb('v.id', '=', eb.fn.coalesce('m.current_version_id', 'm.draft_version_id'))),
+            )
+            .select('v.sponsor_user_id')
+            .where('m.id', '=', g.subject_id)
+            .executeTakeFirst()
+        )?.sponsor_user_id ?? null)
+      : null);
+  const gov = await loadGovernance(tx, g, caseRow, opts?.asOf ?? asOfDate(new Date()), sponsorId);
   return {
     id: g.id,
     key: g.display_key,
@@ -200,6 +231,8 @@ export async function toGateRequest(
     currentSnapshotId: g.current_snapshot_id,
     conditions: conds.map((c) => toCondition(c, people)),
     rowVersion: g.row_version,
+    ...(stopRules ? { stopRules } : {}),
+    route: gov.route.route,
   };
 }
 
@@ -280,6 +313,7 @@ export interface ApprovalRow {
   note: string | null;
   delegated_to_user_id: string | null;
   decided_at: Date;
+  committee_seat: string | null;
   inv_kind: string | null;
   inv_reason: string | null;
   inv_at: Date | null;
@@ -306,6 +340,7 @@ export async function approvalRows(
       'a.note',
       'a.delegated_to_user_id',
       'a.decided_at',
+      'a.committee_seat',
       'i.kind as inv_kind',
       'i.reason as inv_reason',
       'i.created_at as inv_at',
@@ -335,6 +370,7 @@ export function toApproval(a: ApprovalRow, people: People): Approval {
     note: a.note,
     delegatedTo: a.delegated_to_user_id ? people(a.delegated_to_user_id) : null,
     decidedAt: isoDateTime(a.decided_at),
+    seat: (a.committee_seat ?? null) as Approval['seat'],
     effective: a.inv_kind === null,
     invalidation:
       a.inv_kind === null

@@ -48,6 +48,7 @@ const target = {
   thresholdValue: '3',
   unit: 'customers',
   windowText: 'Jan – Mar 2027',
+  measureType: 'demand' as const,
 };
 
 describe('G2 request drafts the pilot plan (D-102)', () => {
@@ -78,6 +79,22 @@ describe('G2 request drafts the pilot plan (D-102)', () => {
       idempotencyKey: true,
     });
     expect(dup.statusCode).toBe(400);
+    // D-115: a threshold without a measure type is refused.
+    const { measureType: _m, ...untyped } = target;
+    const noType = await call(t.app, API.gates.createRequest, {
+      params: { caseRef: 'ME-110' },
+      body: {
+        gateCode: 'G2',
+        scope,
+        parentGateRequestId: null,
+        proposedConditions: [],
+        outcomeTargets: [untyped],
+      },
+      cookie: maya,
+      idempotencyKey: true,
+    });
+    expect(noType.statusCode).toBe(400);
+    expect(JSON.parse(noType.body).title).toBe('Choose a measure type for each pilot threshold.');
   });
 
   it('creates the plan draft, its empty task set and keeps the thresholds out of contract reads', async () => {

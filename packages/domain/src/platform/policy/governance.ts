@@ -443,7 +443,7 @@ export function checkExtensionRequest(ctx: ExtensionContext, req: ExtensionReque
       });
   }
   if (req.durationDays !== null) {
-    if (limits?.maxDurationDays != null && req.durationDays > limits.maxDurationDays)
+    if (limits && limits.maxDurationDays !== null && req.durationDays > limits.maxDurationDays)
       out.push({
         key: 'extension_within_rule',
         message: `The extension asks ${req.durationDays} days; the rule allows up to ${limits.maxDurationDays} days (${pctText(rule.maxDurationShare)}% of the ${parent.durationDays}-day pilot).`,

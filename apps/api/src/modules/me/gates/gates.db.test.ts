@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API, toFingerprint } from '@growth-os/contracts';
 import { sql } from '@growth-os/db';
-import { gates, mandate, outcomeTargets, people } from '@growth-os/fixtures-aster';
+import { expectedScaleGate, gates, mandate, outcomeTargets, people } from '@growth-os/fixtures-aster';
 import { applyMateriality } from '../../../platform/materiality';
 import { systemTools } from '../../../platform/pipeline';
 import {
@@ -27,6 +27,8 @@ import {
   decideBody,
   exp03Plan,
   g2Conditions,
+  g2StopRules,
+  g2Targets,
   ids,
   inTenant,
   problem,
@@ -115,7 +117,14 @@ describe('G2 package (step 17) and reads', () => {
     expect(pkg.dissent[0]!.author.displayName).toBe('Daniel Weber');
     expect(pkg.panel.canDecide).toBe(true);
     expect(pkg.panel.allowedDispositions).toContain('approve_with_conditions');
-    expect(pkg.panel.viewerAuthorityText).toContain('€[limit]');
+    // D-109: "Your authority: up to €150k · BU Water" (the decided matrix, no €[limit] placeholder).
+    expect(pkg.panel.viewerAuthorityText).toBe('Up to €150k · BU Water');
+    expect(pkg.panel.route).toBe('sponsor');
+    expect(pkg.panel.committee).toBeNull();
+    expect(pkg.gateRequest.route).toBe('sponsor');
+    // D-112: the structured stop rules SR1–SR3 were frozen into v3 with the request.
+    expect(pkg.snapshot.content.stopRules?.map((r) => r.key)).toEqual(['SR1', 'SR2', 'SR3']);
+    expect(pkg.gateRequest.stopRules?.map((r) => r.key)).toEqual(['SR1', 'SR2', 'SR3']);
     expect(pkg.approvals).toEqual([]);
     expect(pkg.gateHistory.some((h) => h.gateCode === 'G1' && h.status === 'approved')).toBe(true);
     expect(await caseStage(t, a)).toBe('pilot_approval_pending');
@@ -706,6 +715,30 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
     expect(await auditActions(t, s, ids(s).g2)).toContain('gate_request.withdraw');
   });
 
+  it('a G2 requested after D-122 without a stop rule cannot be submitted (D-112)', async () => {
+    const cr = await call(t.app, API.gates.createRequest, {
+      params: { caseRef: 'ME-104' },
+      body: { gateCode: 'G2', scope: g2Scope(s), parentGateRequestId: null, proposedConditions: [] },
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
+    expect(cr.statusCode).toBe(201);
+    const id = API.gates.createRequest.response.parse(cr.json()).id;
+    const sub = await call(t.app, API.gates.submit, { params: { id }, cookie: c.maya, idempotencyKey: true });
+    expect(sub.statusCode).toBe(409);
+    expect(problem(sub.body).blockers).toContainEqual({
+      key: 'budget_and_stop_rules',
+      gate: 'G2',
+      message: 'Pre-register at least one stop rule (trigger, consequence and owner).',
+    });
+    await call(t.app, API.gates.withdraw, {
+      params: { id },
+      body: { rationale: 'Add the stop rules' },
+      cookie: c.maya,
+      idempotencyKey: true,
+    });
+  });
+
   it('a new G2 with proposed conditions is submitted → stage Pilot approval pending, gate_submitted', async () => {
     const cr = await call(t.app, API.gates.createRequest, {
       params: { caseRef: 'ME-104' },
@@ -714,6 +747,8 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
         scope: g2Scope(s),
         parentGateRequestId: null,
         proposedConditions: g2Conditions(s),
+        outcomeTargets: g2Targets(),
+        stopRules: g2StopRules(s),
       },
       cookie: c.maya,
       idempotencyKey: true,
@@ -734,9 +769,33 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
     });
     expect(sub.statusCode).toBe(200);
     const out = API.gates.submit.response.parse(sub.json());
-    expect(out.gateRequest.key).toBe('ME-104-G2-2');
+    expect(out.gateRequest.key).toBe('ME-104-G2-3');
     expect(out.snapshot.version).toBe(4);
     expect(out.snapshot.content.conditionsProposed).toHaveLength(2);
+    // D-112 / D-115: stop rules and typed thresholds are frozen into the first snapshot of the request.
+    expect(out.snapshot.content.stopRules?.map((r) => [r.key, r.consequence])).toEqual([
+      ['SR1', 'pause_and_request_review'],
+      ['SR2', 'recommend_stop'],
+    ]);
+    expect(out.snapshot.content.budgetAndStopRules).toContain(
+      'SR2 · Fewer than 2 of 4 pilot customers in paid use at day 45 → Recommend stop · owner Jonas Klein',
+    );
+    expect(out.snapshot.content.outcomeTargets.map((x) => [x.metricKey, x.measureType])).toEqual([
+      ['paid_use_continuation', 'demand'],
+      ['deployment_effort', 'delivery_effort'],
+    ]);
+    const typed = await inTenant(t, s, (tx) =>
+      tx
+        .selectFrom('platform.outcome_target')
+        .select(['metric_key', 'measure_type'])
+        .where('snapshot_id', '=', out.snapshot.id)
+        .orderBy('metric_key')
+        .execute(),
+    );
+    expect(typed).toEqual([
+      { metric_key: 'deployment_effort', measure_type: 'delivery_effort' },
+      { metric_key: 'paid_use_continuation', measure_type: 'demand' },
+    ]);
     expect(out.snapshot.content.dissent[0]!.statement).toBe(gates.g2.dissent.statement);
     expect(await caseStage(t, s)).toBe('pilot_approval_pending');
     expect((await analyticsFor(t, s, 'gate_submitted')).at(-1)!.props).toEqual({
@@ -766,7 +825,20 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
       idempotencyKey: true,
     });
     expect(re.statusCode).toBe(200);
-    expect(API.gates.submit.response.parse(re.json()).snapshot.version).toBe(5);
+    const v5snap = API.gates.submit.response.parse(re.json()).snapshot;
+    expect(v5snap.version).toBe(5);
+    // Copied forward unchanged (never-rule 12): same rules, same typed thresholds.
+    expect(v5snap.content.stopRules).toEqual((await currentPackage(t, c.elena, newG2)).gateRequest.stopRules);
+    expect(
+      await inTenant(t, s, (tx) =>
+        tx
+          .selectFrom('platform.outcome_target')
+          .select('measure_type')
+          .where('snapshot_id', '=', v5snap.id)
+          .orderBy('metric_key')
+          .execute(),
+      ),
+    ).toEqual([{ measure_type: 'delivery_effort' }, { measure_type: 'demand' }]);
     const v5 = await currentPackage(t, c.elena, newG2);
     expect(v5.approvals).toEqual([]);
     expect(v5.panel.canDecide).toBe(true);
@@ -800,7 +872,7 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
     expect(await caseStage(t, s)).toBe('pilot_approved');
   });
 
-  it('above the authority ceiling → AUTHORITY_INSUFFICIENT (Elena’s G2 grant is €[limit])', async () => {
+  it('a €300k G2 routes to the committee; Elena (chair, €150k G2 grant) → AUTHORITY_INSUFFICIENT', async () => {
     const s2 = await seedTenant(t.db, 'aster-demo');
     const maya = await login(t.app, s2.user('maya'));
     const elena = await login(t.app, s2.user('elena'));
@@ -817,6 +889,8 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
         scope: g2Scope(s2, '300000.00'),
         parentGateRequestId: null,
         proposedConditions: [],
+        outcomeTargets: g2Targets(),
+        stopRules: g2StopRules(s2),
       },
       cookie: maya,
       idempotencyKey: true,
@@ -827,9 +901,10 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
         .statusCode,
     ).toBe(200);
     const pkg = await currentPackage(t, elena, id);
+    expect(pkg.panel.route).toBe('committee');
     expect(pkg.panel.allowedDispositions).not.toContain('approve');
     expect(pkg.panel.cannotDecideReason).toBe(
-      'This request is above your delegated authority (up to €[limit]).',
+      'This request is above your delegated authority (up to €150k).',
     );
     const res = await call(t.app, API.gates.decide, {
       params: { id },
@@ -849,7 +924,9 @@ describe('withdraw, new request, return → resubmit (coordinator note: current-
       cookie: elena,
       idempotencyKey: true,
     });
+    // A seat holder may return a committee request; it returns at once (no quorum for a return).
     expect(ret.statusCode).toBe(201);
+    expect(API.gates.decide.response.parse(ret.json()).approvals[0]!.seat).toBe('chair');
   });
 });
 
@@ -1081,9 +1158,13 @@ describe('G3 blocked (step 28)', () => {
     expect(res.statusCode).toBe(409);
     const p = problem(res.body);
     expect(p.code).toBe('PRECONDITIONS_UNMET');
+    // D-111: the fourth blocker names the committed €400k one-time investment (no /year figure).
     expect(p.title).toBe(
-      'G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget stated',
+      'G3 preconditions unmet: demand threshold 3 of 4 (4 of 4 required); specialist scale-readiness review incomplete; economics and capacity not updated after the pilot; no scale budget requested · economics v2 carries €400k one-time scale-entry investment',
     );
+    expect(p.blockers!.map((x) => x.key)).toEqual([...expectedScaleGate.blockerKeys]);
+    expect(p.blockers!.at(-1)!.message).toBe(expectedScaleGate.scaleBudgetBlocker);
+    expect(p.title).not.toMatch(/\/year|per year/);
     expect(p.blockers!.map((x) => x.key)).toEqual([
       'pilot_actuals_vs_thresholds',
       'readiness_reassessment',
