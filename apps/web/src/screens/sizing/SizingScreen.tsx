@@ -50,6 +50,8 @@ import { ProblemBanner } from '../../app/shell/ProblemBanner';
 import { useApiQuery, useCommand } from '../../lib/query';
 import { fieldText, fieldValue, type DriverField } from '../economics/engine/adapter';
 import './assessment.css';
+import { SIZING_EDITOR_INPUTS } from './editor-model';
+import { SizingEditor } from './SizingEditor';
 import {
   blockingChecks,
   blockingTitle,
@@ -603,25 +605,42 @@ function Ledger({
   canEdit,
   onCompare,
   compareReason,
+  editModel,
 }: {
   v: SizingVersion;
   onSelect: (inputKey: string) => void;
   onEdit: () => void;
   editing: ReactNode;
+  editModel: ReactNode;
   canEdit: boolean;
   onCompare: () => void;
   compareReason: string | null;
 }) {
-  const rows: InputLedgerRow[] = v.ledger.map((r) => ({
-    inputKey: r.inputKey,
-    label: r.name,
-    valueText: formatLineageValue(r, v.boundary.currency),
-    kind: r.kind,
-    basis: `${basisText(r)}${r.basis.owner ? ` · ${r.basis.owner.displayName}` : ''}${r.changedInDraft ? ' · changed in draft' : ''}`,
-    quality: r.evidenceQuality,
-    version: `v${r.version}`,
-    usedBy: String(r.usedByCount),
-  }));
+  const rows: InputLedgerRow[] = [
+    ...v.ledger.map((r) => ({
+      inputKey: r.inputKey,
+      label: r.name,
+      valueText: formatLineageValue(r, v.boundary.currency),
+      kind: r.kind,
+      basis: `${basisText(r)}${r.basis.owner ? ` · ${r.basis.owner.displayName}` : ''}${r.changedInDraft ? ' · changed in draft' : ''}`,
+      quality: r.evidenceQuality,
+      version: `v${r.version}`,
+      usedBy: String(r.usedByCount),
+    })),
+    // Inputs not entered stay Unknown (never 0); a required one blocks the snapshot.
+    ...SIZING_EDITOR_INPUTS.filter((spec) => !v.ledger.some((r) => r.inputKey === spec.key)).map(
+      (spec): InputLedgerRow => ({
+        inputKey: spec.key,
+        label: spec.label,
+        valueText: formatLineageValue({ value: null, unit: spec.unit }),
+        kind: null,
+        basis: spec.required ? 'Not entered · blocks the snapshot' : 'Not entered',
+        quality: null,
+        version: '—',
+        usedBy: '—',
+      }),
+    ),
+  ];
   return (
     <section aria-labelledby="lg" className="as-section">
       <SectionHeader
@@ -647,6 +666,7 @@ function Ledger({
                 Edit draft input
               </Button>
             ) : null}
+            {canEdit ? editModel : null}
           </span>
         }
       />
@@ -759,6 +779,7 @@ export default function SizingScreen() {
   const [inspect, setInspect] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [justCommitted, setJustCommitted] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const save = useCommand(API.sizing.saveDraft);
   const commit = useCommand(API.sizing.commit, {
@@ -803,9 +824,18 @@ export default function SizingScreen() {
     return (
       <div className="as-page">
         <h2 className="gos-sr-only">Sizing</h2>
-        <EmptyState title="No sizing yet">
-          Define the market boundary and cohorts to calculate the measure ladder.
-        </EmptyState>
+        {editorOpen ? (
+          <SizingEditor caseKey={caseKey} view={data} />
+        ) : (
+          <EmptyState title="No sizing yet">
+            Define the market boundary and cohorts to calculate the measure ladder.
+            <div style={{ marginTop: 12 }}>
+              <Button variant="primary" icon="pencilruler" onClick={() => setEditorOpen(true)}>
+                Start the sizing model
+              </Button>
+            </div>
+          </EmptyState>
+        )}
       </div>
     );
   }
@@ -946,6 +976,9 @@ export default function SizingScreen() {
         ))}
       {save.error ? <ProblemBanner error={save.error} /> : null}
       {commit.error ? <ProblemBanner error={commit.error} /> : null}
+      {editorOpen && pinned === null ? (
+        <SizingEditor caseKey={caseKey} view={data} onClose={() => setEditorOpen(false)} />
+      ) : null}
       <div className="as-split">
         <div className="as-main">
           <Ladder
@@ -993,13 +1026,18 @@ export default function SizingScreen() {
                 </div>
               ) : null
             }
+            editModel={
+              <Button variant="secondary" icon="pencilruler" onClick={() => setEditorOpen((o) => !o)}>
+                {editorOpen ? 'Close sizing editor' : 'Edit sizing model'}
+              </Button>
+            }
             onCompare={() => setCompareOpen(true)}
             compareReason={
               data.current && data.draft ? null : 'Needs a committed version and a draft to compare.'
             }
           />
           <div className="as-actions">
-            {isDraft ? (
+            {isDraft && !editorOpen ? (
               <Button
                 variant="primary"
                 onClick={() => commit.mutate({ params: { caseRef: caseKey } })}

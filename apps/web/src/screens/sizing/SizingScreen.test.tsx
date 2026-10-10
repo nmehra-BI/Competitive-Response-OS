@@ -118,6 +118,55 @@ describe('S06 Sizing', () => {
     expect(await screen.findByText('Site list restricted under your access')).toBeTruthy();
   });
 
+  it('editor (D-112 §2): a blank input is cleared to Unknown, never 0, and blocks the snapshot', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit sizing model' }));
+    const editor = await screen.findByRole('region', { name: 'Sizing draft editor' });
+    expect((within(editor).getByLabelText('Market unit') as HTMLInputElement).value).toBe(
+      'annual spend on water monitoring',
+    );
+    expect((within(editor).getByLabelText(/^Reference year/) as HTMLInputElement).value).toBe('2026');
+    expect((within(editor).getByLabelText(/^Product boundary/) as HTMLTextAreaElement).value).toContain(
+      'monitored service',
+    );
+    expect((within(editor).getByRole('checkbox', { name: 'Software' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    // Every input names its basis: Evidence (a source) or an Assumption (a register link).
+    const capBasis = within(editor).getByLabelText(
+      'Installation and support capacity · basis',
+    ) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(capBasis.selectedOptions[0]!.textContent).toMatch(/^ASM-08 · Capacity 120 customers/),
+    );
+    fireEvent.change(capBasis, { target: { value: '' } });
+    fireEvent.blur(capBasis);
+    expect(
+      await within(editor).findByText(
+        /Not available — add Installation and support capacity before calculating/,
+      ),
+    ).toBeTruthy();
+    const ledger = screen.getByRole('table', { name: 'Input ledger' });
+    const row = within(ledger)
+      .getByRole('rowheader', { name: 'Installation and support capacity' })
+      .closest('tr')!;
+    expect(row.textContent).toContain('Unknown');
+    expect(row.textContent).toContain('Not entered · blocks the snapshot');
+    expect(row.textContent).not.toMatch(/\b0 customers/);
+    const snap = within(editor).getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement;
+    expect(snap.disabled).toBe(true);
+    expect(within(editor).getByText('Blocked: add Installation and support capacity.')).toBeTruthy();
+    // Link it again: the draft calculates and the snapshot opens.
+    fireEvent.change(capBasis, { target: { value: capBasis.options[capBasis.options.length - 1]!.value } });
+    fireEvent.blur(capBasis);
+    await waitFor(() =>
+      expect(
+        (within(editor).getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
   it('opens the lineage drawer from the research deep link', async () => {
     session.signIn(people.maya.id);
     renderAt('/me/cases/ME-104/sizing?input=adoption-rate&view=lineage');
