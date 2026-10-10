@@ -110,7 +110,8 @@ export interface InputLedgerRow {
   label: string;
   /** Exact value with unit, e.g. "€20,000/year". */
   valueText: string;
-  kind: LedgerKind;
+  /** Null for an input not entered yet (the value reads "Unknown", never 0). */
+  kind: LedgerKind | null;
   basis: string;
   quality: EvidenceQuality | null;
   version: string;
@@ -162,7 +163,11 @@ export function InputLedgerTable({
             </Mono>
           ),
         },
-        { key: 'kind', header: 'Kind', cell: (r) => <KindTag kind={r.kind} small /> },
+        {
+          key: 'kind',
+          header: 'Kind',
+          cell: (r) => (r.kind ? <KindTag kind={r.kind} small /> : '—'),
+        },
         { key: 'basis', header: 'Basis', cell: (r) => r.basis },
         {
           key: 'quality',

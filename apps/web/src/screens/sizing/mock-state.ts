@@ -150,6 +150,31 @@ export interface InputEdit {
   byId: string;
 }
 
+/**
+ * S06 editor fields the engine input does not carry (D-112 §2): cleared inputs (Unknown, never 0),
+ * basis text per input, the product boundary, what the spend includes, the dedup rule and the
+ * overlap method.
+ */
+export interface SizingExtras {
+  cleared: string[];
+  basisText: Record<string, string>;
+  productBoundary: string;
+  includes: { hardware: boolean; software: boolean; services: boolean; replacementCycles: boolean };
+  dedupRuleText: string;
+  overlapMethod: string;
+}
+
+export function freshSizingExtras(): SizingExtras {
+  return {
+    cleared: [],
+    basisText: {},
+    productBoundary: 'Existing water-monitoring system, run as a monitored service',
+    includes: { hardware: false, software: true, services: true, replacementCycles: false },
+    dedupRuleText: sizingMeta.dedupRuleText,
+    overlapMethod: sizingMeta.overlapMethod,
+  };
+}
+
 export interface SizingDraftState {
   id: string;
   version: number;
@@ -157,6 +182,7 @@ export interface SizingDraftState {
   createdAt: string;
   input: SizingInput;
   edits: InputEdit[];
+  extras?: SizingExtras;
 }
 
 export interface SizingCommitted {
@@ -166,6 +192,7 @@ export interface SizingCommitted {
   committedAt: string;
   committedBy: string;
   edits: InputEdit[];
+  extras?: SizingExtras;
 }
 
 export type DuplicateState = 'none' | 'pending' | 'kept_v1' | 'kept_imported';
@@ -202,6 +229,8 @@ export interface EconomicsDraftState {
   rowVersion: number;
   createdAt: string;
   input: EconomicsInput;
+  /** S08 editor (D-112 §3): what the annual incremental opex covers. */
+  opexScopeNote?: string;
 }
 export interface EconomicsCommitted {
   id: string;
@@ -209,6 +238,7 @@ export interface EconomicsCommitted {
   input: EconomicsInput;
   committedAt: string;
   committedBy: string;
+  opexScopeNote?: string;
 }
 
 // ---------------------------------------------------------------------------

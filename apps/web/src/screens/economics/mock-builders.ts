@@ -14,7 +14,7 @@ import {
   type ModelReview,
   type RegisterGroup,
 } from '@growth-os/contracts';
-import { assumptions, economicsMeta, people, sizingMeta } from '@growth-os/fixtures-aster';
+import { assumptions, economicsMeta, economicsV2Input, people, sizingMeta } from '@growth-os/fixtures-aster';
 import { formatCount, formatRate } from '@growth-os/ui';
 import { personRef } from '../../mocks/data';
 import {
@@ -84,12 +84,16 @@ export function setDriver(input: EconomicsInput, key: string, value: string): bo
       input.adoption = { ...input.adoption, base: set(input.adoption.base)! };
       return true;
     case 'adoption_rate.downside':
-      if (!input.adoption.downside) return false;
-      input.adoption = { ...input.adoption, downside: set(input.adoption.downside) };
+      input.adoption = {
+        ...input.adoption,
+        downside: set(input.adoption.downside ?? economicsV2Input.adoption.downside),
+      };
       return true;
     case 'adoption_rate.upside':
-      if (!input.adoption.upside) return false;
-      input.adoption = { ...input.adoption, upside: set(input.adoption.upside) };
+      input.adoption = {
+        ...input.adoption,
+        upside: set(input.adoption.upside ?? economicsV2Input.adoption.upside),
+      };
       return true;
     case 'gross_margin':
       input.grossMargin = set(input.grossMargin)!;
@@ -101,12 +105,34 @@ export function setDriver(input: EconomicsInput, key: string, value: string): bo
       input.capacity = set(input.capacity)!;
       return true;
     case 'one_time_investment':
-      if (!input.oneTimeInvestment) return false;
-      input.oneTimeInvestment = set(input.oneTimeInvestment);
+      input.oneTimeInvestment = set(input.oneTimeInvestment ?? economicsV2Input.oneTimeInvestment);
       return true;
     default:
       return false;
   }
+}
+
+/** Clear an optional driver back to Unknown (D-112 §3). The engine's required inputs stay. */
+export function clearDriver(input: EconomicsInput, key: string): boolean {
+  switch (key) {
+    case 'adoption_rate.downside':
+      input.adoption = { ...input.adoption, downside: null };
+      return true;
+    case 'adoption_rate.upside':
+      input.adoption = { ...input.adoption, upside: null };
+      return true;
+    case 'one_time_investment':
+      input.oneTimeInvestment = null;
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** The register value an assumption link brings (the server does the same). */
+export function registerValue(assumptionId: string): string | null {
+  const a = assumptions.find((x) => x.id === assumptionId);
+  return a && 'value' in a ? a.value : null;
 }
 
 function assumptionFor(key: EconomicsDriverKey) {
@@ -171,7 +197,7 @@ export function driversFromInput(
 }
 
 async function versionOf(
-  src: { id: string; version: number; input: EconomicsInput; createdAt: string },
+  src: { id: string; version: number; input: EconomicsInput; createdAt: string; opexScopeNote?: string },
   state: 'draft' | 'committed',
   extra: { rowVersion: number; committedAt: string | null; committedBy: string | null },
   compareTo: EconomicsInput | null,
@@ -185,7 +211,11 @@ async function versionOf(
     currency: src.input.currency,
     priceYear: src.input.priceYear,
     horizonYears: src.input.horizonYears,
-    drivers: driversFromInput(src.input, extra.committedAt ?? src.createdAt, compareTo),
+    drivers: driversFromInput(src.input, extra.committedAt ?? src.createdAt, compareTo).map((d) =>
+      d.inputKey === 'annual_incremental_opex' && src.opexScopeNote
+        ? { ...d, basis: { ...d.basis, text: `Scope: ${src.opexScopeNote}` } }
+        : d,
+    ),
     result: await economicsResult(src.input),
     rowVersion: extra.rowVersion,
     committedAt: extra.committedAt,

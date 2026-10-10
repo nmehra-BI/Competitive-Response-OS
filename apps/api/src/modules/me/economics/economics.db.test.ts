@@ -15,11 +15,12 @@ import {
   world,
   type World,
 } from '../cases/test-support';
+import { agentCookie } from '../gates/testkit';
 
 let w: World;
 let caseKey: string;
 beforeAll(async () => {
-  w = await world({ a: 'aster-start', demo: 'aster-demo', b: 'aster-start' });
+  w = await world({ a: 'aster-start', demo: 'aster-demo', b: 'aster-start', e: 'aster-start' });
   caseKey = await convertOpp07(w, 'a');
   const asm = await registerAssumptions(w, 'a', caseKey);
   await enterSizing(w, 'a', caseKey, asm);
@@ -191,5 +192,161 @@ describe('economics', () => {
     expect(v.current!.version).toBe(2);
     expect(v.financeReview!.notCheckedItems).toEqual(['Ramp, retention, cash timing (not in model)']);
     expect(v.recommendationIncomplete).toBe(false);
+  });
+});
+
+describe('S08 economics driver editor (D-112 §3, D-132)', () => {
+  let key: string;
+  let asmE: Record<string, string>;
+  let view: EconomicsView;
+  const mayaE = () => w.cookie('e', 'maya');
+  type Body = (typeof API.economics.saveDraft)['body']['_input'];
+  const save = async (body: Body) =>
+    api(w, API.economics.saveDraft, await mayaE(), {
+      params: { caseRef: key },
+      ifMatch: view?.draft?.rowVersion ?? 0,
+      body,
+    });
+  const ok = async (body: Body) => {
+    const res = await save(body);
+    if (res.statusCode !== 200) throw new Error(`${res.statusCode} ${res.body}`);
+    view = EconomicsView.parse(res.json());
+    return view;
+  };
+  const driver = (k: string) => view.draft!.drivers.find((d) => d.inputKey === k);
+
+  beforeAll(async () => {
+    key = await convertOpp07(w, 'e');
+    asmE = await registerAssumptions(w, 'e', key);
+    await enterSizing(w, 'e', key, asmE);
+    const c = await api(w, API.sizing.commit, await mayaE(), { params: { caseRef: key } });
+    if (c.statusCode !== 201) throw new Error(c.body);
+  });
+
+  it('header currency, base year and horizon once; opex scope note; links follow the register', async () => {
+    await ok({
+      drivers: [],
+      currency: 'EUR',
+      priceYear: 2026,
+      horizonYears: 4,
+      opexScopeNote: 'Sales and admin only; excludes COGS',
+    });
+    const d = view.draft!;
+    expect(d).toMatchObject({ currency: 'EUR', priceYear: 2026, horizonYears: 4 });
+    expect(driver('annual_incremental_opex')!.basis.text).toBe('Scope: Sales and admin only; excludes COGS');
+    expect(driver('gross_margin')!.assumptionId).toBe(asmE['gross_margin']);
+    // Unlink (explicit null) makes a draft-only value; relinking takes the register value again.
+    await ok({ drivers: [{ inputKey: 'gross_margin', value: '0.55', assumptionId: null }] });
+    expect(driver('gross_margin')).toMatchObject({ value: '0.55', assumptionId: null });
+    await ok({ drivers: [{ inputKey: 'gross_margin', value: '0', assumptionId: asmE['gross_margin']! }] });
+    expect(driver('gross_margin')).toMatchObject({ value: '0.6', assumptionId: asmE['gross_margin'] });
+    await ok({ drivers: [], horizonYears: 3 });
+    const audit = await auditFor(w, w.tenants.e!, view.draft!.id);
+    expect(audit.map((x) => x.action)).toContain('economics.draft_saved');
+  });
+
+  it('refuses links that would mix money kinds, units or currencies, and source links without a column', async () => {
+    const asOneTime = await save({
+      drivers: [
+        { inputKey: 'one_time_investment', value: '0', assumptionId: asmE['annual_incremental_opex']! },
+      ],
+    });
+    expect(asOneTime.statusCode).toBe(400);
+    expect(asOneTime.json().errors[0].code).toBe('unit_mismatch');
+    const usd = await save({ drivers: [], currency: 'USD' });
+    expect(usd.statusCode).toBe(400);
+    expect(usd.json().errors[0].code).toBe('currency_mismatch');
+    const src = await save({
+      drivers: [{ inputKey: 'capacity', value: '120', sourceId: w.tenants.e!.user('maya') }],
+    });
+    expect(src.statusCode).toBe(400);
+    expect(src.json().errors[0].code).toBe('source_link_unsupported');
+    const both = await save({
+      drivers: [{ inputKey: 'capacity', value: '120' }],
+      clearInputKeys: ['capacity'],
+    });
+    expect(both.statusCode).toBe(400);
+    const stale = await api(w, API.economics.saveDraft, await mayaE(), {
+      params: { caseRef: key },
+      ifMatch: view.draft!.rowVersion - 1,
+      body: { drivers: [] },
+    });
+    expect(stale.statusCode).toBe(412);
+  });
+
+  it('a cleared one-time investment is Not available, never 0, and never enters a /year row', async () => {
+    await ok({ drivers: [], clearInputKeys: ['one_time_investment'] });
+    const r = view.draft!.result!;
+    expect(r.oneTimeInvestment).toMatchObject({ unavailable: true });
+    expect('amount' in r.oneTimeInvestment).toBe(false);
+    expect(driver('one_time_investment')).toBeUndefined();
+    expect(view.incompleteReasons.join(' ')).toContain('One-time investment');
+    // The scenarios are unchanged: the one-time money was never part of them.
+    expect(r.scenarios.find((s) => s.scenario === 'base')!.contributionAfterOpex.amount).toBe('600000.00');
+
+    await ok({
+      drivers: [{ inputKey: 'one_time_investment', value: '0', assumptionId: asmE['one_time_investment']! }],
+    });
+    const back = view.draft!.result!;
+    expect(back.oneTimeInvestment).toMatchObject({ amount: '400000.00', timeBasis: 'one_time' });
+    expect(JSON.stringify(back.scenarios)).not.toContain('"400000.00"');
+    expect(driver('one_time_investment')!.unit).toBe('currency_one_time');
+  });
+
+  it('a cleared required driver leaves the result Unavailable (no zeros) and blocks commit', async () => {
+    await ok({ drivers: [], clearInputKeys: ['annual_price'] });
+    expect(view.draft!.result).toBeNull();
+    expect(view.recommendationIncomplete).toBe(true);
+    expect(JSON.stringify(view.draft)).not.toMatch(/"amount":"0(\.00)?"/);
+    const calc = await api(w, API.economics.calculateDraft, await mayaE(), { params: { caseRef: key } });
+    expect(calc.statusCode).toBe(422);
+    expect(calc.json().checks[0].key).toBe('MISSING_INPUT');
+    const commit = await api(w, API.economics.commit, await mayaE(), { params: { caseRef: key } });
+    expect(commit.statusCode).toBe(422);
+    await ok({
+      drivers: [{ inputKey: 'annual_price', value: '0', assumptionId: asmE['annual_spend_per_site']! }],
+    });
+    expect(view.draft!.result!.scenarios.map((s) => s.annualRevenue.amount)).toEqual([
+      '1000000.00',
+      '2000000.00',
+      '2400000.00',
+    ]);
+  });
+
+  it('refuses other tenants (404), a reviewer without model rights (403) and the agent; commits as the owner', async () => {
+    const other = await api(w, API.economics.saveDraft, await w.cookie('b', 'maya'), {
+      params: { caseRef: key },
+      ifMatch: 0,
+      body: { drivers: [] },
+    });
+    expect(other.statusCode).toBe(404);
+    const lena = await api(w, API.economics.saveDraft, await w.cookie('e', 'lena'), {
+      params: { caseRef: key },
+      ifMatch: view.draft!.rowVersion,
+      body: { drivers: [], clearInputKeys: ['capacity'] },
+    });
+    expect(lena.statusCode).toBe(403);
+    const agent = await agentCookie(w.t, w.tenants.e!);
+    const agentCommit = await api(w, API.economics.commit, agent, { params: { caseRef: key } });
+    expect(agentCommit.statusCode).toBe(403);
+    expect(agentCommit.json()).toMatchObject({ code: 'AGENT_IDENTITY_FORBIDDEN' });
+    const res = await api(w, API.economics.commit, await mayaE(), {
+      params: { caseRef: key },
+      idempotencyKey: 'e1-econ-commit',
+    });
+    expect(res.statusCode).toBe(201);
+    const v = EconomicsVersion.parse(res.json());
+    expect(v).toMatchObject({ version: 1, horizonYears: 3, currency: 'EUR', priceYear: 2026 });
+    expect(v.drivers.find((d) => d.inputKey === 'annual_incremental_opex')!.basis.text).toBe(
+      'Scope: Sales and admin only; excludes COGS',
+    );
+    const replay = await api(w, API.economics.commit, await mayaE(), {
+      params: { caseRef: key },
+      idempotencyKey: 'e1-econ-commit',
+    });
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+    expect((await auditFor(w, w.tenants.e!, v.id)).map((x) => x.action)).toContain(
+      'economics.version_committed',
+    );
   });
 });

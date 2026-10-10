@@ -20,9 +20,11 @@ import {
   COHORT_PROCESS_ID,
   COHORT_PROCESS_IMPORTED_ID,
   COHORT_SIZE_ID,
+  assumptions,
   fid,
   people,
   sizingMeta,
+  sizingV2Input,
 } from '@growth-os/fixtures-aster';
 import { formatLineageValue } from '@growth-os/ui';
 import type { HttpHandler } from 'msw';
@@ -36,7 +38,9 @@ import {
   CASE_ID,
   CASE_KEY,
   economicsResult,
+  freshSizingExtras,
   type InputEdit,
+  type SizingExtras,
   nowIso,
   openDisputeFor,
   PEOPLE,
@@ -143,6 +147,7 @@ interface Source {
   state: 'draft' | 'committed';
   input: SizingInput;
   edits: InputEdit[];
+  extras: SizingExtras;
   rowVersion: number;
   createdAt: string;
   committedAt: string | null;
@@ -158,6 +163,7 @@ function draftSource(): Source | null {
     state: 'draft',
     input: d.input,
     edits: d.edits,
+    extras: d.extras ?? freshSizingExtras(),
     rowVersion: d.rowVersion,
     createdAt: d.createdAt,
     committedAt: null,
@@ -175,6 +181,7 @@ function committedSource(version?: number): Source | null {
     state: 'committed',
     input: c.input,
     edits: c.edits,
+    extras: c.extras ?? freshSizingExtras(),
     rowVersion: 0,
     createdAt: CREATED_V1,
     committedAt: c.committedAt,
@@ -195,9 +202,46 @@ async function mergedLineage(result: SizingOutput): Promise<LineageNode[]> {
   return mergeLineage(result.lineage, econ.lineage);
 }
 
-async function ledgerFor(src: Source, result: SizingOutput): Promise<LedgerRow[]> {
+/** Inputs the engine needs; a cleared one leaves the draft uncalculated (MISSING_INPUT). */
+const REQUIRED_INPUTS = [
+  'tam_site_count',
+  'annual_spend_per_site',
+  'reachable_pool',
+  'adoption_rate.base',
+  'capacity',
+];
+const INPUT_LABELS: Record<string, string> = {
+  tam_site_count: 'TAM site count',
+  annual_spend_per_site: 'Annual spend per site',
+  reachable_pool: 'Reachable pool',
+  'adoption_rate.base': 'Adoption by year 3 · Base',
+  capacity: 'Installation and support capacity',
+};
+
+function missingInputs(src: Source): string[] {
+  return REQUIRED_INPUTS.filter((k) => src.extras.cleared.includes(k));
+}
+
+function missingProblem(missing: string[]): MockProblem {
+  const message = `Not available — add ${missing.map((k) => INPUT_LABELS[k]).join(', ')} before calculating.`;
+  return new MockProblem('CALCULATION_BLOCKED', message, {
+    checks: [{ key: 'MISSING_INPUT', message, blocking: true }],
+  });
+}
+
+async function ledgerFor(src: Source, result: SizingOutput | null): Promise<LedgerRow[]> {
+  const rows = await fullLedger(src, result);
+  return rows
+    .filter((r) => !src.extras.cleared.includes(r.inputKey))
+    .map((r) => {
+      const t = src.extras.basisText[r.inputKey];
+      return t ? { ...r, basis: { ...r.basis, text: t } } : r;
+    });
+}
+
+async function fullLedger(src: Source, result: SizingOutput | null): Promise<LedgerRow[]> {
   const i = src.input;
-  const nodes = await mergedLineage(result);
+  const nodes = result ? await mergedLineage(result) : [];
   const used = (nodeKey: string) => usedByMeasures(nodes, nodeKey).length;
   const at = src.committedAt ?? src.createdAt;
   const edited = (k: string) => src.edits.filter((e) => e.inputKey === k).at(-1)?.at ?? at;
@@ -310,6 +354,27 @@ async function ledgerFor(src: Source, result: SizingOutput): Promise<LedgerRow[]
       usedByCount: used('input.adoption_rate.base'),
       disputed: disputed('adoption_rate.base'),
     }),
+    ...(['downside', 'upside'] as const).flatMap((sc) => {
+      const a = i.adoption[sc];
+      if (!a) return [];
+      const key = `adoption_rate.${sc}`;
+      return [
+        row({
+          inputKey: a.inputKey,
+          name: a.label,
+          value: a.value,
+          unit: 'rate',
+          currency: null,
+          kind: 'assumption',
+          basis: { source: null, owner: personOf(asm(key).ownerId), text: asm(key).basis },
+          evidenceQuality: asm(key).evidenceQuality,
+          assumptionId: asm(key).id,
+          version: a.ref.version ?? 1,
+          usedByCount: used(`input.${key}`),
+          disputed: disputed(key),
+        }),
+      ];
+    }),
     row({
       inputKey: i.capacity.inputKey,
       name: i.capacity.label,
@@ -350,8 +415,9 @@ function cohortsFor(input: SizingInput): Cohort[] {
 }
 
 export async function sizingVersion(src: Source): Promise<SizingVersion> {
-  const result = await sizingResult(src.input);
+  const result = missingInputs(src).length ? null : await sizingResult(src.input);
   const b = src.input.boundary;
+  const x = src.extras;
   return {
     id: src.id,
     caseId: CASE_ID,
@@ -365,13 +431,13 @@ export async function sizingVersion(src: Source): Promise<SizingVersion> {
       populationUnit: b.populationUnit,
       countryCode: b.countryCode,
       segmentLabel: b.segmentLabel,
-      productBoundary: 'Existing water-monitoring system, run as a monitored service',
+      productBoundary: x.productBoundary,
       currency: b.currency,
       priceYear: b.priceYear,
-      includes: { hardware: false, software: true, services: true, replacementCycles: false },
+      includes: { ...x.includes },
       annualizationMethod: b.annualizationMethod,
     },
-    dedupRuleText: sizingMeta.dedupRuleText,
+    dedupRuleText: x.dedupRuleText,
     ledger: await ledgerFor(src, result),
     cohorts: cohortsFor(src.input),
     overlaps: src.input.overlaps.map((o, n) => ({
@@ -379,7 +445,7 @@ export async function sizingVersion(src: Source): Promise<SizingVersion> {
       cohortAId: o.cohortAId,
       cohortBId: o.cohortBId,
       overlapCount: o.overlapCount,
-      method: sizingMeta.overlapMethod,
+      method: x.overlapMethod,
     })),
     crossCheck: null, // the PRD gives no top-down figure (fixture: crossCheck null)
     result,
@@ -474,6 +540,7 @@ function ensureDraft() {
     createdAt: nowIso(),
     input: structuredClone(last.input),
     edits: [],
+    extras: structuredClone(last.extras ?? freshSizingExtras()),
   };
   return assessment.sizing.draft;
 }
@@ -577,25 +644,88 @@ export const handlers: HttpHandler[] = [
     if (existed && ifMatch !== d.rowVersion) {
       throw new MockProblem('VERSION_CONFLICT', 'The sizing draft changed elsewhere.');
     }
+    d.extras ??= freshSizingExtras();
+    const x = d.extras;
+    for (const k of body.clearInputKeys ?? []) {
+      if (!(k in INPUT_LABELS) && k !== 'adoption_rate.downside' && k !== 'adoption_rate.upside')
+        throw new MockProblem('VALIDATION_FAILED', `Unknown sizing input "${k}".`);
+      if ((body.inputs ?? []).some((i) => i.inputKey === k))
+        throw new MockProblem('VALIDATION_FAILED', `"${k}" is both set and cleared in one save.`);
+      if (k === 'adoption_rate.downside') d.input.adoption = { ...d.input.adoption, downside: null };
+      else if (k === 'adoption_rate.upside') d.input.adoption = { ...d.input.adoption, upside: null };
+      else if (!x.cleared.includes(k)) x.cleared.push(k);
+    }
+    const b = body.boundary ?? {};
+    d.input.boundary = {
+      ...d.input.boundary,
+      ...(b.marketUnit !== undefined ? { marketUnit: b.marketUnit } : {}),
+      ...(b.populationUnit !== undefined ? { populationUnit: b.populationUnit } : {}),
+      ...(b.currency !== undefined ? { currency: b.currency } : {}),
+      ...(b.priceYear !== undefined ? { priceYear: b.priceYear } : {}),
+    };
+    if (b.productBoundary !== undefined) x.productBoundary = b.productBoundary;
+    if (b.includes) x.includes = { ...x.includes, ...b.includes };
+    if (body.dedupRuleText !== undefined) x.dedupRuleText = body.dedupRuleText;
+    if (body.horizonYears !== undefined) d.input.horizonYears = body.horizonYears;
     for (const i of body.inputs ?? []) {
-      const before = setInput(d.input, i.inputKey, i.value);
+      x.cleared = x.cleared.filter((k) => k !== i.inputKey);
+      if (i.basisText !== undefined) {
+        if (i.basisText) x.basisText[i.inputKey] = i.basisText;
+        else delete x.basisText[i.inputKey];
+      }
+      const sc =
+        i.inputKey === 'adoption_rate.downside'
+          ? 'downside'
+          : i.inputKey === 'adoption_rate.upside'
+            ? 'upside'
+            : null;
+      if (sc && !d.input.adoption[sc])
+        d.input.adoption = { ...d.input.adoption, [sc]: structuredClone(sizingV2Input.adoption[sc]) };
+      // A linked input takes the register's value (the server does the same).
+      const linked = i.assumptionId ? assumptions.find((a) => a.id === i.assumptionId) : undefined;
+      const value = linked && 'value' in linked && linked.value !== null ? linked.value : i.value;
+      const before = setInput(d.input, i.inputKey, value);
       if (before === null) {
         throw new MockProblem('VALIDATION_FAILED', `Input ${i.inputKey} cannot be edited here.`);
       }
-      if (before === i.value) continue;
+      if (before === value) continue;
       const first = d.edits.find((e) => e.inputKey === i.inputKey);
-      if (first && first.from === i.value) {
+      if (first && first.from === value) {
         d.edits = d.edits.filter((e) => e.inputKey !== i.inputKey); // undo: back to the original
       } else {
-        d.edits.push({ inputKey: i.inputKey, from: before, to: i.value, at: nowIso(), byId: viewerId! });
+        d.edits.push({ inputKey: i.inputKey, from: before, to: value, at: nowIso(), byId: viewerId! });
       }
     }
-    for (const o of body.overlaps ?? []) {
-      d.input.overlaps = d.input.overlaps.map((x) =>
-        x.cohortAId === o.cohortAId && x.cohortBId === o.cohortBId
-          ? { ...x, overlapCount: o.overlapCount }
-          : x,
-      );
+    if (body.cohorts) {
+      const known = new Map(d.input.cohorts.map((c) => [c.cohortId, c]));
+      d.input.cohorts = body.cohorts.map((c, n) => {
+        const prev = c.id ? known.get(c.id) : undefined;
+        if (c.id && !prev) throw new MockProblem('VALIDATION_FAILED', 'Unknown cohort in this draft.');
+        const id = c.id ?? wsId(14, d.input.cohorts.length + n + 1);
+        return {
+          ...(prev ?? structuredClone(sizingV2Input.cohorts[0]!)),
+          cohortId: id,
+          name: c.name,
+          rule: c.rule,
+          siteCount: c.siteCount,
+          ref: c.sourceId
+            ? { type: 'source' as const, id: c.sourceId, version: null }
+            : { type: 'cohort' as const, id, version: null },
+        };
+      });
+      const ids = new Set(d.input.cohorts.map((c) => c.cohortId));
+      d.input.overlaps = d.input.overlaps.filter((o) => ids.has(o.cohortAId) && ids.has(o.cohortBId));
+    }
+    if (body.overlaps) {
+      const prev = d.input.overlaps;
+      d.input.overlaps = body.overlaps.map((o, n) => ({
+        cohortAId: o.cohortAId,
+        cohortBId: o.cohortBId,
+        overlapCount: o.overlapCount,
+        ref: prev[n]?.ref ?? { type: 'calculation' as const, id: wsId(15, n + 1), version: null },
+      }));
+      const method = body.overlaps[0]?.method;
+      if (method) x.overlapMethod = method;
     }
     d.rowVersion += 1;
     return sizingView(viewerId);
@@ -604,8 +734,10 @@ export const handlers: HttpHandler[] = [
   mock(API.sizing.calculateDraft, async ({ params }) => {
     if (!isMe104(params.caseRef)) throw notFound();
     syncSizingVariant();
-    const d = assessment.sizing.draft;
+    const d = draftSource();
     if (!d) throw new MockProblem('INVALID_TRANSITION', 'There is no sizing draft to calculate.');
+    const missing = missingInputs(d);
+    if (missing.length) throw missingProblem(missing);
     return sizingResult(d.input);
   }),
 
@@ -626,6 +758,8 @@ export const handlers: HttpHandler[] = [
     syncSizingVariant();
     const d = assessment.sizing.draft;
     if (!d) throw new MockProblem('INVALID_TRANSITION', 'There is no sizing draft to commit.');
+    const missing = missingInputs(draftSource()!);
+    if (missing.length) throw missingProblem(missing);
     const result = await sizingResult(d.input);
     if (result.blocked) {
       throw new MockProblem('CALCULATION_BLOCKED', 'Snapshot blocked by calculation checks.', {
@@ -639,6 +773,7 @@ export const handlers: HttpHandler[] = [
       committedAt: nowIso(),
       committedBy: viewerId!,
       edits: d.edits,
+      extras: d.extras,
     });
     assessment.sizing.draft = null;
     return sizingVersion(committedSource(d.version)!);

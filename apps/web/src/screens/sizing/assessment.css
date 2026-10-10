@@ -434,3 +434,50 @@
     height: 1px;
   }
 }
+
+/* S06 / S08 data-entry editors (D-112 §2, §3) */
+.as-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.as-editor-inputs {
+  display: flex;
+  flex-direction: column;
+}
+.as-editor-input {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.1fr) minmax(170px, 1fr) minmax(200px, 1.4fr);
+  gap: 6px 14px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.as-editor-input:first-child {
+  border-top: 0;
+}
+.as-editor-input__name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.as-editor-input__wide {
+  grid-column: 1 / -1;
+}
+.as-editor-num {
+  max-width: 140px;
+}
+.as-editor-cohort {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.as-editor-onetime {
+  border-style: dashed;
+}
+@media (max-width: 720px) {
+  .as-editor-input {
+    grid-template-columns: 1fr;
+  }
+}

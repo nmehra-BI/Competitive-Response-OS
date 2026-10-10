@@ -109,6 +109,8 @@ export async function ledgerRows(
     assumption_id: string | null;
     assumption_version_id: string | null;
     evidence_quality: string | null;
+    /** Entered basis text (S06 editor, D-112 §2), shown before the register's basis. */
+    basis_text?: string | null;
   }[],
   ctx: {
     modelVersion: number;
@@ -168,7 +170,11 @@ export async function ledgerRows(
       basis: {
         source: src,
         owner: a ? who(people, a.owner_user_id) : null,
-        text: p?.basis ?? a?.basis ?? (src ? null : 'Draft value · not yet in the assumption register'),
+        text:
+          r.basis_text ??
+          p?.basis ??
+          a?.basis ??
+          (src ? null : 'Draft value · not yet in the assumption register'),
       },
       evidenceQuality: (r.evidence_quality ??
         p?.evidence_quality ??
