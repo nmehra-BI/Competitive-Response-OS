@@ -6,7 +6,15 @@
  * never zero. Display rounding happens in the UI, never in engines.
  */
 import { z } from 'zod';
-import { CrossCheckResult, LedgerKind, MarketMeasure, PopulationUnit, Scenario, SizingMethod } from './enums';
+import {
+  CrossCheckResult,
+  LedgerKind,
+  LineageRelation,
+  MarketMeasure,
+  PopulationUnit,
+  Scenario,
+  SizingMethod,
+} from './enums';
 import { ValueUnit } from './entities/assumption';
 import {
   CountryCode,
@@ -73,6 +81,11 @@ export const LineageNode = z.object({
   inputs: z.array(z.string()), // nodeKeys, one level
   dependsOnAssumptionCount: z.number().int().nonnegative(),
   ref: EngineInput.shape.ref.nullable(),
+  /**
+   * D-117, additive: non-calculation edges from this node, e.g. the reachable pool is
+   * `checked_against` SAM ("upper-bound check: 500 ≤ 2,000 sites"). Absent = none.
+   */
+  checks: z.array(z.object({ nodeKey: z.string(), relation: LineageRelation, text: z.string() })).optional(),
 });
 export type LineageNode = z.infer<typeof LineageNode>;
 

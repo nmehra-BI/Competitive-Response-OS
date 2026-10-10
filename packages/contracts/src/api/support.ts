@@ -3,22 +3,25 @@
  * administration and diagnostics (S14), dev-only simulator controls.
  */
 import { z } from 'zod';
-import { EntitlementAccess, GateCode, RoleCode, SkillKey } from '../enums';
-import { Challenge, Source, SourceDetail } from '../entities/evidence';
+import { CommitteeSeat, EntitlementAccess, GateCode, RoleCode, SkillKey } from '../enums';
+import { Challenge, License, LicenseInput, Source, SourceDetail } from '../entities/evidence';
 import { AnalysisRun, Proposal, RunStep, ToolCallRecord } from '../entities/analysis';
 import { AuditEvent } from '../entities/audit';
 import {
   AuthorityGrant,
+  CommitteeMember,
   Connection,
   ConnectorMapping,
+  ConnectorMappingCheck,
   GatePolicyBody,
+  LiveAnalysisSetting,
   MaterialityPolicyBody,
   Policy,
   RoleAssignment,
   RunBudgetPolicyBody,
 } from '../entities/platform';
 import { Page, PageQuery } from '../http';
-import { CurrencyCode, DecimalString, Id, IsoDate } from '../primitives';
+import { CurrencyCode, DecimalString, Id, IsoDate, IsoDateTime } from '../primitives';
 import { CaseParams, endpoint, IdParams, RefParams } from './endpoint';
 
 export const evidenceEndpoints = {
@@ -220,6 +223,13 @@ export const analysisEndpoints = {
       decision: z.enum(['accept', 'reject']),
       editedPayload: z.unknown().optional(),
       reason: z.string().nullable(),
+      /**
+       * D-116 (CR-PD-9), additive: with `accept` on an unedited claim proposal whose every citation
+       * opens for the viewer, one human act accepts the proposal AND the claim as fact, in one
+       * transaction with both audit events. Refused (VALIDATION_FAILED) with `editedPayload` or when
+       * a citation does not open; then only the two-step path applies.
+       */
+      acceptAsFact: z.boolean().optional(),
     }),
     response: Proposal,
     successStatus: 200,
@@ -286,8 +296,45 @@ export const adminEndpoints = {
       validFrom: IsoDate,
       validTo: IsoDate.nullable(),
       revoked: z.boolean(),
+      /** D-109 §2 (CR-PD-2), additive: the Finance-signed DoA document the grant comes from. */
+      doaReference: z.string().min(1).nullable().optional(),
     }),
     response: AuthorityGrant,
+  }),
+  committee: endpoint({
+    id: 'admin.committee',
+    method: 'GET',
+    path: '/admin/committee-members',
+    summary:
+      'Investment committee seats per business unit (chair, finance, operations) and gaps ("Committee named · G3 authority not granted"). Added by D-124.',
+    screens: ['S14'],
+    prd: ['§4', 'S14'],
+    response: z.object({
+      items: z.array(CommitteeMember),
+      gaps: z.array(z.object({ businessUnitId: Id, seat: CommitteeSeat.nullable(), message: z.string() })),
+    }),
+  }),
+  setCommitteeMember: endpoint({
+    id: 'admin.setCommitteeMember',
+    method: 'PUT',
+    path: '/admin/committee-members/:id',
+    summary:
+      'Name or revoke a committee seat holder from the DoA document. Membership is not authority; an administrator never seats themselves. Added by D-124.',
+    screens: ['S14'],
+    prd: ['§4', 'S14'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({
+      userId: Id,
+      businessUnitId: Id,
+      seat: CommitteeSeat,
+      validFrom: IsoDate,
+      validTo: IsoDate.nullable(),
+      doaReference: z.string().min(1).nullable(),
+      revoked: z.boolean(),
+    }),
+    response: CommitteeMember,
   }),
   policies: endpoint({
     id: 'admin.policies',
@@ -344,6 +391,59 @@ export const adminEndpoints = {
       ),
     }),
   }),
+  licenses: endpoint({
+    id: 'admin.licenses',
+    method: 'GET',
+    path: '/admin/licenses',
+    summary:
+      'Licences with written-rights status, term end and on-expiry action (fail closed: unconfirmed = metadata only). Added by D-129.',
+    screens: ['S14'],
+    prd: ['ME-02', 'ME-16', 'S13'],
+    response: z.object({ items: z.array(License) }),
+  }),
+  setLicense: endpoint({
+    id: 'admin.setLicense',
+    method: 'PUT',
+    path: '/admin/licenses/:id',
+    summary:
+      'Edit a licence: permissions, written confirmation, term end and on-expiry action. Permissions above metadata only need a written confirmation. Audited. Added by D-129.',
+    screens: ['S14'],
+    prd: ['ME-02', 'ME-16'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: LicenseInput,
+    response: License,
+  }),
+  liveAnalysis: endpoint({
+    id: 'admin.liveAnalysis',
+    method: 'GET',
+    path: '/admin/settings/live-analysis',
+    summary:
+      'The tenant "Live analysis" setting (off by default) with its document reference. Added by D-130.',
+    screens: ['S14'],
+    prd: ['§8', '§13'],
+    response: LiveAnalysisSetting,
+  }),
+  setLiveAnalysis: endpoint({
+    id: 'admin.setLiveAnalysis',
+    method: 'PUT',
+    path: '/admin/settings/live-analysis',
+    summary:
+      'Turn live analysis on or off. On requires the signed addendum (reference and date) and a passing manual eval run on the configured provider. Audited. Added by D-130.',
+    screens: ['S14'],
+    prd: ['§8', '§13'],
+    auth: 'human',
+    idempotent: true,
+    body: z.object({
+      enabled: z.boolean(),
+      addendumRef: z.string().min(1).nullable(),
+      addendumSignedOn: IsoDate.nullable(),
+      evalRunRef: z.string().min(1).nullable(),
+      evalPassedAt: IsoDateTime.nullable(),
+    }),
+    response: LiveAnalysisSetting,
+  }),
   connections: endpoint({
     id: 'admin.connections',
     method: 'GET',
@@ -388,8 +488,75 @@ export const adminEndpoints = {
     auth: 'human',
     idempotent: true,
     params: IdParams,
-    body: ConnectorMapping.omit({ id: true }),
+    body: ConnectorMapping.omit({ id: true }).extend({
+      /**
+       * D-114 §1, additive: a project or issue-type change on a mapping used by an approved, unsent
+       * task set is material (plan_destination_changed). Saving it requires this acknowledgement of
+       * the impact shown by `admin.checkMapping`; assignee edits do not.
+       */
+      acknowledgeMaterialImpact: z.boolean().optional(),
+    }),
     response: ConnectorMapping,
+  }),
+  checkMapping: endpoint({
+    id: 'admin.checkMapping',
+    method: 'POST',
+    path: '/admin/connector-mappings/:id/check',
+    summary:
+      '"Check with Jira": dry lookup of project, issue type and assignees through the connector (no writes), and the material-change impact of saving. Added by D-134.',
+    screens: ['S14'],
+    prd: ['ME-13', 'S14'],
+    auth: 'human',
+    params: IdParams,
+    body: ConnectorMapping.omit({ id: true }),
+    response: ConnectorMappingCheck,
+    successStatus: 200,
+  }),
+  createConnection: endpoint({
+    id: 'admin.createConnection',
+    method: 'POST',
+    path: '/admin/connections',
+    summary: 'Add a Jira Cloud task-tool connection (status Expired until authorized). Added by D-135.',
+    screens: ['S14'],
+    prd: ['ME-13', 'S14'],
+    auth: 'human',
+    idempotent: true,
+    body: z.object({
+      kind: z.literal('task_tool'),
+      provider: z.literal('jira_cloud'),
+      name: z.string().min(1),
+      siteUrl: z.string().url(), // https://<site>.atlassian.net
+      usedFor: z.string().min(1),
+    }),
+    response: Connection,
+  }),
+  authorizeConnection: endpoint({
+    id: 'admin.authorizeConnection',
+    method: 'POST',
+    path: '/admin/connections/:id/authorization',
+    summary:
+      'Start OAuth 2.0 (3LO) as the dedicated integration account: returns the Atlassian consent URL with a one-time state. Added by D-135.',
+    screens: ['S14'],
+    prd: ['ME-13'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    response: z.object({ authorizeUrl: z.string().url(), expiresAt: IsoDateTime }),
+  }),
+  completeAuthorization: endpoint({
+    id: 'admin.completeAuthorization',
+    method: 'POST',
+    path: '/admin/connections/:id/authorization/callback',
+    summary:
+      'Finish 3LO: exchange the code (state checked once), store tokens encrypted, record site, account and scopes, then health-check. Added by D-135.',
+    screens: ['S14'],
+    prd: ['ME-13'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ code: z.string().min(1), state: z.string().min(1) }),
+    response: Connection,
+    successStatus: 200,
   }),
   runDiagnostics: endpoint({
     id: 'admin.runDiagnostics',

@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 import {
+  AssigneeMappingStatus,
+  CommitteeSeat,
   ConnectionKind,
   ConnectorStatus,
   GateCode,
@@ -13,7 +15,16 @@ import {
   PrincipalKind,
   RoleCode,
 } from '../enums';
-import { CountryCode, CurrencyCode, DecimalString, Id, IsoDate, IsoDateTime, PersonRef } from '../primitives';
+import {
+  CountryCode,
+  CurrencyCode,
+  DecimalString,
+  Id,
+  IsoDate,
+  IsoDateTime,
+  PersonRef,
+  RateString,
+} from '../primitives';
 
 export const Tenant = z.object({
   id: Id,
@@ -71,8 +82,57 @@ export const AuthorityGrant = z.object({
   validTo: IsoDate.nullable(),
   grantedBy: Id,
   revokedAt: IsoDateTime.nullable(),
+  /**
+   * The Finance-signed delegation-of-authority document the grant was entered from (D-109 §2,
+   * CR-PD-2). Absent or null on grants entered before D-122. Additive.
+   */
+  doaReference: z.string().min(1).nullable().optional(),
 });
 export type AuthorityGrant = z.infer<typeof AuthorityGrant>;
+
+/**
+ * A named committee seat holder (D-109 §3, D-124). Membership names who sits on the investment
+ * committee for a business unit; it is NOT authority: a member decides a gate only with a valid
+ * authority grant for that gate, BU and amount. Admins record members from the DoA document and
+ * never hold a seat for themselves.
+ */
+export const CommitteeMember = z.object({
+  id: Id,
+  userId: Id,
+  person: PersonRef,
+  businessUnitId: Id,
+  seat: CommitteeSeat,
+  validFrom: IsoDate,
+  validTo: IsoDate.nullable(),
+  doaReference: z.string().min(1).nullable(),
+  enteredBy: Id,
+  revokedAt: IsoDateTime.nullable(),
+});
+export type CommitteeMember = z.infer<typeof CommitteeMember>;
+
+/**
+ * Extension (X) rule (D-110 §1): share of the parent G2 budget and window, one per parent G2, scope a
+ * subset of the parent's. Both sides of the share are one-time pilot money (never-rule 3 holds).
+ */
+export const ExtensionRule = z.object({
+  maxBudgetShare: RateString, // "0.25"
+  maxDurationShare: RateString, // "0.50"
+  minDurationDays: z.number().int().positive(), // 14
+  maxPerParent: z.number().int().positive(), // 1
+  /** Parent G2 + all its extensions ≤ the sponsor's G2 ceiling (D-109 §1 X row). */
+  cumulativeWithinSponsorCeiling: z.boolean(),
+  /** Real tenants: a null cap or duration is refused at request. Illustrative tenants keep the placeholder. */
+  capRequiredInRealTenants: z.boolean(),
+});
+export type ExtensionRule = z.infer<typeof ExtensionRule>;
+
+/** Default delegated-authority template row for one gate (D-109 §1). One-time EUR per request, excl. VAT. */
+export const AuthorityTemplate = z.object({
+  sponsorCeiling: DecimalString.nullable(), // null = the sponsor cannot approve this gate (G3)
+  committeeCeiling: DecimalString.nullable(), // null = no committee route
+  currency: CurrencyCode,
+});
+export type AuthorityTemplate = z.infer<typeof AuthorityTemplate>;
 
 /** Gate policy body (S14 "Gate policies"). Preconditions are evaluated by deterministic code. */
 export const GatePolicyBody = z.object({
@@ -82,6 +142,16 @@ export const GatePolicyBody = z.object({
   requiredSignOffAreas: z.array(z.string()).default([]),
   approvalExpiryDays: z.number().int().positive().default(14),
   selfApprovalAllowed: z.literal(false).default(false),
+  /** D-109 §4: false for G0 and G3 (never expire in the MVP). Absent = expires. Additive (CR-PD-1). */
+  approvalExpires: z.boolean().optional(),
+  /** Seats on the committee for this gate (G3: chair, finance, operations). Absent = no committee. */
+  committeeSeats: z.array(CommitteeSeat).optional(),
+  /** Seats whose approval is required inside the quorum (G3: finance). Quorum = `requiredApprovals`. */
+  requiredSeats: z.array(CommitteeSeat).optional(),
+  /** Default matrix row (D-109 §1); per-person ceilings stay on authority grants. */
+  authority: AuthorityTemplate.optional(),
+  /** X only (D-110 §1). */
+  extension: ExtensionRule.optional(),
 });
 export type GatePolicyBody = z.infer<typeof GatePolicyBody>;
 
@@ -131,6 +201,22 @@ export const Connection = z.object({
   lastSuccessAt: IsoDateTime.nullable(),
   lastCheckedAt: IsoDateTime.nullable(),
   usedFor: z.string(),
+  /**
+   * Jira Cloud (D-121): the authorized site and integration account, granted scopes and token expiry.
+   * Never a token. Null for simulated and upload connections. Additive.
+   */
+  jira: z
+    .object({
+      siteUrl: z.string().url(),
+      cloudId: z.string().nullable(),
+      accountDisplayName: z.string().nullable(), // "Growth OS integration"
+      scopes: z.array(z.string()),
+      tokenExpiresAt: IsoDateTime.nullable(),
+      authorizedBy: PersonRef.nullable(),
+      authorizedAt: IsoDateTime.nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type Connection = z.infer<typeof Connection>;
 
@@ -143,6 +229,56 @@ export const ConnectorMapping = z.object({
   assigneeMap: z.record(Id, z.string()), // userId -> external account id or email
 });
 export type ConnectorMapping = z.infer<typeof ConnectorMapping>;
+
+/**
+ * S14 task mapping editor "Check with Jira" (D-114 §1): a dry lookup through the connector's
+ * `preview()` (no writes), plus the materiality impact of saving. Project or issue-type changes on a
+ * mapping used by an approved, unsent task set are `plan_destination_changed` (material by default).
+ */
+export const ConnectorMappingCheck = z.object({
+  mappingId: Id,
+  project: z.object({ key: z.string(), name: z.string().nullable(), found: z.boolean() }),
+  issueType: z.object({ name: z.string(), found: z.boolean() }),
+  assignees: z.array(
+    z.object({
+      userId: Id,
+      person: PersonRef,
+      roleText: z.string(), // "Pilot owner"
+      externalAccount: z.string().nullable(),
+      status: AssigneeMappingStatus,
+      message: z.string().nullable(), // "not a member of project PIL"
+    }),
+  ),
+  impact: z
+    .object({
+      material: z.boolean(),
+      changeType: MaterialChangeType,
+      lines: z.array(z.string()), // "Approval G2 · Snapshot v3 needs re-approval", "3 unsent tasks pause"
+      affectedGateRequestIds: z.array(Id),
+    })
+    .nullable(), // null = only assignee edits (not material)
+  connectionStatus: ConnectorStatus,
+  checkedAt: IsoDateTime,
+});
+export type ConnectorMappingCheck = z.infer<typeof ConnectorMappingCheck>;
+
+/**
+ * Tenant "Live analysis" setting (D-120 §4, CR-PD-8). Off by default. An administrator turns it on
+ * only with the signed addendum recorded (document reference and date) and a passing manual eval run
+ * on the configured provider. The model name stays configuration (`ANALYSIS_MODEL`), never here.
+ */
+export const LiveAnalysisSetting = z.object({
+  enabled: z.boolean(),
+  addendumRef: z.string().min(1).nullable(),
+  addendumSignedOn: IsoDate.nullable(),
+  evalRunRef: z.string().min(1).nullable(),
+  evalPassedAt: IsoDateTime.nullable(),
+  /** The deployment's ANALYSIS_PROVIDER is a live provider (not `fixture`). Read-only. */
+  liveProviderConfigured: z.boolean(),
+  changedBy: PersonRef.nullable(),
+  changedAt: IsoDateTime.nullable(),
+});
+export type LiveAnalysisSetting = z.infer<typeof LiveAnalysisSetting>;
 
 /** Enterprise context references (shared). Stable identity, versioned attributes kept minimal in MVP. */
 export const Product = z.object({

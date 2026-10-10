@@ -820,3 +820,138 @@ export const PolicyKind = z.enum([
   'self_approval',
 ]);
 export type PolicyKind = z.infer<typeof PolicyKind>;
+
+// ---------------------------------------------------------------------------
+// Wave 4 product decisions (decisions.md D-122 onward; CR-PD-1…9). Additive only.
+// ---------------------------------------------------------------------------
+
+/** G3 committee seats (D-109 §3). A quorum is counted per snapshot hash; abstain never counts. */
+export const CommitteeSeat = z.enum(['chair', 'finance', 'operations']);
+export type CommitteeSeat = z.infer<typeof CommitteeSeat>;
+export const COMMITTEE_SEAT_LABELS = labels(CommitteeSeat, {
+  chair: 'Chair',
+  finance: 'Finance seat',
+  operations: 'Operations seat',
+});
+
+/** A seat's state on the approval panel for the current snapshot (D-109 §3). */
+export const CommitteeSeatState = z.enum([
+  'waiting',
+  'approved',
+  'not_approved',
+  'abstained',
+  'lapsed',
+  'excluded',
+  'vacant',
+]);
+export type CommitteeSeatState = z.infer<typeof CommitteeSeatState>;
+export const COMMITTEE_SEAT_STATE_LABELS = labels(CommitteeSeatState, {
+  waiting: 'Waiting',
+  approved: 'Approved',
+  not_approved: 'Not approved',
+  abstained: 'Abstained',
+  lapsed: 'Lapsed · snapshot changed',
+  excluded: 'Excluded · conflict',
+  vacant: 'No member named',
+});
+
+/** Who a request routes to under the delegated-authority matrix (D-109 §1). */
+export const ApprovalRoute = z.enum(['sponsor', 'committee', 'authority_gap']);
+export type ApprovalRoute = z.infer<typeof ApprovalRoute>;
+export const APPROVAL_ROUTE_LABELS = labels(ApprovalRoute, {
+  sponsor: 'Sponsor',
+  committee: 'Investment committee',
+  authority_gap: 'Authority gap',
+});
+
+/** Measure type of a pre-registered pilot threshold (D-115). G3's demand clause reads `demand`. */
+export const MeasureType = z.enum(['demand', 'delivery_effort', 'buyer_fit', 'spend', 'other']);
+export type MeasureType = z.infer<typeof MeasureType>;
+export const MEASURE_TYPE_LABELS = labels(MeasureType, {
+  demand: 'Demand',
+  delivery_effort: 'Delivery effort',
+  buyer_fit: 'Buyer fit',
+  spend: 'Spend against budget',
+  other: 'Other',
+});
+
+/** Pre-registered stop rules on the G2 request (D-112). A trip asks the sponsor; it never acts alone. */
+export const StopRuleTriggerKind = z.enum(['threshold', 'event']);
+export type StopRuleTriggerKind = z.infer<typeof StopRuleTriggerKind>;
+export const STOP_RULE_TRIGGER_KIND_LABELS = labels(StopRuleTriggerKind, {
+  threshold: 'A measure crosses a threshold',
+  event: 'An event',
+});
+export const StopRuleConsequence = z.enum(['pause_and_request_review', 'recommend_stop']);
+export type StopRuleConsequence = z.infer<typeof StopRuleConsequence>;
+export const STOP_RULE_CONSEQUENCE_LABELS = labels(StopRuleConsequence, {
+  pause_and_request_review: 'Pause tasks and request a sponsor review',
+  recommend_stop: 'Recommend stop',
+});
+export const StopRuleStatus = z.enum(['not_tripped', 'tripped']);
+export type StopRuleStatus = z.infer<typeof StopRuleStatus>;
+export const STOP_RULE_STATUS_LABELS = labels(StopRuleStatus, {
+  not_tripped: 'Not tripped',
+  tripped: 'Tripped · sponsor review requested',
+});
+
+/** Licence rights (D-120). Unconfirmed fails closed: metadata only. */
+export const LicenseRightsStatus = z.enum(['unconfirmed', 'confirmed', 'expired']);
+export type LicenseRightsStatus = z.infer<typeof LicenseRightsStatus>;
+export const LICENSE_RIGHTS_STATUS_LABELS = labels(LicenseRightsStatus, {
+  unconfirmed: 'Not confirmed in writing · metadata only',
+  confirmed: 'Confirmed in writing',
+  expired: 'Term ended · metadata only',
+});
+export const LicenseExpiryAction = z.enum(['remove_content_keep_metadata', 'delete_copy_keep_audit']);
+export type LicenseExpiryAction = z.infer<typeof LicenseExpiryAction>;
+export const LICENSE_EXPIRY_ACTION_LABELS = labels(LicenseExpiryAction, {
+  remove_content_keep_metadata: 'Remove excerpts and embeddings · keep provenance metadata',
+  delete_copy_keep_audit: 'Delete the stored copy · keep the audit record',
+});
+
+/** S14 task mapping editor: one row per person (D-114 §1). */
+export const AssigneeMappingStatus = z.enum(['mapped', 'unmapped', 'not_found']);
+export type AssigneeMappingStatus = z.infer<typeof AssigneeMappingStatus>;
+export const ASSIGNEE_MAPPING_STATUS_LABELS = labels(AssigneeMappingStatus, {
+  mapped: 'Mapped',
+  unmapped: 'Unmapped',
+  not_found: 'Not found',
+});
+
+/** Lineage edge kinds (D-117). "checked against" is an upper-bound check, not a calculation input. */
+export const LineageRelation = z.enum(['input_to', 'checked_against']);
+export type LineageRelation = z.infer<typeof LineageRelation>;
+export const LINEAGE_RELATION_LABELS = labels(LineageRelation, {
+  input_to: 'Used by',
+  checked_against: 'Upper-bound check',
+});
+
+/** S11 "Record spend" (D-114 §2). Was missing a label map. */
+export const BUDGET_ENTRY_KIND_LABELS = labels(BudgetEntryKind, {
+  committed: 'Committed',
+  spent: 'Spent',
+});
+
+/**
+ * Thesis blocker labels name the gate (D-119, PQ-6): "Pending · G2" (needed for the next gate, in
+ * progress) and "Blocker · G3" (unresolved for a later gate; does not stop the next one).
+ */
+export const THESIS_BLOCKER_STATUS_HINTS = labels(ThesisBlockerStatus, {
+  pending: 'Needed for the next gate and in progress.',
+  blocker: 'Unresolved for a later gate. It does not stop the next gate.',
+  resolved: 'Resolved with a reason.',
+});
+export function thesisBlockerLabel(status: ThesisBlockerStatus, gate: GateCode | string): string {
+  return status === 'resolved'
+    ? THESIS_BLOCKER_STATUS_LABELS.resolved
+    : `${THESIS_BLOCKER_STATUS_LABELS[status]} · ${gate}`;
+}
+
+/**
+ * Snapshot versions are numbered per case; every label pairs the gate with the version so a per-case
+ * number never reads as per-gate (D-118, PQ-19): "G2 · Snapshot v2".
+ */
+export function snapshotLabel(gate: GateCode | string, version: number): string {
+  return `${gate} · Snapshot v${version}`;
+}

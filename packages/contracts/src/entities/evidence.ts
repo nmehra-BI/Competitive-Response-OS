@@ -18,6 +18,8 @@ import {
   EvidenceQuality,
   FieldOrigin,
   IngestionStatus,
+  LicenseExpiryAction,
+  LicenseRightsStatus,
   SourceAvailability,
   SourceOriginKind,
 } from '../enums';
@@ -33,8 +35,36 @@ export const License = z.object({
   allowModelContext: z.boolean(),
   allowEmbeddings: z.boolean(),
   allowExport: z.boolean(),
+  /**
+   * D-120 (CR-PD-7), additive. Fail closed: without a written confirmation the licence allows metadata
+   * only (0 excerpt sentences, no model context, embeddings or export); the database refuses anything
+   * else. At `termEndsOn` the `onExpiry` action runs and provenance metadata is kept for audit.
+   */
+  rightsConfirmation: z
+    .object({ documentRef: z.string().min(1), confirmedOn: IsoDate, recordedBy: Id.nullable().optional() })
+    .nullable()
+    .optional(),
+  termEndsOn: IsoDate.nullable().optional(),
+  onExpiry: LicenseExpiryAction.optional(),
+  /** Derived: unconfirmed, confirmed, or expired (term ended and the on-expiry action ran). */
+  rightsStatus: LicenseRightsStatus.optional(),
+  expiredAt: IsoDateTime.nullable().optional(),
 });
 export type License = z.infer<typeof License>;
+
+/** S14 › Licences edit body (D-120). Permissions above "metadata only" need `rightsConfirmation`. */
+export const LicenseInput = z.object({
+  name: z.string().min(1),
+  boundaryText: z.string().min(1),
+  maxExcerptSentences: z.number().int().nonnegative(),
+  allowModelContext: z.boolean(),
+  allowEmbeddings: z.boolean(),
+  allowExport: z.boolean(),
+  rightsConfirmation: z.object({ documentRef: z.string().min(1), confirmedOn: IsoDate }).nullable(),
+  termEndsOn: IsoDate.nullable(),
+  onExpiry: LicenseExpiryAction,
+});
+export type LicenseInput = z.infer<typeof LicenseInput>;
 
 export const SourceEntitlement = z.object({
   id: Id,

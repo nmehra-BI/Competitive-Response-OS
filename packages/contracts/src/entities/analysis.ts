@@ -222,5 +222,10 @@ export const Proposal = z.object({
   decidedBy: PersonRef.nullable(),
   decidedAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
+  /**
+   * D-116 (CR-PD-9), additive: whether the viewer may "Accept as fact" in one step — a claim proposal,
+   * unedited, whose every evidence citation opens for this viewer. Otherwise only "Add as draft".
+   */
+  oneStepAccept: z.object({ available: z.boolean(), reason: z.string().nullable() }).optional(),
 });
 export type Proposal = z.infer<typeof Proposal>;

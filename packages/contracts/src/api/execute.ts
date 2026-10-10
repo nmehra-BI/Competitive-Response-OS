@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { DecisionOutcome, TaskFunction, TaskStatus, ThresholdResult } from '../enums';
 import {
   BudgetEntry,
+  BudgetMeter,
   DecisionRecord,
   MessageDraft,
   OutcomeObservation,
@@ -20,7 +21,7 @@ import { GateRequest } from '../entities/gate';
 import { CurrencyCode, DecimalString, Id, IsoDate, Sha256Hex } from '../primitives';
 import { CaseParams, endpoint, IdParams } from './endpoint';
 
-const TaskDraftInput = z.object({
+export const TaskDraftInput = z.object({
   id: Id.nullable(),
   title: z.string().min(1),
   milestoneId: Id.nullable(),
@@ -31,7 +32,28 @@ const TaskDraftInput = z.object({
   dueRule: z.string().nullable(),
   deliverable: z.string().min(1),
   conditionKey: z.string().nullable(),
+  /**
+   * S11 pilot plan editor (D-112 §5), additive. New rows have no ids yet, so a task may name its
+   * milestone and dependencies by ordinal within the same patch. Ids win when both are given.
+   */
+  milestoneOrdinal: z.number().int().positive().nullable().optional(),
+  dependsOnOrdinals: z.array(z.number().int().positive()).optional(),
+  budgetLine: z
+    .object({ amount: DecimalString, currency: CurrencyCode, note: z.string().nullable() })
+    .nullable()
+    .optional(),
 });
+export type TaskDraftInput = z.infer<typeof TaskDraftInput>;
+
+/** S09 "Validation tasks · Draft" (D-113): wording, owner, due date and deliverable only. */
+export const ValidationTaskDraftInput = z.object({
+  title: z.string().min(1),
+  ownerId: Id,
+  dueOn: IsoDate.nullable(), // inside the experiment window
+  deliverable: z.string().min(1),
+  function: TaskFunction.optional(), // default: the experiment owner's function, else "strategy"
+});
+export type ValidationTaskDraftInput = z.infer<typeof ValidationTaskDraftInput>;
 
 export const pilotEndpoints = {
   get: endpoint({
@@ -62,6 +84,9 @@ export const pilotEndpoints = {
             name: z.string(),
             windowText: z.string(),
             ordinal: z.number().int(),
+            /** Additive (D-112 §5): milestone date and the evidence expected. */
+            dueOn: IsoDate.nullable().optional(),
+            evidenceExpected: z.string().nullable().optional(),
           }),
         )
         .optional(),
@@ -142,6 +167,20 @@ export const pilotEndpoints = {
     body: z.object({ title: z.string().optional(), body: z.string().optional() }),
     response: MessageDraft,
   }),
+  tripStopRule: endpoint({
+    id: 'pilot.tripStopRule',
+    method: 'POST',
+    path: '/me/cases/:caseRef/stop-rules/:stopRuleId/trips',
+    summary:
+      'Report that a pre-registered stop rule tripped, with evidence. Creates a review item for the sponsor; never stops the case, pauses execution or passes a gate by itself (D-112). Added by D-127.',
+    screens: ['S11', 'MYWORK'],
+    prd: ['ME-12', '§4'],
+    auth: 'human',
+    idempotent: true,
+    params: CaseParams.extend({ stopRuleId: Id }),
+    body: z.object({ evidence: z.string().min(1) }),
+    response: PilotPlanView,
+  }),
 };
 
 export const taskSyncEndpoints = {
@@ -205,6 +244,49 @@ export const taskSyncEndpoints = {
     params: IdParams,
     response: z.unknown(),
   }),
+  addDraftTask: endpoint({
+    id: 'tasks.addDraft',
+    method: 'POST',
+    path: '/me/task-sets/:id/tasks',
+    summary:
+      'S09 "Validation tasks · Draft": add an unsent task to a validation task set. Never carries threshold, sample or budget (D-113). Added by D-128.',
+    screens: ['S09'],
+    prd: ['ME-09', 'ME-13'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: ValidationTaskDraftInput,
+    response: TaskSet,
+  }),
+  editDraftTask: endpoint({
+    id: 'tasks.editDraft',
+    method: 'PATCH',
+    path: '/me/tasks/:id/draft',
+    summary:
+      'Edit title, owner, due date or deliverable of an unsent validation task. A sent task is read-only (INVALID_TRANSITION). Audited as task.updated; not material (D-113). Added by D-128.',
+    screens: ['S09'],
+    prd: ['ME-09', 'ME-13'],
+    auth: 'human',
+    ifMatch: true,
+    params: IdParams,
+    body: ValidationTaskDraftInput.partial(),
+    response: Task,
+  }),
+  removeDraftTask: endpoint({
+    id: 'tasks.removeDraft',
+    method: 'POST',
+    path: '/me/tasks/:id/removal',
+    summary:
+      'Remove an unsent validation draft task (kept in history, never deleted). A sent task cannot be removed (D-113). Added by D-128.',
+    screens: ['S09'],
+    prd: ['ME-09', 'ME-13'],
+    auth: 'human',
+    idempotent: true,
+    ifMatch: true,
+    params: IdParams,
+    response: TaskSet,
+    successStatus: 200,
+  }),
 };
 
 export const budgetEndpoints = {
@@ -225,8 +307,37 @@ export const budgetEndpoints = {
       amount: DecimalString,
       currency: CurrencyCode,
       asOf: IsoDate,
-      sourceText: z.string().min(1),
+      sourceText: z.string().min(1), // the description
+      /** S11 "Record spend" (D-114 §2), additive: PO or invoice number and an optional task link. */
+      reference: z.string().min(1).nullable().optional(),
+      taskId: Id.nullable().optional(),
     }),
+    response: BudgetEntry,
+  }),
+  listEntries: endpoint({
+    id: 'budget.listEntries',
+    method: 'GET',
+    path: '/me/cases/:caseRef/budget-entries',
+    summary:
+      'Budget entries (committed and spent, with reversals) and the meter for an approved gate budget. Added by D-133.',
+    screens: ['S11'],
+    prd: ['ME-14'],
+    params: CaseParams,
+    query: z.object({ gateRequestId: Id.optional() }),
+    response: z.object({ items: z.array(BudgetEntry), meter: BudgetMeter.nullable() }),
+  }),
+  reverseEntry: endpoint({
+    id: 'budget.reverseEntry',
+    method: 'POST',
+    path: '/me/budget-entries/:id/reversals',
+    summary:
+      'Correct an entry with a reversing entry and a reason (append-only; the original stays). An entry is reversed at most once; a reversal cannot be reversed. Added by D-133.',
+    screens: ['S11'],
+    prd: ['ME-14'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ reason: z.string().min(1) }),
     response: BudgetEntry,
   }),
 };
@@ -327,6 +438,15 @@ export const outcomeEndpoints = {
       durationDays: z.number().int().positive().nullable(),
       ownerId: Id,
       scopeItems: z.array(z.string()).min(1),
+      /**
+       * D-110 (D-136), additive: the extension window, the parent targets it re-tests
+       * (unmet or inconclusive; pre-registered with the request), and the site count (a subset of the
+       * parent scope: same or fewer sites, no new sites, no prospect outreach).
+       */
+      windowStart: IsoDate.nullable().optional(),
+      windowEnd: IsoDate.nullable().optional(),
+      retestTargetIds: z.array(Id).optional(),
+      maxSites: z.number().int().positive().nullable().optional(),
     }),
     response: GateRequest,
   }),

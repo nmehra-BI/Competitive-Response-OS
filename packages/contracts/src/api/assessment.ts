@@ -3,7 +3,14 @@
  * economics (S08), assumptions and disputes (S09 register), lineage drawer.
  */
 import { z } from 'zod';
-import { FeasibilityDimension, ReviewArea, ReviewerPosition, RoleCode, Sensitivity } from '../enums';
+import {
+  FeasibilityDimension,
+  LineageRelation,
+  ReviewArea,
+  ReviewerPosition,
+  RoleCode,
+  Sensitivity,
+} from '../enums';
 import { Assumption, AssumptionVersion, ThesisFields, ThesisView, ValueUnit } from '../entities/assumption';
 import { CaseHeader, MandateFields, WorkflowCase } from '../entities/case';
 import { Challenge, Claim } from '../entities/evidence';
@@ -20,6 +27,9 @@ import { ReviewRequest } from '../entities/gate';
 import { EconomicsOutput, LineageNode, SizingOutput } from '../engines';
 import { Page, PageQuery } from '../http';
 import { CurrencyCode, DecimalString, Id, IsoDate, PersonRef, PriceYear } from '../primitives';
+
+/** Engine input keys an editor may clear back to Unknown (a blank is never 0; D-112 §2, §3). */
+const ClearInputKeys = z.array(z.string().min(1));
 import { CaseParams, endpoint, IdParams, Rationale } from './endpoint';
 
 // ----- Case envelope -----
@@ -240,6 +250,16 @@ const SizingDraftPatch = z.object({
       currency: CurrencyCode,
       priceYear: PriceYear,
       annualizationMethod: z.string().nullable(),
+      /** S06 editor (D-112 §2), additive: product boundary text and what the spend includes. */
+      productBoundary: z.string().min(1),
+      includes: z
+        .object({
+          hardware: z.boolean(),
+          software: z.boolean(),
+          services: z.boolean(),
+          replacementCycles: z.boolean(),
+        })
+        .partial(),
     })
     .partial()
     .optional(),
@@ -251,9 +271,15 @@ const SizingDraftPatch = z.object({
         unit: ValueUnit,
         sourceId: Id.nullable(),
         assumptionId: Id.nullable(),
+        /** Additive (D-112 §2): basis text, e.g. the reachable pool's channel definition. */
+        basisText: z.string().nullable().optional(),
       }),
     )
     .optional(),
+  /** Additive (D-112 §2): inputs to clear back to Unknown (then MISSING_INPUT blocks; never 0). */
+  clearInputKeys: ClearInputKeys.optional(),
+  /** Additive (D-112 §2): the overlap row's dedup rule ("Dedup run v2: same site ID"). */
+  dedupRuleText: z.string().min(1).optional(),
   cohorts: z
     .array(
       z.object({
@@ -265,7 +291,17 @@ const SizingDraftPatch = z.object({
       }),
     )
     .optional(),
-  overlaps: z.array(z.object({ cohortAId: Id, cohortBId: Id, overlapCount: z.number().int() })).optional(),
+  overlaps: z
+    .array(
+      z.object({
+        cohortAId: Id,
+        cohortBId: Id,
+        overlapCount: z.number().int(),
+        /** Additive (D-112 §2): how the overlap was found ("Dedup run v2"). */
+        method: z.string().min(1).optional(),
+      }),
+    )
+    .optional(),
   crossCheck: z
     .object({
       low: DecimalString,
@@ -278,6 +314,8 @@ const SizingDraftPatch = z.object({
     .nullable()
     .optional(),
 });
+
+export { SizingDraftPatch };
 
 export const sizingEndpoints = {
   get: endpoint({
@@ -413,7 +451,15 @@ export const lineageEndpoints = {
     response: z.object({
       node: LineageNode,
       inputs: z.array(LineageNode),
-      usedBy: z.array(z.object({ label: z.string(), href: z.string() })),
+      usedBy: z.array(
+        z.object({
+          label: z.string(),
+          href: z.string(),
+          /** D-117, additive: absent = `input_to`. "Reachable pool" uses SAM as `checked_against`. */
+          relation: LineageRelation.optional(),
+          detail: z.string().nullable().optional(), // "upper-bound check: 500 ≤ 2,000 sites"
+        }),
+      ),
       history: z.array(z.object({ at: z.string(), text: z.string() })),
       exactValue: z.string().nullable(), // "€40,000,000"
       engineLabel: z.string(), // "Calculated by sizing engine v1.0 · reproducible"
@@ -468,6 +514,29 @@ export const feasibilityEndpoints = {
     body: z.object({ statement: z.string().min(1) }),
     response: FeasibilityView,
   }),
+  addDimension: endpoint({
+    id: 'feasibility.addDimension',
+    method: 'POST',
+    path: '/me/cases/:caseRef/feasibility/dimensions',
+    summary:
+      'S07 "Add dimension / Request review" (D-112 §4): a dimension from the fixed list with a named reviewer, due date, question and scope of review. AI may draft the question, never the answer. Added by D-132.',
+    screens: ['S07'],
+    prd: ['ME-06'],
+    auth: 'human',
+    idempotent: true,
+    params: CaseParams,
+    body: z.object({
+      dimension: FeasibilityDimension,
+      reviewerId: Id,
+      dueOn: IsoDate.nullable(),
+      question: z.string().min(1),
+      questionDetail: z.string().nullable(),
+      scopeText: z.string().min(1), // the scope of review
+      /** Specialist review: "AI cannot provide this review". */
+      humanOnly: z.boolean(),
+    }),
+    response: FeasibilityView,
+  }),
   resolveBlocker: endpoint({
     id: 'feasibility.resolveBlocker',
     method: 'POST',
@@ -512,7 +581,24 @@ export const economicsEndpoints = {
     prd: ['ME-07', 'ME-15'],
     ifMatch: true,
     params: CaseParams,
-    body: z.object({ drivers: z.array(z.object({ inputKey: z.string(), value: DecimalString })) }),
+    body: z.object({
+      drivers: z.array(
+        z.object({
+          inputKey: z.string(),
+          value: DecimalString,
+          /** Additive (D-112 §3): link the driver to an assumption or a source. */
+          assumptionId: Id.nullable().optional(),
+          sourceId: Id.nullable().optional(),
+        }),
+      ),
+      /** Additive (D-112 §3): currency and base year once in the header; horizon; opex scope note. */
+      currency: CurrencyCode.optional(),
+      priceYear: PriceYear.optional(),
+      horizonYears: z.number().int().positive().optional(),
+      opexScopeNote: z.string().min(1).optional(),
+      /** Additive: drivers to clear back to Unknown (a blank is never 0). */
+      clearInputKeys: ClearInputKeys.optional(),
+    }),
     response: EconomicsView,
   }),
   calculateDraft: endpoint({
@@ -640,6 +726,13 @@ export const assumptionEndpoints = {
       consequenceIfFalse: z.string(),
       validationMethod: z.string(),
       dueOn: IsoDate.nullable(),
+      /**
+       * S09 "Add assumption" (D-112 §1), additive: the confidence basis. Sources make it Evidence;
+       * empty or absent = "Assumption — no evidence". Money units carry currency and price year.
+       */
+      sourceIds: z.array(Id).optional(),
+      currency: CurrencyCode.nullable().optional(),
+      priceYear: PriceYear.nullable().optional(),
     }),
     response: Assumption,
   }),

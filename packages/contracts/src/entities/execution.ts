@@ -9,8 +9,10 @@ import {
   BudgetEntryKind,
   ConnectorStatus,
   DecisionOutcome,
+  MeasureType,
   OutcomeReviewStatus,
   PilotPlanStatus,
+  StopRuleStatus,
   SyncStatus,
   TaskFunction,
   TaskSetOwnerType,
@@ -32,7 +34,7 @@ import {
   Sha256Hex,
   Unavailable,
 } from '../primitives';
-import { Condition, GateRequest } from './gate';
+import { Condition, GateRequest, StopRule } from './gate';
 
 export const ExternalSync = z.object({
   status: SyncStatus,
@@ -66,6 +68,14 @@ export const Task = z.object({
   status: TaskStatus,
   sync: ExternalSync,
   rowVersion: RowVersion,
+  /**
+   * S11 pilot plan editor (D-112 §5): an optional one-time budget line for the task. It is pilot
+   * money inside the approved ceiling, never a per-year figure. Additive.
+   */
+  budgetLine: z
+    .object({ amount: DecimalString, currency: CurrencyCode, note: z.string().nullable() })
+    .nullable()
+    .optional(),
 });
 export type Task = z.infer<typeof Task>;
 
@@ -74,6 +84,9 @@ export const Milestone = z.object({
   name: z.string(),
   windowText: z.string(),
   ordinal: z.number().int().positive(),
+  /** D-112 §5, additive: the milestone date and the evidence expected at it. */
+  dueOn: IsoDate.nullable().optional(),
+  evidenceExpected: z.string().nullable().optional(),
 });
 export type Milestone = z.infer<typeof Milestone>;
 
@@ -94,6 +107,11 @@ export const TaskSet = z.object({
     paused: z.number().int(),
   }),
   summaryText: z.string(), // "5 of 6 tasks confirmed in Jira · 1 failed"
+  /**
+   * S09 "Validation tasks · Draft" (D-113): true when the viewer may add, edit or remove unsent tasks
+   * of this (experiment) task set. Sent tasks stay read-only. Additive.
+   */
+  draftEditable: z.boolean().optional(),
 });
 export type TaskSet = z.infer<typeof TaskSet>;
 
@@ -159,10 +177,32 @@ export const BudgetEntry = z.object({
   amount: DecimalString,
   currency: CurrencyCode,
   asOf: IsoDate,
-  sourceText: z.string(),
+  sourceText: z.string(), // the description
   recordedBy: PersonRef,
+  /**
+   * S11 "Record spend" (D-114 §2), additive. Entries are append-only; a correction is a reversing
+   * entry with a reason (same kind, amount and currency as the entry it reverses; the meter subtracts
+   * it). An entry is reversed at most once.
+   */
+  reference: z.string().nullable().optional(), // PO or invoice number
+  taskId: Id.nullable().optional(),
+  reversesEntryId: Id.nullable().optional(),
+  reversalReason: z.string().nullable().optional(),
+  reversedByEntryId: Id.nullable().optional(),
+  recordedAt: IsoDateTime.optional(),
 });
 export type BudgetEntry = z.infer<typeof BudgetEntry>;
+
+/** A G2 stop rule with its trip state on S11 (D-112). Tripping never changes task, gate or case state. */
+export const StopRuleState = StopRule.extend({
+  owner: PersonRef,
+  status: StopRuleStatus,
+  trippedAt: IsoDateTime.nullable(),
+  trippedBy: PersonRef.nullable(),
+  /** The sponsor review item the trip created (REVIEWS inbox). */
+  reviewRequestId: Id.nullable(),
+});
+export type StopRuleState = z.infer<typeof StopRuleState>;
 
 export const MessageDraft = z.object({
   id: Id,
@@ -198,6 +238,10 @@ export const PilotPlanView = z.object({
   activationBlockers: z.array(Blocker),
   messageDrafts: z.array(MessageDraft),
   connectorBanner: z.object({ status: ConnectorStatus, title: z.string(), body: z.string() }).nullable(),
+  /** The approved G2's pre-registered stop rules (D-112). Additive. */
+  stopRules: z.array(StopRuleState).optional(),
+  /** Budget entries of the authorizing gate, newest last, reversals included (D-114 §2). Additive. */
+  budgetEntries: z.array(BudgetEntry).optional(),
 });
 export type PilotPlanView = z.infer<typeof PilotPlanView>;
 
@@ -228,6 +272,11 @@ export const OutcomeTarget = z.object({
   unit: z.string(),
   windowText: z.string(),
   snapshotId: Id,
+  /**
+   * D-115 (CR-PD-4), additive: Demand, Delivery effort, Buyer fit, Spend against budget or Other. The
+   * G3 demand clause reads `demand`, never the name. Absent on targets registered before D-122.
+   */
+  measureType: MeasureType.optional(),
 });
 export type OutcomeTarget = z.infer<typeof OutcomeTarget>;
 
@@ -313,6 +362,28 @@ export const OutcomeReviewView = z.object({
   rowVersion: RowVersion.optional(),
   /** The open or decided extension (X) request after this review, if any. Additive (D-068). */
   extensionRequest: GateRequest.nullable().optional(),
+  /**
+   * The extension rule applied to this case's approved G2 (D-110 §1), for the S12 form: "Up to €30k
+   * (25% of €120k) · up to 45 days". All amounts are one-time pilot money. Null when no G2 is approved.
+   * Additive.
+   */
+  extensionLimits: z
+    .object({
+      parentGateRequestId: Id,
+      parentAmount: DecimalString,
+      currency: CurrencyCode,
+      parentDurationDays: z.number().int().positive().nullable(),
+      maxAmount: DecimalString,
+      maxDurationDays: z.number().int().positive().nullable(),
+      minDurationDays: z.number().int().positive(),
+      extensionsUsed: z.number().int().nonnegative(),
+      extensionsAllowed: z.number().int().positive(),
+      /** The sponsor's G2 ceiling that parent + extensions must stay within; null = no sponsor grant. */
+      cumulativeCeiling: DecimalString.nullable(),
+      text: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 export type OutcomeReviewView = z.infer<typeof OutcomeReviewView>;
 

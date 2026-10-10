@@ -14,6 +14,7 @@ import {
   GateRequest,
   GateScope,
   MaterialChange,
+  StopRuleInput,
 } from '../entities/gate';
 import { OutcomeTargetInput } from '../entities/execution';
 import { DecimalString, Id, IsoDate, Sha256Hex } from '../primitives';
@@ -162,6 +163,11 @@ export const gateEndpoints = {
       proposedConditions: z.array(ConditionInput),
       /** G2 only: the pilot thresholds to pre-register (D-102). Optional; additive. */
       outcomeTargets: z.array(OutcomeTargetInput).optional(),
+      /**
+       * G2 only: the stop rules to pre-register (D-112, CR-PD-5). Optional; additive. The
+       * `budget_and_stop_rules` precondition needs at least one on a G2 submitted after D-122.
+       */
+      stopRules: z.array(StopRuleInput).optional(),
     }),
     response: GateRequest,
   }),

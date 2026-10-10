@@ -10,6 +10,9 @@
  */
 import { z } from 'zod';
 import {
+  ApprovalRoute,
+  CommitteeSeat,
+  CommitteeSeatState,
   ConditionFlag,
   ConditionStatus,
   GateCode,
@@ -18,10 +21,13 @@ import {
   GateStatus,
   MaterialChangeType,
   MaterialityClass,
+  MeasureType,
   ReviewArea,
   ReviewerPosition,
   RoleCode,
   SnapshotStatus,
+  StopRuleConsequence,
+  StopRuleTriggerKind,
 } from '../enums';
 import { Blocker } from '../errors';
 import {
@@ -87,6 +93,29 @@ export const ConditionInput = z.object({
   flag: ConditionFlag,
 });
 export type ConditionInput = z.infer<typeof ConditionInput>;
+
+/**
+ * A pre-registered stop rule (D-112, CR-PD-5). Stored with the G2 request, frozen into the first G2
+ * snapshot and copied forward like thresholds; it never moves silently (never-rule 12). A tripped
+ * rule creates a review item for the sponsor and never stops a case or passes a gate (never-rule 7).
+ */
+export const StopRuleInput = z.object({
+  trigger: z.object({
+    kind: StopRuleTriggerKind,
+    /** For `threshold`: the pre-registered measure it watches (OutcomeTargetInput.metricKey). */
+    metricKey: z.string().nullable(),
+    text: z.string().min(1), // "Paid use below 2 of 4 by day 45", "Specialist condition breached"
+  }),
+  consequence: StopRuleConsequence,
+  ownerId: Id,
+});
+export type StopRuleInput = z.infer<typeof StopRuleInput>;
+
+export const StopRule = StopRuleInput.extend({
+  id: Id,
+  key: z.string().regex(/^SR\d+$/), // SR1, SR2 — per request, in entry order
+});
+export type StopRule = z.infer<typeof StopRule>;
 
 export const ReviewerPositionRecord = z.object({
   id: Id,
@@ -157,8 +186,17 @@ export const SnapshotContent = z.object({
   knownLimitations: z.array(z.string()),
   blockers: z.array(z.string()),
   outcomeTargets: z.array(
-    z.object({ metricKey: z.string(), name: z.string(), thresholdText: z.string(), window: z.string() }),
+    z.object({
+      metricKey: z.string(),
+      name: z.string(),
+      thresholdText: z.string(),
+      window: z.string(),
+      /** D-115 (CR-PD-4), additive: absent in snapshots frozen before D-122. */
+      measureType: MeasureType.optional(),
+    }),
   ),
+  /** D-112 (CR-PD-5), additive: structured stop rules; `budgetAndStopRules` keeps the readable lines. */
+  stopRules: z.array(StopRule).optional(),
   components: z.array(
     z.object({
       type: z.enum([
@@ -216,6 +254,8 @@ export const Approval = z.object({
   /** Derived from approval_invalidation / expiry; the approval row itself never changes. */
   effective: z.boolean(),
   invalidation: z.object({ reason: z.string(), at: IsoDateTime, materialChangeId: Id.nullable() }).nullable(),
+  /** The committee seat this decision was recorded in, when the request routed to the committee (D-109). */
+  seat: CommitteeSeat.nullable().optional(),
 });
 export type Approval = z.infer<typeof Approval>;
 
@@ -245,6 +285,10 @@ export const GateRequest = z.object({
   currentSnapshotId: Id.nullable(),
   conditions: z.array(Condition),
   rowVersion: RowVersion,
+  /** G2: the pre-registered stop rules stored with the request (D-112). Additive. */
+  stopRules: z.array(StopRule).optional(),
+  /** Who decides under the delegated-authority matrix (D-109 §1). Additive. */
+  route: ApprovalRoute.optional(),
 });
 export type GateRequest = z.infer<typeof GateRequest>;
 
@@ -257,6 +301,30 @@ export const ApprovalPanelState = z.object({
   chain: z.array(ApprovalChainStep),
   requiredApprovals: z.number().int(),
   receivedApprovals: z.number().int(),
+  /** D-109 (CR-PD-1), additive. */
+  route: ApprovalRoute.optional(),
+  /**
+   * Committee quorum on the CURRENT snapshot (D-109 §3): 2 of 3 with the finance seat required.
+   * Approvals on an earlier snapshot show as `lapsed`. `statusText`: "Waiting on second approver ·
+   * finance seat". Null when the request routes to the sponsor.
+   */
+  committee: z
+    .object({
+      quorum: z.number().int().positive(),
+      requiredSeats: z.array(CommitteeSeat),
+      seats: z.array(
+        z.object({
+          seat: CommitteeSeat,
+          member: PersonRef.nullable(),
+          required: z.boolean(),
+          state: CommitteeSeatState,
+          isViewer: z.boolean(),
+        }),
+      ),
+      statusText: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 export type ApprovalPanelState = z.infer<typeof ApprovalPanelState>;
 
