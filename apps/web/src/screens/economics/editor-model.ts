@@ -62,7 +62,9 @@ export interface EconForm {
 const SCOPE = 'Scope: ';
 
 /** The opex scope note the server returns as the basis of the opex row ("Scope: …"). */
-export function opexScopeOf(v: Pick<EconomicsVersion, 'drivers'>): string {
+export function opexScopeOf(v: Pick<EconomicsVersion, 'drivers' | 'opexScopeNote'>): string {
+  // The version's own field (CR-W4-E1-2, D-147); the ledger basis text for responses without it.
+  if (v.opexScopeNote) return v.opexScopeNote;
   const t = v.drivers.find((d) => d.inputKey === 'annual_incremental_opex')?.basis.text ?? '';
   return t.startsWith(SCOPE) ? t.slice(SCOPE.length) : '';
 }

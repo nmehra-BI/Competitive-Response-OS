@@ -11,6 +11,7 @@ import {
   auditFor,
   convertOpp07,
   enterSizing,
+  inTenant,
   registerAssumptions,
   world,
   type World,
@@ -234,6 +235,17 @@ describe('S08 economics driver editor (D-112 §3, D-132)', () => {
     const d = view.draft!;
     expect(d).toMatchObject({ currency: 'EUR', priceYear: 2026, horizonYears: 4 });
     expect(driver('annual_incremental_opex')!.basis.text).toBe('Scope: Sales and admin only; excludes COGS');
+    // Its own field and column (0007, CR-W4-E1-2, D-147); the engine's exclusions sentence stays clean.
+    expect(d.opexScopeNote).toBe('Sales and admin only; excludes COGS');
+    const row = await inTenant(w, w.tenants.e!, (tx) =>
+      tx
+        .selectFrom('me.economics_version')
+        .select(['opex_scope_note', 'exclusions_text'])
+        .where('id', '=', d.id)
+        .executeTakeFirstOrThrow(),
+    );
+    expect(row.opex_scope_note).toBe('Sales and admin only; excludes COGS');
+    expect(row.exclusions_text).not.toContain('Opex scope');
     expect(driver('gross_margin')!.assumptionId).toBe(asmE['gross_margin']);
     // Unlink (explicit null) makes a draft-only value; relinking takes the register value again.
     await ok({ drivers: [{ inputKey: 'gross_margin', value: '0.55', assumptionId: null }] });

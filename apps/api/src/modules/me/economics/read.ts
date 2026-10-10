@@ -20,7 +20,7 @@ export async function toEconomicsVersion(
 ): Promise<EconomicsVersion> {
   const result = await calcOutput<EconomicsOutput>(tx, v.calculation_result_id);
   const rows = await driverRows(tx, v.id);
-  const opexScope = opexScopeNoteOf(v.exclusions_text);
+  const opexScope = opexScopeNoteOf(v);
   const drivers = await ledgerRows(
     tx,
     identity,
@@ -48,6 +48,7 @@ export async function toEconomicsVersion(
     currency: v.currency,
     priceYear: v.price_year,
     horizonYears: v.horizon_years,
+    opexScopeNote: opexScope,
     drivers,
     result,
     rowVersion: v.row_version,

@@ -211,6 +211,7 @@ async function versionOf(
     currency: src.input.currency,
     priceYear: src.input.priceYear,
     horizonYears: src.input.horizonYears,
+    opexScopeNote: src.opexScopeNote ?? null,
     drivers: driversFromInput(src.input, extra.committedAt ?? src.createdAt, compareTo).map((d) =>
       d.inputKey === 'annual_incremental_opex' && src.opexScopeNote
         ? { ...d, basis: { ...d.basis, text: `Scope: ${src.opexScopeNote}` } }

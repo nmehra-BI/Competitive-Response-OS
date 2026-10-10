@@ -72,6 +72,7 @@ export type EconomicsVersionRow = {
   price_year: number;
   horizon_years: number;
   exclusions_text: string;
+  opex_scope_note: string | null;
   calculation_result_id: string | null;
   row_version: number;
   committed_at: Date | null;
@@ -138,7 +139,8 @@ export async function ensureEconomicsDraft(
       currency: current?.currency ?? boundary.currency,
       price_year: current?.price_year ?? boundary.price_year,
       horizon_years: current?.horizon_years ?? sizing.horizon_years,
-      exclusions_text: current?.exclusions_text ?? ECONOMICS_EXCLUSIONS_TEXT,
+      exclusions_text: current ? withoutOpexScopeMarker(current.exclusions_text) : ECONOMICS_EXCLUSIONS_TEXT,
+      opex_scope_note: current ? opexScopeNoteOf(current) : null,
       created_by: ctx.userId,
       created_at: ctx.now,
     })
@@ -314,20 +316,23 @@ export async function recalcEconomicsDraft(tx: Tx, tenantId: string, v: Economic
 export { timeBasis };
 
 /**
- * The opex scope note (S08 editor, D-112 §3) is stored with the version's exclusions text
- * (`economics_version.exclusions_text`, WAVE4 E1) after a fixed marker; the engine's exclusions
- * sentence stays first. No contract field carries it back, so the ledger shows it as the basis of the
- * "Annual incremental opex" row (CR-W4-E1-2 asks for `EconomicsVersion.opexScopeNote`).
+ * The opex scope note (S08 editor, D-112 §3) has its own column since 0007 (CR-W4-E1-2, D-147). Drafts
+ * saved during Wave 4 before 0007 carried it after a marker in `exclusions_text`; it is still read from
+ * there when the column is empty, and the marker is dropped on the next save.
  */
 const OPEX_SCOPE_MARKER = '\nOpex scope: ';
 
-export function opexScopeNoteOf(exclusionsText: string): string | null {
-  const i = exclusionsText.indexOf(OPEX_SCOPE_MARKER);
-  return i < 0 ? null : exclusionsText.slice(i + OPEX_SCOPE_MARKER.length);
+export function opexScopeNoteOf(v: {
+  opex_scope_note: string | null;
+  exclusions_text: string;
+}): string | null {
+  if (v.opex_scope_note) return v.opex_scope_note;
+  const i = v.exclusions_text.indexOf(OPEX_SCOPE_MARKER);
+  return i < 0 ? null : v.exclusions_text.slice(i + OPEX_SCOPE_MARKER.length);
 }
 
-export function withOpexScopeNote(exclusionsText: string, note: string): string {
+/** The exclusions text without a pre-0007 opex scope marker. */
+export function withoutOpexScopeMarker(exclusionsText: string): string {
   const i = exclusionsText.indexOf(OPEX_SCOPE_MARKER);
-  const base = i < 0 ? exclusionsText : exclusionsText.slice(0, i);
-  return `${base}${OPEX_SCOPE_MARKER}${note.trim()}`;
+  return i < 0 ? exclusionsText : exclusionsText.slice(0, i);
 }

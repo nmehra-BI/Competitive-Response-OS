@@ -32,7 +32,8 @@ import {
   ensureEconomicsDraft,
   recalcEconomicsDraft,
   timeBasis,
-  withOpexScopeNote,
+  withoutOpexScopeMarker,
+  opexScopeNoteOf,
   type EconomicsVersionRow,
 } from './model';
 import { economicsView, scenarioTable, toEconomicsVersion, toModelReview } from './read';
@@ -228,10 +229,9 @@ export const economicsHandlers: HandlerMap = {
           currency,
           price_year: body.priceYear ?? d.price_year,
           horizon_years: body.horizonYears ?? d.horizon_years,
-          exclusions_text:
-            body.opexScopeNote !== undefined
-              ? withOpexScopeNote(d.exclusions_text, body.opexScopeNote)
-              : d.exclusions_text,
+          exclusions_text: withoutOpexScopeMarker(d.exclusions_text),
+          opex_scope_note:
+            body.opexScopeNote !== undefined ? body.opexScopeNote.trim() || null : opexScopeNoteOf(d),
         })
         .where('id', '=', d.id)
         .returningAll()

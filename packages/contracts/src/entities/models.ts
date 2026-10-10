@@ -227,6 +227,8 @@ export const EconomicsVersion = z.object({
   currency: CurrencyCode,
   priceYear: PriceYear,
   horizonYears: z.number().int().positive(),
+  /** S08 opex scope note (CR-W4-E1-2, D-147). Optional: versions read before 0007 omit it. */
+  opexScopeNote: z.string().nullable().optional(),
   drivers: z.array(LedgerRow), // inputKey ∈ EconomicsDriverKey
   result: EconomicsOutput.nullable(),
   rowVersion: RowVersion,
