@@ -48,6 +48,7 @@ const setGrant = (cookie: string, id: string, body: Partial<Record<string, unkno
       validFrom: '2026-01-01',
       validTo: null,
       revoked: false,
+      doaReference: 'DoA-2026-02 · BU Water',
       ...body,
     },
     cookie,
@@ -201,11 +202,13 @@ describe('delegated authority', () => {
       currency: null,
     });
     expect(bad.statusCode).toBe(400);
+    const today = new Date().toISOString().slice(0, 10);
     const ok = await setGrant(c.admin!, randomUUID(), {
       userId: a.user('elena'),
       gateCode: 'G3',
       ceilingAmount: '400000.00',
       currency: 'EUR',
+      validFrom: today,
     });
     expect(ok.statusCode).toBe(200);
     const gaps = (await call(t.app, API.admin.authority, { cookie: c.admin })).json().gaps as {
@@ -213,6 +216,35 @@ describe('delegated authority', () => {
       businessUnitId: string;
     }[];
     expect(gaps.some((g) => g.gateCode === 'G3' && g.businessUnitId === BU())).toBe(false);
+    // D-123: the DoA reference is stored and a new grant without an end date gets 12 months.
+    const grant = API.admin.setAuthority.response.parse(ok.json());
+    const end = new Date(`${today}T00:00:00Z`);
+    end.setUTCFullYear(end.getUTCFullYear() + 1);
+    end.setUTCDate(end.getUTCDate() - 1);
+    expect(grant).toMatchObject({
+      doaReference: 'DoA-2026-02 · BU Water',
+      validTo: end.toISOString().slice(0, 10),
+    });
+  });
+
+  it('a new grant needs the DoA reference it comes from (D-109 §2)', async () => {
+    const res = await setGrant(c.admin!, randomUUID(), {
+      userId: a.user('elena'),
+      gateCode: 'G1',
+      ceilingAmount: '10000.00',
+      currency: 'EUR',
+      doaReference: null,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().errors[0].message).toBe(
+      'Enter the delegation-of-authority reference the grant comes from',
+    );
+    const listed = API.admin.authority.response.parse(
+      (await call(t.app, API.admin.authority, { cookie: c.admin })).json(),
+    );
+    expect(listed.items.find((g) => g.gateCode === 'G2')?.doaReference).toBe(
+      'DoA-2026-01 · BU Water · illustrative',
+    );
   });
 });
 

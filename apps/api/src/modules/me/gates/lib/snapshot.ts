@@ -5,7 +5,7 @@
  * fields (assumptions, sizing, economics, validation results, dissent, components) are rebuilt, so the
  * diff shows exactly what changed. Every snapshot names its subject (D-036).
  */
-import type { SnapshotContent } from '@growth-os/contracts';
+import { STOP_RULE_CONSEQUENCE_LABELS, type SnapshotContent, type StopRule } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
 import {
   createSnapshot,
@@ -27,6 +27,7 @@ import {
   proposedConditionsOf,
   scopeOf,
   snapshotById,
+  stopRulesOf,
   type GateRow,
   type SnapshotRow,
 } from './serialize';
@@ -344,6 +345,22 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
   const signOffs = prevRow ? await carriedSignOffs(tx, prevRow, prev!) : await freshSignOffs(tx, caseId);
   const dissent = (await dissentOfCase(tx, caseId)).map(({ id: _id, ...d }) => d);
 
+  // G2 (D-102, D-112, D-115): the thresholds and stop rules stated with the request are frozen into the
+  // first snapshot (thresholds with their measure type) and copied forward unchanged on refresh.
+  const g2Targets: Content['outcomeTargets'] =
+    code === 'G2'
+      ? outcomeTargetsOf(gate).map((t) => ({
+          metricKey: t.metricKey,
+          name: t.name,
+          thresholdText: t.thresholdText,
+          window: t.windowText,
+          ...(t.measureType ? { measureType: t.measureType } : {}),
+        }))
+      : [];
+  const structured: StopRule[] = code === 'G2' ? (stopRulesOf(gate) ?? []) : [];
+  const stopRules = prev ? prev.stopRules : structured.length ? structured : undefined;
+  const ruleLines = await stopRuleLines(tx, structured);
+
   const content: Content = {
     caseId,
     caseKey: caseRow.key,
@@ -375,15 +392,29 @@ export async function buildInput(tx: Tx, gate: GateRow, caseRow: CaseLite | null
       (code === 'G1' && g1Rules.length
         ? g1Rules
         : scope.amount && scope.currency
-          ? defaultStopRules(scope.amount, scope.currency)
-          : []),
+          ? [...defaultStopRules(scope.amount, scope.currency), ...ruleLines]
+          : ruleLines),
     conditionsProposed: proposedConditionsOf(gate),
     dissent,
     knownLimitations: prev?.knownLimitations ?? [],
     blockers: [],
-    outcomeTargets: prev?.outcomeTargets ?? g1Targets,
+    outcomeTargets: prev?.outcomeTargets ?? (code === 'G2' ? g2Targets : g1Targets),
+    ...(stopRules ? { stopRules } : {}),
   };
   return { input: { ...content, components }, subjectId: caseId, prevSnapshotId: prevRow?.id ?? null };
+}
+
+/** "SR1 · Fewer than 2 of 4 … → Recommend stop · owner Jonas Klein" (the readable line of a rule). */
+async function stopRuleLines(tx: Tx, rules: readonly StopRule[]): Promise<string[]> {
+  if (rules.length === 0) return [];
+  const people = await peopleOf(
+    tx,
+    rules.map((r) => r.ownerId),
+  );
+  return rules.map(
+    (r) =>
+      `${r.key} · ${r.trigger.text} → ${STOP_RULE_CONSEQUENCE_LABELS[r.consequence]} · owner ${people(r.ownerId).displayName}`,
+  );
 }
 
 function defaultAsk(
@@ -564,6 +595,7 @@ export async function freezeAndInsert(
           threshold_value: t.thresholdValue,
           unit: t.unit,
           window_text: t.windowText,
+          measure_type: t.measureType ?? null, // D-115
         })
         .execute();
   // Pre-registered outcome targets travel with the package (thresholds never move silently).
@@ -587,6 +619,7 @@ export async function freezeAndInsert(
           threshold_value: t.threshold_value,
           unit: t.unit,
           window_text: t.window_text,
+          measure_type: t.measure_type,
         })
         .execute();
   }

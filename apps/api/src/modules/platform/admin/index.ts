@@ -16,6 +16,7 @@ import {
   type Connection,
   type ConnectorMapping,
   type GateCode,
+  type GatePolicyBody,
   type Policy,
   type RoleAssignment,
   type RoleCode,
@@ -26,12 +27,15 @@ import type { Authorization, Identity } from '../../../platform/context';
 import { ApiError, forbidden, notFound } from '../../../platform/errors';
 import { command, query, type HandlerMap } from '../../../platform/pipeline';
 import { isoDate, isoDateTime, isoDateTimeOrNull, personRef } from '../../../platform/serialize';
+import { committeeHandlers } from './committee';
+import { licenceHandlers } from './licences';
+import { liveAnalysisHandlers } from './live-analysis';
 
 const configure = (identity: Identity): Authorization => roleAllows(identity.subject, 'admin.configure');
 const DECISION_ROLES: readonly RoleCode[] = ['sponsor', 'investment_committee'];
 const GATES: readonly GateCode[] = ['G0', 'G1', 'G2', 'G3', 'X'];
 
-const invalid = (path: string, message: string) =>
+export const invalid = (path: string, message: string) =>
   new ApiError('VALIDATION_FAILED', 'Request validation failed', {
     errors: [{ path, code: 'invalid', message }],
   });
@@ -70,8 +74,9 @@ type GrantRow = {
   valid_to: Date | string | null;
   granted_by: string;
   revoked_at: Date | null;
+  doa_reference?: string | null;
 };
-const toGrant = (g: GrantRow): AuthorityGrant => ({
+export const toGrant = (g: GrantRow): AuthorityGrant => ({
   id: g.id,
   userId: g.user_id,
   gateCode: g.gate_code as GateCode,
@@ -82,7 +87,16 @@ const toGrant = (g: GrantRow): AuthorityGrant => ({
   validTo: g.valid_to === null ? null : isoDate(g.valid_to),
   grantedBy: g.granted_by,
   revokedAt: isoDateTimeOrNull(g.revoked_at),
+  doaReference: g.doa_reference ?? null,
 });
+
+/** D-123: a grant entered in S14 is valid for 12 months unless the DoA document says otherwise. */
+export function twelveMonthsFrom(validFrom: string): string {
+  const [y, m, d] = validFrom.split('-').map(Number) as [number, number, number];
+  const end = new Date(Date.UTC(y + 1, m - 1, d));
+  end.setUTCDate(end.getUTCDate() - 1);
+  return end.toISOString().slice(0, 10);
+}
 
 type PolicyRow = {
   id: string;
@@ -145,7 +159,7 @@ const toMapping = (m: MappingRow): ConnectorMapping => ({
   assigneeMap: (m.assignee_map ?? {}) as Record<string, string>,
 });
 
-async function humanUser(tx: Tx, userId: string): Promise<void> {
+export async function humanUser(tx: Tx, userId: string): Promise<void> {
   const u = await tx
     .selectFrom('platform.app_user')
     .select(['kind', 'is_active'])
@@ -156,7 +170,7 @@ async function humanUser(tx: Tx, userId: string): Promise<void> {
     throw new ApiError('AGENT_IDENTITY_FORBIDDEN', 'Only people can hold roles or authority.');
 }
 
-async function activeRoles(tx: Tx, userId: string, exceptId?: string): Promise<RoleCode[]> {
+export async function activeRoles(tx: Tx, userId: string, exceptId?: string): Promise<RoleCode[]> {
   let q = tx
     .selectFrom('platform.role_assignment')
     .select(['id', 'role'])
@@ -172,9 +186,45 @@ async function connectionRow(tx: Tx, id: string) {
   return c;
 }
 
+/**
+ * D-109 / D-110 / D-122 fields of a gate policy: the committee quorum fits its seats and keeps the
+ * required seats; the sponsor ceiling is not above the committee's; the X rule only on X; G0 and G3
+ * never expire in the MVP.
+ */
+function validateGatePolicy(b: GatePolicyBody): void {
+  const seats = b.committeeSeats ?? [];
+  if (new Set(seats).size !== seats.length)
+    throw invalid('body.body.committeeSeats', 'Each committee seat appears once');
+  if (b.requiredSeats?.some((s) => !seats.includes(s)) && seats.length > 0)
+    throw invalid('body.body.requiredSeats', 'A required seat must be one of the committee seats');
+  if (seats.length > 0 && b.requiredApprovals > seats.length)
+    throw invalid('body.body.requiredApprovals', 'The quorum cannot exceed the number of seats');
+  if (seats.length > 0 && (b.requiredSeats?.length ?? 0) > b.requiredApprovals)
+    throw invalid('body.body.requiredSeats', 'Required seats must fit inside the quorum');
+  const a = b.authority;
+  if (a && a.sponsorCeiling !== null && a.committeeCeiling !== null) {
+    if (Number(a.sponsorCeiling) > Number(a.committeeCeiling))
+      throw invalid('body.body.authority', 'The sponsor ceiling cannot be above the committee ceiling');
+  }
+  if (b.extension && b.gateCode !== 'X')
+    throw invalid('body.body.extension', 'The extension rule belongs to the X gate policy');
+  if (b.extension) {
+    const share = Number(b.extension.maxBudgetShare);
+    const days = Number(b.extension.maxDurationShare);
+    if (!(share > 0 && share <= 1) || !(days > 0 && days <= 1))
+      throw invalid('body.body.extension', 'Shares are between 0 and 1');
+  }
+  if ((b.gateCode === 'G0' || b.gateCode === 'G3') && b.approvalExpires === true)
+    throw invalid('body.body.approvalExpires', 'G0 and G3 approvals do not expire in the MVP');
+}
+
 // ----- handlers -------------------------------------------------------------------------------
 
 export const adminHandlers: HandlerMap = {
+  // D-124, D-129, D-130 (E3): committee seats, licences and the live-analysis setting.
+  ...committeeHandlers,
+  ...licenceHandlers,
+  ...liveAnalysisHandlers,
   [API.admin.roles.id]: query(API.admin.roles, {
     authorize: (ctx) => configure(ctx.identity),
     handle: async (_ctx, { tx }) => ({
@@ -324,6 +374,8 @@ export const adminHandlers: HandlerMap = {
         throw invalid('body.currency', 'Set both a ceiling and its currency, or neither (no-spend gate)');
       if (b.validTo !== null && b.validTo < b.validFrom)
         throw invalid('body.validTo', 'Valid to must be on or after valid from');
+      // D-109 §2 / D-123: a grant comes from a Finance-signed delegation-of-authority document.
+      const doaReference = b.doaReference?.trim() || null;
       const bu = await t.tx
         .selectFrom('platform.business_unit')
         .select('id')
@@ -337,14 +389,21 @@ export const adminHandlers: HandlerMap = {
         .executeTakeFirst();
       if (existing && existing.user_id !== b.userId)
         throw invalid('body.userId', 'A grant cannot move to another person');
+      if (!b.revoked && !doaReference && !existing?.doa_reference)
+        throw invalid(
+          'body.doaReference',
+          'Enter the delegation-of-authority reference the grant comes from',
+        );
       const values = {
         gate_code: b.gateCode,
         business_unit_id: b.businessUnitId,
         ceiling_amount: b.ceilingAmount,
         currency: b.currency,
         valid_from: b.validFrom,
-        valid_to: b.validTo,
+        // A new grant without an end date gets the 12-month default (D-123).
+        valid_to: b.validTo ?? (existing ? null : twelveMonthsFrom(b.validFrom)),
         revoked_at: b.revoked ? (existing?.revoked_at ?? ctx.now) : null,
+        doa_reference: doaReference ?? existing?.doa_reference ?? null,
       };
       const row = existing
         ? await t.tx
@@ -380,6 +439,8 @@ export const adminHandlers: HandlerMap = {
           businessUnitId: b.businessUnitId,
           ceiling: b.ceilingAmount,
           currency: b.currency,
+          doaReference: values.doa_reference,
+          validTo: values.valid_to,
         },
         before: existing ? toGrant(existing) : undefined,
         after: toGrant(row),
@@ -409,6 +470,7 @@ export const adminHandlers: HandlerMap = {
       const { kind, key, body } = ctx.body;
       if (kind === 'gate' && body.gateCode !== key)
         throw invalid('body.key', 'Gate policy key must be its gate code');
+      if (kind === 'gate') validateGatePolicy(body as GatePolicyBody);
       const prev = await t.tx
         .selectFrom('platform.policy')
         .select(['id', 'version', 'status'])

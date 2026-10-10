@@ -27,8 +27,20 @@ describe('S14 Administration', () => {
     renderAt('/admin/health');
     expect(await screen.findByText('Administrators cannot approve gates.')).toBeTruthy();
     expect(await screen.findByText(/Authority gap · G3/)).toBeTruthy();
-    expect(screen.getAllByText(/No G3 approver for BU Water above €\[limit\]/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('up to €[limit]').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/No G3 approver in BU Water · Authority gap/).length).toBeGreaterThan(0);
+    // D-109: the decided matrix with the DoA reference (illustrative values in Aster).
+    expect(screen.getAllByText('up to €150k · illustrative').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('DoA-2026-01 · BU Water · illustrative').length).toBeGreaterThan(0);
+    // D-124: the committee is named, but no G3 authority is granted (the gap stays visible).
+    const committee = await screen.findByRole('table', { name: 'Investment committee' });
+    for (const n of ['Elena Fischer', 'Katrin Vogel', 'Thomas Berger'])
+      expect(within(committee).getByText(n)).toBeTruthy();
+    expect(screen.getAllByText('Committee named · G3 authority not granted').length).toBeGreaterThan(0);
+    // D-129: licences with rights status; D-130: live analysis off.
+    const lic = await screen.findByRole('table', { name: 'Licences' });
+    expect(within(lic).getAllByText('Confirmed in writing')).toHaveLength(2);
+    expect(within(lic).getByText('Not confirmed in writing · metadata only')).toBeTruthy();
+    expect(await screen.findByText('Live analysis · Off')).toBeTruthy();
     const conns = await screen.findByRole('table', { name: 'Connections' });
     for (const s of ['Connected', 'Expired', 'Missing permission', 'Unavailable'])
       expect(within(conns).getAllByText(s).length).toBeGreaterThan(0);

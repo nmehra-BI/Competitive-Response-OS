@@ -4,9 +4,13 @@
  */
 import { useId, useRef, useState, type ReactNode } from 'react';
 import {
+  APPROVAL_ROUTE_LABELS,
+  COMMITTEE_SEAT_LABELS,
+  COMMITTEE_SEAT_STATE_LABELS,
   GATE_STATUS_LABELS,
   RAIL_SEGMENT_LABELS,
   RailSegment,
+  snapshotLabel,
   type ApprovalPanelState,
   type ConditionInput,
   type GateCode,
@@ -343,7 +347,7 @@ export function ApprovalPanelView(props: ApprovalPanelViewProps) {
       <dl className="gos-panel__dl">
         <dt>Version</dt>
         <dd>
-          <b style={{ fontWeight: 600 }}>Snapshot v{snapshotVersion}</b>
+          <b style={{ fontWeight: 600 }}>{snapshotLabel(gateCode, snapshotVersion)}</b>
           <span style={{ color: 'var(--text-secondary)', display: 'inline-flex' }}>
             <Icon name="fingerprint" size={13} label="Fingerprint" />
           </span>
@@ -368,27 +372,63 @@ export function ApprovalPanelView(props: ApprovalPanelViewProps) {
         </div>
       ) : null}
       <AuthBoxes authorizes={authorizes} doesNotAuthorize={doesNotAuthorize} />
-      <div>
-        <div className="gos-panel__label" style={{ marginBottom: 6 }}>
-          Approval chain · {panel.requiredApprovals} of{' '}
-          {Math.max(panel.chain.length, panel.requiredApprovals)} required
-        </div>
-        <ul className="gos-list-plain" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {panel.chain.map((c) => (
-            <li key={c.approver.id} className="gos-panel__chain">
-              <Avatar initials={c.approver.initials} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 500 }}>
-                  {c.approver.displayName}
-                  {c.isViewer ? ' · you' : ''}
+      {panel.committee ? (
+        <section aria-label="Investment committee" className="gos-panel__committee">
+          <div className="gos-panel__label" style={{ marginBottom: 6 }}>
+            {APPROVAL_ROUTE_LABELS.committee} · {panel.committee.quorum} of {panel.committee.seats.length} on
+            this snapshot
+            {panel.committee.requiredSeats.length
+              ? ` · ${panel.committee.requiredSeats.map((s) => COMMITTEE_SEAT_LABELS[s].toLowerCase()).join(' and ')} required`
+              : ''}
+          </div>
+          <p role="status" style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 500 }}>
+            {panel.committee.statusText}
+          </p>
+          <ul className="gos-list-plain" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {panel.committee.seats.map((s) => (
+              <li key={s.seat} className="gos-panel__chain">
+                {s.member ? <Avatar initials={s.member.initials} /> : null}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 500 }}>
+                    {s.member ? s.member.displayName : COMMITTEE_SEAT_STATE_LABELS.vacant}
+                    {s.isViewer ? ' · you' : ''}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {COMMITTEE_SEAT_LABELS[s.seat]}
+                    {s.required ? ' · required' : ''}
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.routingReason}</div>
-              </div>
-              <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{CHAIN_STATE[c.state]}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                  {COMMITTEE_SEAT_STATE_LABELS[s.state]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <div>
+          <div className="gos-panel__label" style={{ marginBottom: 6 }}>
+            Approval chain · {panel.requiredApprovals} of{' '}
+            {Math.max(panel.chain.length, panel.requiredApprovals)} required
+            {panel.route === 'authority_gap' ? ` · ${APPROVAL_ROUTE_LABELS.authority_gap}` : ''}
+          </div>
+          <ul className="gos-list-plain" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {panel.chain.map((c) => (
+              <li key={c.approver.id} className="gos-panel__chain">
+                <Avatar initials={c.approver.initials} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 500 }}>
+                    {c.approver.displayName}
+                    {c.isViewer ? ' · you' : ''}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.routingReason}</div>
+                </div>
+                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{CHAIN_STATE[c.state]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {error ? <div>{error}</div> : null}
 

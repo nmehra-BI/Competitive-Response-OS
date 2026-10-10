@@ -6,9 +6,12 @@
  */
 import { API, type PolicyKind } from '@growth-os/contracts';
 import {
+  ASTER_DOA_REFERENCE,
+  ASTER_LICENSE_CONFIRMATION,
   authorityGrants,
   businessUnits,
   cases,
+  committeeMembers,
   connections,
   connectorMappings,
   fid,
@@ -244,10 +247,71 @@ export const handlers: HttpHandler[] = [
         {
           gateCode: 'G3' as const,
           businessUnitId: BU,
-          message:
-            'No G3 approver for BU Water above €[limit]. Authority gap · assign the investment committee.',
+          message: 'No G3 approver in BU Water · Authority gap',
         },
       ],
+    };
+  }),
+
+  // D-124: the committee is named; no G3 grant is seeded, so the authority gap stays visible.
+  mock(API.admin.committee, ({ viewerId }) => {
+    requireAdmin(viewerId);
+    return {
+      items: committeeMembers.map((m) => {
+        const p = Object.values(people).find((x) => x.id === m.userId)!;
+        return {
+          id: m.id,
+          userId: m.userId,
+          person: { id: p.id, displayName: p.displayName, title: p.title, initials: p.initials },
+          businessUnitId: m.businessUnitId,
+          seat: m.seat,
+          validFrom: '2026-01-01',
+          validTo: null,
+          doaReference: ASTER_DOA_REFERENCE,
+          enteredBy: ADMIN,
+          revokedAt: null,
+        };
+      }),
+      gaps: [{ businessUnitId: BU, seat: null, message: 'Committee named · G3 authority not granted' }],
+    };
+  }),
+
+  // D-129: fail closed — the vendor estimate has no written confirmation (metadata only).
+  mock(API.admin.licenses, ({ viewerId }) => {
+    requireAdmin(viewerId);
+    return {
+      items: licenses.map((l) => ({
+        id: l.id,
+        key: l.key,
+        name: l.name,
+        boundaryText: l.boundaryText,
+        maxExcerptSentences: l.maxExcerptSentences,
+        allowModelContext: l.allowModelContext,
+        allowEmbeddings: l.allowEmbeddings,
+        allowExport: l.allowExport,
+        rightsConfirmation: l.rightsConfirmation
+          ? { ...ASTER_LICENSE_CONFIRMATION, recordedBy: ADMIN }
+          : null,
+        termEndsOn: l.termEndsOn,
+        onExpiry: l.onExpiry,
+        rightsStatus: l.rightsConfirmation ? ('confirmed' as const) : ('unconfirmed' as const),
+        expiredAt: null,
+      })),
+    };
+  }),
+
+  // D-130: off by default; the mock deployment runs the fixture provider.
+  mock(API.admin.liveAnalysis, ({ viewerId }) => {
+    requireAdmin(viewerId);
+    return {
+      enabled: false,
+      addendumRef: null,
+      addendumSignedOn: null,
+      evalRunRef: null,
+      evalPassedAt: null,
+      liveProviderConfigured: false,
+      changedBy: null,
+      changedAt: null,
     };
   }),
 

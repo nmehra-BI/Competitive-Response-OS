@@ -5,7 +5,10 @@
  * again. The panel binds to the snapshot id and hash in this response (D-059).
  */
 import {
+  APPROVAL_ROUTE_LABELS,
+  COMMITTEE_SEAT_LABELS,
   GATE_LABELS,
+  snapshotLabel,
   type DecisionPackageView,
   type GateCode,
   type GateStatus,
@@ -15,13 +18,16 @@ import type { Tx } from '@growth-os/db';
 import {
   createPolicyEngine,
   diffSnapshotContent,
+  formatMoneyShort,
+  seatOf,
   staleBanner,
   type PolicySubject,
   type ResourceRef,
 } from '@growth-os/domain';
 import { toFingerprint } from '@growth-os/contracts';
 import { isoDateTimeOrNull } from '../../../../platform/serialize';
-import { gatePolicy, peopleOf, type CaseLite } from './common';
+import { asOfDate, peopleOf, type CaseLite } from './common';
+import { committeePanel, grantCeiling, loadGovernance } from './governance';
 import {
   approvalRows,
   contentOf,
@@ -43,6 +49,8 @@ export function gateResource(
   gate: GateRow,
   caseRow: CaseLite | null,
   snapshot: SnapshotRow | null,
+  /** D-109 §3: people excluded from a committee seat on this case (the economics finance reviewer). */
+  conflictedUserIds: readonly string[] = [],
 ): ResourceRef {
   return {
     type: 'gate_request',
@@ -55,7 +63,7 @@ export function gateResource(
       gateCode: gate.gate_code as GateCode,
       requestedAmount: gate.requested_amount,
       currency: gate.currency,
-      conflictedUserIds: [],
+      conflictedUserIds: [...conflictedUserIds],
     },
   };
 }
@@ -233,13 +241,40 @@ export async function buildPackage(
     caseRow?.sponsorUserId,
   ]);
 
+  // D-109: who decides under the matrix, the committee seats and the viewer's own authority.
+  const asOf = subject.asOf ?? asOfDate(new Date());
+  const gov = await loadGovernance(tx, gate, caseRow, asOf);
+  const committee = gov.route.route === 'committee';
+  const code = gate.gate_code as GateCode;
+  const buName = gov.businessUnitName;
   const isCurrent = snap.id === gate.current_snapshot_id && snap.status === 'current';
   const awaiting = gate.status === 'awaiting_decision';
-  const resource = gateResource(gate, caseRow, snap);
+  const resource = gateResource(gate, caseRow, snap, committee ? gov.excludedUserIds : []);
   const base = policy.approvalPanel(subject, resource);
-  const alreadyDecided = approvals.some((a) => a.approver_user_id === viewerId);
+  const viewerSeat = committee ? seatOf(gov.holders, viewerId) : null;
+  const viewerCeiling = await grantCeiling(tx, viewerId, code, gate.business_unit_id, asOf);
+  const alreadyDecided = approvals.some(
+    (a) => a.approver_user_id === viewerId || (viewerSeat !== null && a.committee_seat === viewerSeat),
+  );
   let cannot: string | null = base.cannotDecideReason;
   let canDecide = base.canDecide;
+  let allowed = base.allowedDispositions;
+  if (canDecide && committee && !viewerSeat) {
+    canDecide = false;
+    cannot = `This request routes to the investment committee. You hold no committee seat in ${buName}.`;
+  } else if (
+    canDecide &&
+    gov.route.route === 'sponsor' &&
+    caseRow !== null &&
+    viewerId !== caseRow.sponsorUserId &&
+    viewerCeiling === undefined
+  ) {
+    canDecide = false;
+    cannot = `This request routes to the sponsor. You hold no ${code} authority in ${buName}.`;
+  } else if (canDecide && gov.route.route === 'authority_gap') {
+    allowed = allowed.filter((d) => d !== 'approve' && d !== 'approve_with_conditions');
+    cannot = `No ${code} approver with authority for this amount in ${buName} — Authority gap.`;
+  }
   if (canDecide && snap.status === 'stale') {
     canDecide = false;
     cannot = staleBanner(snap.stale_reason ?? 'an input changed').title;
@@ -251,24 +286,55 @@ export async function buildPackage(
     cannot = 'This request is not awaiting a decision.';
   } else if (canDecide && alreadyDecided) {
     canDecide = false;
-    cannot = 'You have already recorded a decision on this snapshot.';
+    cannot =
+      viewerSeat !== null
+        ? `The ${COMMITTEE_SEAT_LABELS[viewerSeat].toLowerCase()} has already recorded a decision on this snapshot.`
+        : 'You have already recorded a decision on this snapshot.';
   }
-  const gp = await gatePolicy(tx, gate.gate_code as GateCode);
   const received = approvals.filter(
     (a) =>
       (a.disposition === 'approve' || a.disposition === 'approve_with_conditions') && a.inv_kind === null,
   ).length;
-  const bu = await tx
-    .selectFrom('platform.business_unit')
-    .select('name')
-    .where('id', '=', gate.business_unit_id)
-    .executeTakeFirst();
-  const viewerGrant = subject.authority.find(
-    (g) =>
-      g.gateCode === gate.gate_code && g.businessUnitId === gate.business_unit_id && g.revokedAt === null,
-  );
+  // "Your authority: up to €150k · BU Water" (UX research §9 S10). Committee membership is not authority.
+  const viewerAuthorityText =
+    viewerCeiling === undefined
+      ? null
+      : viewerCeiling === null
+        ? `No-spend gate · ${buName}`
+        : `Up to ${formatMoneyShort(viewerCeiling, gate.currency ?? gov.policy.authority.currency)} · ${buName}`;
+  const committeeBlock = committee ? await committeePanel(tx, gov, snap.id, viewerId) : null;
   const approverId = caseRow?.sponsorUserId ?? null;
   const approverDecision = approverId ? approvals.find((a) => a.approver_user_id === approverId) : undefined;
+  const chainState = (d: (typeof approvals)[number] | undefined) =>
+    d
+      ? d.disposition === 'abstain'
+        ? ('abstained' as const)
+        : d.disposition === 'delegate'
+          ? ('delegated' as const)
+          : ('decided' as const)
+      : ('waiting' as const);
+  const chain: DecisionPackageView['panel']['chain'] = committeeBlock
+    ? committeeBlock.panel.seats
+        .filter((s) => s.member !== null)
+        .map((s) => ({
+          approver: s.member!,
+          routingReason: `${GATE_LABELS[code]} in ${buName} routes to the ${APPROVAL_ROUTE_LABELS.committee.toLowerCase()} · ${COMMITTEE_SEAT_LABELS[s.seat]}`,
+          state: chainState(approvals.find((a) => a.committee_seat === s.seat)),
+          isViewer: s.isViewer,
+        }))
+    : approverId
+      ? [
+          {
+            approver: people(approverId),
+            routingReason:
+              gov.route.route === 'authority_gap'
+                ? `${GATE_LABELS[code]} in ${buName} is above every ceiling · Authority gap`
+                : `${GATE_LABELS[code]} in ${buName} routes to the sponsor`,
+            state: chainState(approverDecision),
+            isViewer: approverId === viewerId,
+          },
+        ]
+      : [];
 
   // Gate history: every decision on every snapshot of the subject's gates, plus open requests.
   const subjectGates = (await tx
@@ -305,7 +371,7 @@ export async function buildPackage(
       gateHistory.push({
         gateRequestId: g.id,
         gateCode: code,
-        label: `${GATE_LABELS[code]} · ${g.display_key}${si ? ` · v${si.version}` : ''}`,
+        label: `${GATE_LABELS[code]} · ${g.display_key}${si ? ` · ${snapshotLabel(code, si.version)}` : ''}`,
         status: a.inv_kind ? (a.inv_kind === 'expired' ? 'expired' : 'invalidated') : DECIDED[a.disposition]!,
         snapshotVersion: si?.version ?? null,
         fingerprint: si ? toFingerprint(si.hash) : null,
@@ -318,7 +384,7 @@ export async function buildPackage(
       gateHistory.push({
         gateRequestId: g.id,
         gateCode: code,
-        label: `${GATE_LABELS[code]} · ${g.display_key}${si ? ` · v${si.version}` : ''}`,
+        label: `${GATE_LABELS[code]} · ${g.display_key}${si ? ` · ${snapshotLabel(code, si.version)}` : ''}`,
         status:
           g.status === 'withdrawn' ? 'superseded' : displayStatus({ gate_code: code, status: g.status }),
         snapshotVersion: si?.version ?? null,
@@ -349,27 +415,14 @@ export async function buildPackage(
     positions: await positionsOn(tx, snap.id),
     panel: {
       canDecide,
-      allowedDispositions: canDecide ? base.allowedDispositions : [],
-      cannotDecideReason: canDecide ? base.cannotDecideReason : cannot,
-      viewerAuthorityText: viewerGrant ? `Up to €[limit] · ${bu?.name ?? 'this business unit'}` : null,
-      chain: approverId
-        ? [
-            {
-              approver: people(approverId),
-              routingReason: `${GATE_LABELS[gate.gate_code as GateCode]} in ${bu?.name ?? 'this business unit'} routes to the sponsor`,
-              state: approverDecision
-                ? approverDecision.disposition === 'abstain'
-                  ? 'abstained'
-                  : approverDecision.disposition === 'delegate'
-                    ? 'delegated'
-                    : 'decided'
-                : 'waiting',
-              isViewer: approverId === viewerId,
-            },
-          ]
-        : [],
-      requiredApprovals: gp.requiredApprovals,
+      allowedDispositions: canDecide ? allowed : [],
+      cannotDecideReason: cannot,
+      viewerAuthorityText,
+      chain,
+      requiredApprovals: committee ? gov.policy.committee.quorum : gov.policy.requiredApprovals,
       receivedApprovals: received,
+      route: gov.route.route,
+      committee: committeeBlock?.panel ?? null,
     },
     changesSinceViewerLastSaw: changes,
     changesSince: seen ? { sinceVersion: seen.version, viewedAt: seen.viewedAt.toISOString() } : null,

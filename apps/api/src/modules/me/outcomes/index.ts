@@ -10,21 +10,30 @@ import {
   DECISION_OUTCOME_LABELS,
   type DecisionOutcome,
   type DecisionRecord,
+  type MeasureType,
   type OutcomeObservation,
   type OutcomeReviewView,
   type ThresholdResult,
 } from '@growth-os/contracts';
 import type { Tx } from '@growth-os/db';
-import { createPolicyEngine } from '@growth-os/domain';
+import {
+  checkExtensionRequest,
+  createPolicyEngine,
+  effectiveGatePolicy,
+  extensionLimits,
+  type PolicySubject,
+} from '@growth-os/domain';
 import { caseVisible, roleAllows } from '../../../platform/authz';
 import type { Authorization } from '../../../platform/context';
 import { ApiError, notFound } from '../../../platform/errors';
 import { assertIfMatch, command, query, type HandlerMap } from '../../../platform/pipeline';
 import { isoDate, isoDateTime } from '../../../platform/serialize';
 import {
+  asOfDate,
   caseByRef,
   caseResource,
   compareDecimal,
+  gatePolicy,
   peopleOf,
   scaled,
   subjectOf,
@@ -32,8 +41,14 @@ import {
   type CaseLite,
   type People,
 } from '../gates/lib/common';
+import { grantCeiling } from '../gates/lib/governance';
 import { loadGateCtx } from '../gates/lib/access';
-import { caseGateState } from '../gates/lib/facts';
+import {
+  caseGateState,
+  extensionParentOf,
+  parentTargetResults,
+  tenantIllustrative,
+} from '../gates/lib/facts';
 import { moveCase } from '../gates/lib/moves';
 import { GATE_COLUMNS, gateById, scopeOf, toGateRequest, type GateRow } from '../gates/lib/serialize';
 import { nextGateKey, submitGate } from '../gates';
@@ -107,6 +122,7 @@ function toTarget(t: TargetRow) {
     unit: t.unit,
     windowText: t.window_text,
     snapshotId: t.snapshot_id,
+    ...(t.measure_type ? { measureType: t.measure_type as MeasureType } : {}),
   };
 }
 
@@ -195,7 +211,25 @@ async function decisionRecord(tx: Tx, id: string | null): Promise<DecisionRecord
   };
 }
 
-export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<OutcomeReviewView> {
+/**
+ * The extension rule applied to the review's approved G2 (D-110 §1, D-136): "Up to €30k (25% of €120k) ·
+ * up to 45 days". One-time pilot money only. Null when the G2 is not approved.
+ */
+async function limitsOf(tx: Tx, c: CaseLite, parentId: string, asOf: string) {
+  const parent = await extensionParentOf(tx, parentId, null);
+  if (!parent || !['approved', 'approved_with_conditions'].includes(parent.row.status)) return null;
+  const rule = effectiveGatePolicy(await gatePolicy(tx, 'X')).extension!;
+  const ceiling = await grantCeiling(tx, c.sponsorUserId, 'G2', c.businessUnitId, asOf);
+  const l = extensionLimits(rule, parent.facts, parent.others.length, ceiling ?? null);
+  return l ? { parentGateRequestId: parentId, ...l } : null;
+}
+
+export async function reviewView(
+  tx: Tx,
+  c: CaseLite,
+  r: ReviewRow,
+  viewer?: { subject: PolicySubject },
+): Promise<OutcomeReviewView> {
   const targets = await targetsOf(tx, r.gate_request_id);
   const obs = (await tx
     .selectFrom('platform.outcome_observation')
@@ -238,7 +272,10 @@ export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<Out
   }
   const missing = rows.filter((x) => x.target && !x.latest);
   const decision = await decisionRecord(tx, r.decision_record_id);
-  const g3 = (await caseGateState(tx, c, 'G3')).evaluation;
+  // D-111: the G3 summary names the one-time investment only for a viewer who can read the economics.
+  const economicsReadable = viewer ? policy.check(viewer.subject, 'case.read', caseResource(c)).allow : true;
+  const g3 = (await caseGateState(tx, c, 'G3', { economicsReadable })).evaluation;
+  const asOf = viewer?.subject.asOf ?? asOfDate(new Date());
   // The latest extension (X) requested after this review: its parent is the review's G2 (D-068).
   const x = (await tx
     .selectFrom('platform.gate_request')
@@ -272,7 +309,8 @@ export async function reviewView(tx: Tx, c: CaseLite, r: ReviewRow): Promise<Out
     decision,
     scaleGate: { blocked: !g3.allMet, unmet: g3.blockers, summary: g3.summary },
     rowVersion: r.row_version,
-    extensionRequest: x ? await toGateRequest(tx, x) : null,
+    extensionRequest: x ? await toGateRequest(tx, x, undefined, { asOf }) : null,
+    extensionLimits: await limitsOf(tx, c, r.gate_request_id, asOf),
   };
 }
 
@@ -286,10 +324,10 @@ export const outcomeHandlers: HandlerMap = {
   [API.outcomes.get.id]: query(API.outcomes.get, {
     load: (ctx, tx) => caseOr404(tx, ctx.params.caseRef),
     authorize: (ctx, c) => caseVisible(ctx.identity.subject, c),
-    handle: async (_ctx, { tx }, c) => {
+    handle: async (ctx, { tx }, c) => {
       const r = await reviewOf(tx, c.id);
       if (!r) throw notFound();
-      return reviewView(tx, c, r);
+      return reviewView(tx, c, r, { subject: subjectOf(ctx) });
     },
   }),
 
@@ -538,20 +576,76 @@ export const outcomeHandlers: HandlerMap = {
         });
       const amount = b.spendCap;
       const ps = scopeOf(parent);
+      // D-110 §1 (D-136): the extension rule. A real tenant states the cap and duration; an illustrative
+      // tenant may keep the €[cap] placeholder (submittable, never approvable).
+      const illustrative = await tenantIllustrative(t.tx);
+      const rule = effectiveGatePolicy(await gatePolicy(t.tx, 'X')).extension!;
+      if ((amount === null || b.durationDays === null) && !illustrative && rule.capRequiredInRealTenants)
+        throw new ApiError('VALIDATION_FAILED', 'State the extension cap and duration', {
+          errors: [
+            {
+              path: amount === null ? 'body.spendCap' : 'body.durationDays',
+              code: 'custom',
+              message: 'State the extension cap and duration',
+            },
+          ],
+        });
+      if (b.windowStart && b.windowEnd && b.windowEnd < b.windowStart)
+        throw new ApiError('VALIDATION_FAILED', 'The extension window ends before it starts.', {
+          errors: [{ path: 'body.windowEnd', code: 'custom', message: 'Must not be before windowStart' }],
+        });
+      const parentFacts = await extensionParentOf(t.tx, parent.id, null);
+      const targets = await parentTargetResults(t.tx, parent);
+      if (b.retestTargetIds?.some((id) => !targets.some((x) => x.id === id)))
+        throw new ApiError('VALIDATION_FAILED', 'Re-test only thresholds pre-registered for this pilot.', {
+          errors: [{ path: 'body.retestTargetIds', code: 'custom', message: 'Unknown threshold' }],
+        });
+      // Default: every unmet or inconclusive pre-registered threshold of the pilot is re-tested.
+      const retest = b.retestTargetIds
+        ? targets.filter((x) => b.retestTargetIds!.includes(x.id))
+        : targets.filter((x) => x.result !== 'met');
+      const maxSites = b.maxSites ?? ps.maxSites;
+      const violations = parentFacts
+        ? checkExtensionRequest(
+            { rule, parent: parentFacts.facts, otherExtensions: parentFacts.others.length, illustrative },
+            {
+              amount,
+              currency: b.currency,
+              durationDays: b.durationDays,
+              maxSites,
+              scopeItems: b.scopeItems,
+              retestTargets: retest.map((x) => ({ name: x.name, result: x.result })),
+            },
+          )
+        : [];
+      const second = violations.find((v) => v.key === 'one_extension_per_parent');
+      if (second) throw new ApiError('INVALID_TRANSITION', second.message);
+      const outside = violations.filter((v) => v.key === 'extension_within_rule');
+      if (outside.length)
+        throw new ApiError('VALIDATION_FAILED', outside[0]!.message, {
+          errors: outside.map((v) => ({ path: 'body', code: 'custom', message: v.message })),
+        });
       const scope = {
         amount,
         currency: b.currency,
         durationDays: b.durationDays,
-        windowStart: null,
-        windowEnd: null,
+        windowStart: b.windowStart ?? null,
+        windowEnd: b.windowEnd ?? null,
         countryCodes: ps.countryCodes,
         segmentLabel: ps.segmentLabel,
-        maxSites: ps.maxSites,
+        maxSites,
         milestones: [],
         ownerId: b.ownerId,
         authorizes: b.scopeItems,
-        doesNotAuthorize: ['Not scale', 'No new sites without a new gate', 'Does not unblock G3'],
+        doesNotAuthorize: [
+          'Not scale',
+          'No new sites without a new gate',
+          'No prospect outreach',
+          'Does not unblock G3',
+        ],
         proposedConditions: [],
+        // D-110 §1: the thresholds it re-tests are pre-registered with the request.
+        retestTargetIds: retest.map((x) => x.id),
       };
       const key = await nextGateKey(t.tx, c, 'X');
       const row = await t.tx

@@ -6,7 +6,14 @@
  * AGENT_IDENTITY_FORBIDDEN → SNAPSHOT_STALE → SNAPSHOT_HASH_MISMATCH → FORBIDDEN (admin) →
  * SELF_APPROVAL_PROHIBITED → CONFLICT_OF_INTEREST → AUTHORITY_INSUFFICIENT → PRECONDITIONS_UNMET.
  */
-import { API, type ConditionInput, type GateCode, type GateRequestStatus } from '@growth-os/contracts';
+import { randomUUID } from 'node:crypto';
+import {
+  API,
+  COMMITTEE_SEAT_LABELS,
+  type ConditionInput,
+  type GateCode,
+  type GateRequestStatus,
+} from '@growth-os/contracts';
 import { sql, type Tx } from '@growth-os/db';
 import {
   createMaterialityEvaluator,
@@ -16,6 +23,7 @@ import {
   followOnForGate,
   gateRequestMachine,
   mandateMachine,
+  seatOf,
   snapshotMachine,
   staleBanner,
   type Actor,
@@ -42,6 +50,7 @@ import { gateAction, gateVisible, holdsAdmin, loadGateCtx, type GateCtx } from '
 import { caseGateState, evaluate } from './lib/facts';
 import { applyInvalidations, moveCase, pinsForSnapshots, SYSTEM_GATE } from './lib/moves';
 import { buildPackage, diffChanges, gateResource } from './lib/package';
+import { committeeOf, grantCeiling, loadGovernance } from './lib/governance';
 import {
   contentOf,
   dissentOfCase,
@@ -224,7 +233,6 @@ export async function submitGate(
 
 const APPROVE = new Set(['approve', 'approve_with_conditions']);
 const TRANSITIONS = new Set(['approve', 'approve_with_conditions', 'return_for_revision', 'not_approved']);
-const EXPIRING: GateCode[] = ['G1', 'G2', 'X'];
 
 function signOffPresent(
   content: ReturnType<typeof contentOf>,
@@ -578,6 +586,46 @@ export const gateHandlers: HandlerMap = {
         throw new ApiError('VALIDATION_FAILED', 'Each pilot threshold needs its own measure.', {
           errors: [{ path: 'body.outcomeTargets', code: 'custom', message: 'Duplicate metricKey' }],
         });
+      // D-115: every pre-registered threshold names its measure type (G3 reads the Demand type).
+      const untyped = outcomeTargets.findIndex((o) => !o.measureType);
+      if (untyped >= 0)
+        throw new ApiError('VALIDATION_FAILED', 'Choose a measure type for each pilot threshold.', {
+          errors: [
+            {
+              path: `body.outcomeTargets.${untyped}.measureType`,
+              code: 'custom',
+              message: 'Required: Demand, Delivery effort, Buyer fit, Spend against budget or Other',
+            },
+          ],
+        });
+      // D-112 / D-127: stop rules are pre-registered with the G2 request (trigger, consequence, owner).
+      const stopRuleInputs = ctx.body.stopRules ?? [];
+      if (stopRuleInputs.length && code !== 'G2')
+        throw new ApiError('VALIDATION_FAILED', 'Stop rules are pre-registered with the G2 request.', {
+          errors: [{ path: 'body.stopRules', code: 'custom', message: 'G2 only' }],
+        });
+      for (const [i, r] of stopRuleInputs.entries()) {
+        if (r.trigger.kind === 'threshold' && !r.trigger.metricKey)
+          throw new ApiError('VALIDATION_FAILED', 'A threshold stop rule names the measure it watches.', {
+            errors: [{ path: `body.stopRules.${i}.trigger.metricKey`, code: 'custom', message: 'Required' }],
+          });
+        if (r.trigger.metricKey && !outcomeTargets.some((o) => o.metricKey === r.trigger.metricKey))
+          throw new ApiError('VALIDATION_FAILED', 'A stop rule watches a pre-registered threshold.', {
+            errors: [
+              { path: `body.stopRules.${i}.trigger.metricKey`, code: 'custom', message: 'Unknown measure' },
+            ],
+          });
+        const owner = await t.tx
+          .selectFrom('platform.app_user')
+          .select('kind')
+          .where('id', '=', r.ownerId)
+          .executeTakeFirst();
+        if (!owner || owner.kind !== 'human')
+          throw new ApiError('VALIDATION_FAILED', 'A stop rule is owned by a person.', {
+            errors: [{ path: `body.stopRules.${i}.ownerId`, code: 'custom', message: 'Unknown person' }],
+          });
+      }
+      const stopRules = stopRuleInputs.map((r, i) => ({ ...r, id: randomUUID(), key: `SR${i + 1}` }));
       if (code === 'G0')
         throw new ApiError('VALIDATION_FAILED', 'G0 is requested from the mandate (Submit for G0).', {
           errors: [{ path: 'body.gateCode', code: 'invalid_enum_value', message: 'Use G1, G2, G3 or X' }],
@@ -630,7 +678,14 @@ export const gateHandlers: HandlerMap = {
           business_unit_id: c.businessUnitId,
           gate_code: code,
           status: 'draft',
-          scope: JSON.stringify({ ...scope, proposedConditions, outcomeTargets }),
+          scope: JSON.stringify({
+            ...scope,
+            proposedConditions,
+            outcomeTargets,
+            // Every G2 requested from now on carries structured stop rules (D-122): the precondition
+            // `budget_and_stop_rules` then needs at least one.
+            ...(code === 'G2' ? { stopRules } : {}),
+          }),
           requested_amount: amount,
           currency: amount ? scope.currency : null,
           duration_days: scope.durationDays,
@@ -650,6 +705,7 @@ export const gateHandlers: HandlerMap = {
           gate: code,
           proposedConditions: proposedConditions.length,
           outcomeTargets: outcomeTargets.length,
+          stopRules: stopRules.length,
         },
       });
       if (code === 'G2') await draftPilotPlan(t, c, row.id, scope, outcomeTargets, ctx.userId, ctx.now);
@@ -844,7 +900,10 @@ export const gateHandlers: HandlerMap = {
         );
       // 3. policy: admin → self → conflict → deciding role → authority (on the tenant-local date).
       const subject = subjectOf(ctx);
-      const resource = gateResource(gate, caseRow, snap);
+      const gov = await loadGovernance(t.tx, gate, caseRow, subject.asOf!, g.sponsorId);
+      const committee = gov.route.route === 'committee';
+      // D-109 §3: on the committee route the case's economics finance reviewer is excluded (four eyes).
+      const resource = gateResource(gate, caseRow, snap, committee ? gov.excludedUserIds : []);
       if (APPROVE.has(body.disposition)) {
         const d = policy.check(subject, 'gate.decide', resource);
         if (!d.allow)
@@ -864,6 +923,29 @@ export const gateHandlers: HandlerMap = {
         if (!c.notConflicted.ok)
           throw new ApiError('CONFLICT_OF_INTEREST', c.notConflicted.reason ?? 'Conflicted');
       }
+      // 3b. the route under the matrix (D-109 §1): an authority gap is never approvable; a committee
+      // decision is recorded in the decider's own seat; a sponsor-routed request is decided by the
+      // sponsor or another holder of authority for this gate.
+      const seat = committee ? seatOf(gov.holders, ctx.userId) : null;
+      if (gov.route.route === 'authority_gap' && APPROVE.has(body.disposition))
+        throw new ApiError(
+          'AUTHORITY_INSUFFICIENT',
+          `No ${code} approver with authority for this amount in ${gov.businessUnitName} — Authority gap.`,
+        );
+      if (committee && !seat)
+        throw new ApiError(
+          'FORBIDDEN',
+          `This request routes to the investment committee. You hold no committee seat in ${gov.businessUnitName}.`,
+        );
+      if (
+        gov.route.route === 'sponsor' &&
+        ctx.userId !== (g.sponsorId ?? null) &&
+        (await grantCeiling(t.tx, ctx.userId, code, gate.business_unit_id, subject.asOf!)) === undefined
+      )
+        throw new ApiError(
+          'FORBIDDEN',
+          `This request routes to the sponsor. You hold no ${code} authority in ${gov.businessUnitName}.`,
+        );
       if (body.disposition !== 'approve_with_conditions' && body.conditions.length > 0)
         throw new ApiError('VALIDATION_FAILED', 'Conditions are added only with "Approve with conditions".', {
           errors: [{ path: 'body.conditions', code: 'custom', message: 'Only with approve_with_conditions' }],
@@ -876,10 +958,19 @@ export const gateHandlers: HandlerMap = {
         .selectFrom('platform.approval')
         .select('id')
         .where('snapshot_id', '=', snap.id)
-        .where('approver_user_id', '=', ctx.userId)
+        .where((eb) =>
+          seat
+            ? eb.or([eb('approver_user_id', '=', ctx.userId), eb('committee_seat', '=', seat)])
+            : eb('approver_user_id', '=', ctx.userId),
+        )
         .executeTakeFirst();
       if (already)
-        throw new ApiError('INVALID_TRANSITION', 'You have already recorded a decision on this snapshot.');
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          seat
+            ? `The ${COMMITTEE_SEAT_LABELS[seat].toLowerCase()} has already recorded a decision on this snapshot.`
+            : 'You have already recorded a decision on this snapshot.',
+        );
 
       // 4. the machine re-checks everything and adds required sign-offs and condition owners.
       const content = contentOf(snap);
@@ -938,14 +1029,54 @@ export const gateHandlers: HandlerMap = {
           delegated_to_user_id: body.delegateToUserId,
           idempotency_key: ctx.idempotencyKey ?? `${ctx.correlationId}`,
           decided_at: ctx.now,
+          committee_seat: seat,
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+
+      // 4b. committee quorum (D-109 §3): 2 of 3 on THIS snapshot with the finance seat. A seat's approval
+      // is recorded; the request moves only when quorum is reached, or ends Not approved when quorum can
+      // no longer be reached. A return for revision by any seat returns the request at once.
+      let transition: GateCommand | null = TRANSITIONS.has(body.disposition)
+        ? (body.disposition as GateCommand)
+        : null;
+      let quorumText: string | null = null;
+      if (committee && body.disposition !== 'return_for_revision') {
+        gov.decisions.push({
+          id: approval.id,
+          snapshot_id: snap.id,
+          approver_user_id: ctx.userId,
+          disposition: body.disposition,
+          committee_seat: seat,
+          invalidated: false,
+        });
+        const q = committeeOf(gov, snap.id, ctx.userId);
+        quorumText = q.statusText;
+        if (q.outcome === 'approved') {
+          const withConditions = gov.decisions.some(
+            (d) => d.snapshot_id === snap.id && d.disposition === 'approve_with_conditions',
+          );
+          transition = withConditions ? 'approve_with_conditions' : 'approve';
+          to = withConditions ? 'approved_with_conditions' : 'approved';
+          auditAction = `gate_request.${transition}`;
+        } else if (q.outcome === 'not_approved') {
+          transition = 'not_approved';
+          to = 'not_approved';
+          auditAction = 'gate_request.not_approved';
+        } else {
+          transition = null;
+          to = gate.status as GateRequestStatus;
+          auditAction = 'gate_request.committee_decision_recorded';
+        }
+      }
+      const transitioned = transition !== null;
       const wait = waitMs(gate.submitted_at, ctx.now);
-      if (TRANSITIONS.has(body.disposition)) {
+      if (transitioned) {
+        // Per-gate expiry from the policy (D-109 §4): G1/G2 30 days, X 14 days; G0 and G3 never.
+        const eff = gov.policy;
         const expires =
-          APPROVE.has(body.disposition) && EXPIRING.includes(code)
-            ? new Date(ctx.now.getTime() + gp.approvalExpiryDays * 86_400_000)
+          (to === 'approved' || to === 'approved_with_conditions') && eff.approvalExpires
+            ? new Date(ctx.now.getTime() + eff.approvalExpiryDays * 86_400_000)
             : null;
         await t.tx
           .updateTable('platform.gate_request')
@@ -969,13 +1100,18 @@ export const gateHandlers: HandlerMap = {
         objectId: gate.id,
         objectVersion: snap.version,
         caseId: gate.case_id,
-        summary: `${gate.display_key} v${snap.version}: ${body.disposition.replace(/_/g, ' ')}`,
+        summary: `${gate.display_key} v${snap.version}: ${body.disposition.replace(/_/g, ' ')}${
+          seat ? ` · ${COMMITTEE_SEAT_LABELS[seat].toLowerCase()}${quorumText ? ` · ${quorumText}` : ''}` : ''
+        }`,
         details: {
           gate: code,
           approvalId: approval.id,
           snapshotId: snap.id,
           hash: snap.content_hash,
           conditions: body.conditions.length,
+          route: gov.route.route,
+          seat,
+          disposition: body.disposition,
         },
       });
       const target = {
@@ -984,26 +1120,26 @@ export const gateHandlers: HandlerMap = {
         objectVersion: snap.version,
         caseId: gate.case_id,
       };
-      if (APPROVE.has(body.disposition))
+      if (transitioned && (to === 'approved' || to === 'approved_with_conditions'))
         await t.analytics('gate_approved', target, {
           gate: code,
-          withConditions: body.disposition === 'approve_with_conditions',
+          withConditions: to === 'approved_with_conditions',
           waitMs: wait,
         });
-      else if (body.disposition === 'return_for_revision' || body.disposition === 'not_approved')
+      else if (transitioned && (to === 'returned_for_revision' || to === 'not_approved'))
         await t.analytics('gate_returned', target, {
           gate: code,
-          disposition: body.disposition,
+          disposition: to === 'not_approved' ? 'not_approved' : 'return_for_revision',
           waitMs: wait,
         });
 
       // 5. follow-ons: case stage, mandate, experiment locks (system actor).
-      if (TRANSITIONS.has(body.disposition)) {
-        const follow = followOnForGate(code, body.disposition as GateCommand, 'awaiting_decision');
+      if (transition) {
+        const follow = followOnForGate(code, transition, 'awaiting_decision');
         if (follow.case && gate.case_id)
           await moveCase(t, gate.case_id, follow.case, {
             props: { validation_authorized: { gate: 'G1' }, mandate_approved: { gate: 'G0', waitMs: wait } },
-            reason: `${code} ${body.disposition}`,
+            reason: `${code} ${transition}`,
           });
         if (follow.mandate && gate.subject_type === 'mandate') {
           const m = await mandateFacts(t.tx, gate.subject_id);
@@ -1043,7 +1179,7 @@ export const gateHandlers: HandlerMap = {
           }
         }
         if (follow.lockExperiments) await lockExperiments(t, gate, snap.id, ctx.now);
-        if (code === 'G2' && APPROVE.has(body.disposition) && gate.case_id)
+        if (code === 'G2' && (to === 'approved' || to === 'approved_with_conditions') && gate.case_id)
           await t.tx
             .updateTable('me.pilot_plan')
             .set({ gate_request_id: gate.id })

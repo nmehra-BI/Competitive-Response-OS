@@ -5,7 +5,7 @@
  *
  * Deep links: ?gate=G1|G2 (default: the case's next decision), ?version=3.
  */
-import { API, GATE_DISPOSITION_LABELS, GateCode } from '@growth-os/contracts';
+import { API, GATE_DISPOSITION_LABELS, GateCode, snapshotLabel } from '@growth-os/contracts';
 import { AuthBoxes, Banner, Button, EmptyState, Mono, Skeleton } from '@growth-os/ui';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
@@ -81,8 +81,9 @@ export default function BriefScreen() {
           tone={s.status === 'stale' ? 'warn' : 'neutral'}
           title={
             s.status === 'stale'
-              ? (p.staleBanner?.title ?? `Snapshot v${s.version} is out of date.`)
-              : `Snapshot v${s.version} is superseded. This brief is kept for the record.`
+              ? (p.staleBanner?.title ??
+                `${snapshotLabel(p.gateRequest.gateCode, s.version)} is out of date.`)
+              : `${snapshotLabel(p.gateRequest.gateCode, s.version)} is superseded. This brief is kept for the record.`
           }
           live={false}
         />

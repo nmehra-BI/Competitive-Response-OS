@@ -317,7 +317,13 @@ export const gatePolicies = [
   },
   {
     gateCode: 'X',
-    preconditionKeys: ['parent_gate_reviewed', 'extension_cap_set', 'accountable_owner'],
+    preconditionKeys: [
+      'parent_gate_reviewed',
+      'extension_cap_set',
+      'accountable_owner',
+      'extension_within_rule',
+      'one_extension_per_parent',
+    ],
     requiredApprovals: 1,
     requiredSignOffAreas: [],
     approvalExpiryDays: 14,

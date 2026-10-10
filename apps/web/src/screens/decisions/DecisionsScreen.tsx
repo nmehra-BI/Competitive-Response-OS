@@ -4,7 +4,8 @@
  * "Refresh snapshot (creates v4)"), author / unauthorized viewer, G1 history, superseded,
  * invalidated, expired; plus preparing and submitting a request.
  *
- * Deep links: ?gate=G1|G2 (default: the case's next decision), ?version=3, ?compare=2.
+ * Deep links: ?gate=G1|G2|G3|X (default: the case's next decision), ?version=3, ?compare=2. The
+ * extension (X) is not on the rail: ?gate=X opens the extension the outcome review led to (D-068).
  */
 import {
   API,
@@ -12,6 +13,7 @@ import {
   GateCode,
   type DecisionPackageView,
   type PersonRef,
+  snapshotLabel,
 } from '@growth-os/contracts';
 import { AuthBoxes, Banner, Button, EmptyState, GateDiamond, Mono, Skeleton } from '@growth-os/ui';
 import { useState } from 'react';
@@ -68,7 +70,16 @@ export default function DecisionsScreen() {
   const isOwner = !!viewer && viewer.id === h.case.owner.id;
   return (
     <div className="app-page ws8c-page">
-      {node?.gateRequestId ? (
+      {gate === 'X' ? (
+        <ExtensionRequestView
+          caseKey={h.case.key}
+          caseTitle={h.case.title}
+          isOwner={isOwner}
+          viewer={viewer}
+          version={positiveInt(sp.get('version'))}
+          compare={positiveInt(sp.get('compare'))}
+        />
+      ) : node?.gateRequestId ? (
         <RequestView
           key={`${gate}-${node.gateRequestId}`}
           caseKey={h.case.key}
@@ -90,6 +101,37 @@ export default function DecisionsScreen() {
         </EmptyState>
       )}
     </div>
+  );
+}
+
+/** The extension (X) request of the case's outcome review, decided like any other gate (D-110). */
+function ExtensionRequestView(props: {
+  caseKey: string;
+  caseTitle: string;
+  isOwner: boolean;
+  viewer: PersonRef | null;
+  version?: number;
+  compare?: number;
+}) {
+  const review = useApiQuery(API.outcomes.get, { params: { caseRef: props.caseKey } });
+  if (review.isPending) return <Skeleton height={480} />;
+  const x = review.data?.extensionRequest ?? null;
+  if (!x)
+    return (
+      <EmptyState title="No X request yet">An extension is requested from the outcome review.</EmptyState>
+    );
+  return (
+    <RequestView
+      key={`X-${x.id}`}
+      caseKey={props.caseKey}
+      caseTitle={props.caseTitle}
+      gateRequestId={x.id}
+      isOwner={props.isOwner}
+      viewer={props.viewer}
+      version={props.version}
+      compare={props.compare}
+      showHistory={false}
+    />
   );
 }
 
@@ -320,7 +362,7 @@ function GateHistory({ pkg, caseKey }: { pkg: DecisionPackageView; caseKey: stri
                 {g.status === 'superseded' ? ' · never decided' : ''}
                 {g.snapshotVersion || g.rationale ? (
                   <div className="ws8c-small ws8c-secondary">
-                    {g.snapshotVersion ? `Snapshot v${g.snapshotVersion}` : ''}
+                    {g.snapshotVersion ? snapshotLabel(g.gateCode, g.snapshotVersion) : ''}
                     {g.fingerprint ? (
                       <>
                         {' · '}

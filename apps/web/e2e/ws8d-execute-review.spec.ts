@@ -199,7 +199,9 @@ test('step 29: administration shows the authority gap; admins cannot approve', a
 }) => {
   await loginAs('admin', '/admin/health');
   await expect(page.getByText('Administrators cannot approve gates.')).toBeVisible();
-  await expect(page.getByText(/No G3 approver for BU Water above €\[limit\]/).first()).toBeVisible();
+  // D-109: the gap copy matches the API; the committee is named but holds no G3 authority (D-124).
+  await expect(page.getByText(/No G3 approver in BU Water · Authority gap/).first()).toBeVisible();
+  await expect(page.getByText('Committee named · G3 authority not granted').first()).toBeVisible();
   for (const s of ['Connected', 'Expired', 'Missing permission', 'Unavailable'])
     await expect(page.getByRole('table', { name: 'Connections' }).getByText(s).first()).toBeVisible();
   await expectAccessible();

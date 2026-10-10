@@ -236,6 +236,11 @@ test.describe('S10 Decisions', () => {
     await form
       .getByLabel('What this does not authorize')
       .fill('Not market entry\nNot scale\nNot prospect outreach\nNot spend above €120k');
+    // D-112: at least one stop rule is pre-registered with the request (trigger, consequence, owner).
+    await form.getByLabel('Stop trigger').fill('Spend would exceed the approved €120k ceiling');
+    await form.getByLabel('Stop owner').selectOption({ label: 'Jonas Klein' });
+    await form.getByRole('button', { name: 'Add stop rule' }).click();
+    await expect(form.getByRole('list', { name: 'Stop rules' }).getByRole('listitem')).toHaveCount(1);
     await form
       .getByLabel('Condition', { exact: true })
       .fill('Pilot limited to 4 sites as signed by the specialist');

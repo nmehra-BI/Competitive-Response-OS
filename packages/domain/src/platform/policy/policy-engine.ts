@@ -20,6 +20,9 @@ import type {
   RoleCode,
 } from '@growth-os/contracts';
 import type { Actor } from '../workflow/state-machine';
+import { formatMoneyShort } from './governance';
+
+export * from './governance';
 
 export const ACTIONS = [
   // read
@@ -364,6 +367,8 @@ export const POLICY_COPY = {
   noAmount:
     'This request has no stated amount yet (placeholder). It cannot be approved until the amount is set.',
   aboveCeiling: 'This request is above your delegated authority (up to €[limit]).',
+  /** D-109: the decided ceilings are real amounts; the copy names the viewer's highest one. */
+  aboveCeilingOf: (ceiling: string) => `This request is above your delegated authority (up to ${ceiling}).`,
   currency: 'Your delegated authority is in a different currency.',
 } as const;
 
@@ -458,18 +463,25 @@ function authorityCheck(
     return { ok: false, code: 'AUTHORITY_INSUFFICIENT', reason: POLICY_COPY.noAmount, grantId: null };
   }
   let sawCurrencyMismatch = false;
+  let highest: { amount: Decimal; currency: string } | null = null;
   for (const g of valid) {
     if (g.ceilingAmount === null || g.currency === null) continue;
     if (g.currency !== currency) {
       sawCurrencyMismatch = true;
       continue;
     }
-    if (requested.lte(new Decimal(g.ceilingAmount))) return { ok: true, grantId: g.id };
+    const ceiling = new Decimal(g.ceilingAmount);
+    if (requested.lte(ceiling)) return { ok: true, grantId: g.id };
+    if (!highest || ceiling.gt(highest.amount)) highest = { amount: ceiling, currency: g.currency };
   }
   return {
     ok: false,
     code: 'AUTHORITY_INSUFFICIENT',
-    reason: sawCurrencyMismatch ? POLICY_COPY.currency : POLICY_COPY.aboveCeiling,
+    reason: highest
+      ? POLICY_COPY.aboveCeilingOf(formatMoneyShort(highest.amount.toFixed(2), highest.currency))
+      : sawCurrencyMismatch
+        ? POLICY_COPY.currency
+        : POLICY_COPY.aboveCeiling,
     grantId: null,
   };
 }

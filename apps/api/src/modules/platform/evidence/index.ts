@@ -26,6 +26,22 @@ import { pageOf } from '../../../platform/pagination';
 import { command, query, type HandlerMap, type Tools } from '../../../platform/pipeline';
 import { isoDateOrNull, isoDateTime, isoDateTimeOrNull, personRef } from '../../../platform/serialize';
 import { sourceUses, type SourceUse } from './links';
+import { rightsStatusOf, toLicense, type LicenseRow } from '../admin/licences';
+
+/**
+ * D-120 / D-129: fail closed by licence rights. Without a written confirmation, after the term ended
+ * (the expiry job ran), or with 0 excerpt sentences, a licence allows metadata only: an `excerpt`
+ * entitlement drops to `aggregate_only` (no passage, no derived text, no count of passages).
+ */
+export function rightsCappedAccess(
+  access: EntitlementAccess,
+  licence: Pick<LicenseRow, 'rights_document_ref' | 'expired_at' | 'max_excerpt_sentences'> | null,
+): EntitlementAccess {
+  if (access !== 'excerpt') return access;
+  if (!licence) return 'aggregate_only';
+  if (rightsStatusOf(licence) !== 'confirmed' || licence.max_excerpt_sentences <= 0) return 'aggregate_only';
+  return access;
+}
 
 export const EVIDENCE_INGEST_JOB = 'evidence.ingest';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -89,7 +105,17 @@ async function visibleSource(tx: Tx, identity: Identity, ref: string): Promise<V
   );
   const readableCases = cases.filter((c) => canReadCase(identity.subject, c));
   if (cases.length > 0 && readableCases.length === 0) return null;
-  const access = effectiveAccess(await entitlementFor(tx, identity, row.license_id), row);
+  const licence = row.license_id
+    ? ((await tx
+        .selectFrom('platform.license')
+        .select(['rights_document_ref', 'expired_at', 'max_excerpt_sentences'])
+        .where('id', '=', row.license_id)
+        .executeTakeFirst()) ?? null)
+    : null;
+  const access = rightsCappedAccess(
+    effectiveAccess(await entitlementFor(tx, identity, row.license_id), row),
+    licence,
+  );
   return {
     row,
     access,
@@ -172,18 +198,7 @@ export async function sourceDetail(tx: Tx, v: VisibleSource, now: Date): Promise
   const licenseRow = row.license_id
     ? await tx.selectFrom('platform.license').selectAll().where('id', '=', row.license_id).executeTakeFirst()
     : undefined;
-  const license: License | null = licenseRow
-    ? {
-        id: licenseRow.id,
-        key: licenseRow.key,
-        name: licenseRow.name,
-        boundaryText: licenseRow.boundary_text,
-        maxExcerptSentences: licenseRow.max_excerpt_sentences,
-        allowModelContext: licenseRow.allow_model_context,
-        allowEmbeddings: licenseRow.allow_embeddings,
-        allowExport: licenseRow.allow_export,
-      }
-    : null;
+  const license: License | null = licenseRow ? toLicense(licenseRow as LicenseRow) : null;
 
   // Content: only with excerpt entitlement. Nothing derived from the source otherwise.
   const excerpt = access === 'excerpt';
@@ -586,5 +601,22 @@ export async function accessBySource(
     identity,
     rows.map((r) => r.license_id),
   );
-  return new Map(rows.map((r) => [r.id, effectiveAccess(byLicense.get(r.license_id) ?? 'none', r)]));
+  const ids = [...new Set(rows.map((r) => r.license_id).filter((x): x is string => x !== null))];
+  const licences = ids.length
+    ? await tx
+        .selectFrom('platform.license')
+        .select(['id', 'rights_document_ref', 'expired_at', 'max_excerpt_sentences'])
+        .where('id', 'in', ids)
+        .execute()
+    : [];
+  // D-129: search and export fail closed by licence rights too (metadata only unless confirmed).
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      rightsCappedAccess(
+        effectiveAccess(byLicense.get(r.license_id) ?? 'none', r),
+        licences.find((l) => l.id === r.license_id) ?? null,
+      ),
+    ]),
+  );
 }
