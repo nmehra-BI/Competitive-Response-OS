@@ -44,6 +44,35 @@ describe('comparisons', () => {
     ]);
   });
 
+  it('shows the indicative TAM and SAM recorded at discovery; unsized candidates are Unknown (D-151)', async () => {
+    const c = Comparison.parse(
+      (await api(w, API.comparisons.get, await w.cookie('demo', 'maya'), { params: { id: cmp.id } })).json(),
+    );
+    const cell = (k: string, a: string) =>
+      c.cells.find((x) => x.opportunityId === oppId(D(), k) && x.attribute === a)!;
+    expect(cell('OPP-07', 'tam')).toMatchObject({
+      valueText: '€100m/year',
+      detailText: '5,000 sites × €20k',
+      unknown: false,
+      incomparable: false,
+    });
+    expect(cell('OPP-07', 'tam').sources.map((x) => x.key)).toEqual(['SRC-014']);
+    expect(cell('OPP-07', 'sam')).toMatchObject({ valueText: '€40m/year', unknown: false });
+    // Not sized: Unknown, never 0, and no value text.
+    for (const k of ['OPP-14', 'OPP-16']) {
+      expect(cell(k, 'tam')).toMatchObject({ valueText: null, detailText: 'Not sized', unknown: true });
+      expect(cell(k, 'sam')).toMatchObject({ valueText: null, unknown: true });
+    }
+    expect(cell('OPP-09', 'tam')).toMatchObject({
+      detailText: 'Not comparable until normalized',
+      unknown: true,
+    });
+    expect(JSON.stringify(c.cells)).not.toMatch(/"valueText":"€?0/);
+    // Never a total across candidates; the ranking ignores market measures.
+    expect(JSON.stringify(c)).not.toMatch(/total/i);
+    expect(c.incomparableWarnings.map((x) => key(x.opportunityId))).toEqual(['OPP-09']);
+  });
+
   it('step 4: Unknown is null; OPP-14 not ranked (1 input missing); OPP-09 excluded; rows in rank order', async () => {
     const c = Comparison.parse(
       (await api(w, API.comparisons.get, await w.cookie('demo', 'priya'), { params: { id: cmp.id } })).json(),
@@ -149,8 +178,14 @@ describe('comparisons', () => {
       body: { mandateId: w.tenants.a!.id(mandate.id), opportunityRefs: ['OPP-07', 'OPP-14'] },
     });
     const c = Comparison.parse(res.json());
-    const rated = c.cells.filter((x) => x.attribute !== 'growth_evidence');
+    const RATED = ['product_fit', 'channel_access', 'evidence_coverage'];
+    const rated = c.cells.filter((x) => RATED.includes(x.attribute));
     expect(rated.length).toBe(6);
+    // The indicative TAM / SAM recorded at discovery travel with the candidate too (D-151).
+    const tam07 = c.cells.find(
+      (x) => x.opportunityId === oppId(w.tenants.a!, 'OPP-07') && x.attribute === 'tam',
+    );
+    expect(tam07).toMatchObject({ valueText: '€100m/year', unknown: false });
     // OPP-14 has no channel-access rating: Unknown (null, never 0).
     const unknown = rated.filter((x) => x.rating === null);
     expect(unknown).toHaveLength(1);

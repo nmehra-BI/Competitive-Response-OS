@@ -33,6 +33,11 @@ import { findOpportunity } from '../opportunities/read';
 
 const ranking = createRankingEngine();
 const RATED: ComparisonAttribute[] = ['product_fit', 'channel_access', 'evidence_coverage'];
+/**
+ * Indicative market measures recorded on the comparison at discovery, on its common unit (D-151). They
+ * are never read from a case's later sizing (another boundary and moment), never ranked and never totalled.
+ */
+const SIZED: ComparisonAttribute[] = ['tam', 'sam'];
 const LABEL = { 3: 'High', 2: 'Medium', 1: 'Low' } as const;
 const DEFAULT_WEIGHTS = { productFit: 40, channelAccess: 30, evidenceCoverage: 30 };
 
@@ -137,7 +142,10 @@ export async function toComparison(tx: Tx, identity: Identity, cmp: ComparisonRo
         ratingLabel: c.rating ? LABEL[c.rating as 1 | 2 | 3] : null,
         valueText: c.value_text,
         detailText: c.detail_text,
-        unknown: RATED.includes(c.attribute as ComparisonAttribute) && c.rating === null,
+        // A rating not given, or an indicative TAM / SAM nobody recorded, is Unknown (never 0, D-151).
+        unknown:
+          (RATED.includes(c.attribute as ComparisonAttribute) && c.rating === null) ||
+          (SIZED.includes(c.attribute as ComparisonAttribute) && !c.value_text && !c.incomparable),
         incomparable: c.incomparable,
         sources: chipsFor(chips, c.source_ids),
         evidenceQuality: quality(o, c.attribute),

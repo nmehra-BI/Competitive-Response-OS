@@ -266,6 +266,29 @@ export const comparison = {
     'OPP-16': { productFit: 2, channelAccess: 2, evidenceCoverage: 1 },
   },
   excludedUntilNormalized: ['OPP-09'],
+  /**
+   * Discovery-stage indicative TAM and SAM on the comparison's common unit (approved prototype S04;
+   * D-151). They belong to the comparison of 8 Oct, not to a case: ME-104's own sizing (13 Oct, case
+   * boundary) never rewrites them. A candidate nobody sized stays Unknown (never 0).
+   */
+  indicativeSizing: {
+    'OPP-07': {
+      tam: { valueText: '€100m/year', detailText: '5,000 sites × €20k', sourceKeys: ['SRC-014'] },
+      sam: { valueText: '€40m/year', detailText: '2,000 unique sites', sourceKeys: ['SRC-014', 'SRC-021'] },
+    },
+    'OPP-14': {
+      tam: { valueText: null, detailText: 'Not sized', sourceKeys: [] },
+      sam: { valueText: null, detailText: null, sourceKeys: [] },
+    },
+    'OPP-09': {
+      tam: { valueText: null, detailText: 'Not comparable until normalized', sourceKeys: [] },
+      sam: { valueText: null, detailText: 'Not comparable', sourceKeys: [] },
+    },
+    'OPP-16': {
+      tam: { valueText: null, detailText: 'Not sized', sourceKeys: [] },
+      sam: { valueText: null, detailText: null, sourceKeys: [] },
+    },
+  },
 } as const;
 
 /** Cases visible on S01 (BU Water). ME-104 is the journey case. */

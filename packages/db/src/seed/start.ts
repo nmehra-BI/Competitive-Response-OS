@@ -642,6 +642,20 @@ async function seedComparisonRatings(s: SeedCtx): Promise<void> {
           rated_by: ratings[k] === null ? null : R.id(raters[k].id),
         })
         .execute();
+    // Indicative TAM / SAM recorded on the comparison at discovery (D-151); Unknown when not sized.
+    for (const [attribute, cell] of Object.entries(comparison.indicativeSizing[key]))
+      await tx
+        .insertInto('me.comparison_cell')
+        .values({
+          tenant_id: tenantId,
+          comparison_id: cmpId,
+          opportunity_id: opportunityId(s, key),
+          attribute,
+          value_text: cell.valueText,
+          detail_text: cell.detailText,
+          source_ids: cell.sourceKeys.map((k: string) => sourceId(s, k)),
+        })
+        .execute();
     const o = opportunities.find((x) => x.key === key) as
       Partial<{ incomparableBoundary: string }> | undefined;
     if (o?.incomparableBoundary)
