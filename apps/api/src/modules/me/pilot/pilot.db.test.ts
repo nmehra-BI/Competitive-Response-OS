@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { API, type PilotPlanView } from '@growth-os/contracts';
-import { pilotTasks } from '@growth-os/fixtures-aster';
+import { gates, pilotTasks } from '@growth-os/fixtures-aster';
 import {
   call,
   createTestApp,
@@ -16,6 +16,7 @@ import {
 } from '../../../platform/testing';
 import {
   activatePilot,
+  agentCookie,
   analyticsFor,
   approveG2,
   auditActions,
@@ -503,5 +504,288 @@ describe('scope change after activation', () => {
     const pkg = await currentPackage(t, jonas, ids(s).g2);
     expect(pkg.approvals[0]!.effective).toBe(false);
     expect(pkg.approvals[0]!.invalidation!.reason).toMatch(/^spend ceiling changed on/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Wave 4 (D-112 §5, D-127): the S11 plan editor and stop-rule trips, on a fresh aster-demo tenant.
+// ---------------------------------------------------------------------------------------------------
+
+describe('S11 plan editor (D-112 §5)', () => {
+  let s: SeededTenant;
+  const c = {} as Record<'jonas' | 'maya' | 'daniel' | 'opsLead' | 'other', string>;
+  beforeAll(async () => {
+    s = await seedTenant(t.db, 'aster-demo');
+    for (const p of ['jonas', 'maya', 'daniel', 'opsLead'] as const) c[p] = await login(t.app, s.user(p));
+    c.other = k.jonasB;
+  });
+  const get = async (cookie: string) =>
+    API.pilot.get.response.parse(
+      (await call(t.app, API.pilot.get, { params: { caseRef: 'ME-104' }, cookie })).json(),
+    );
+  const save = (cookie: string, rowVersion: number, body: unknown) =>
+    call(t.app, API.pilot.saveDraft, { params: { caseRef: 'ME-104' }, body, cookie, ifMatch: rowVersion });
+  const milestonesOf = (v: PilotPlanView) =>
+    v.draft!.milestones.map((m) => ({
+      id: m.id,
+      name: m.name,
+      windowText: m.windowText,
+      ordinal: m.ordinal,
+      dueOn: m.dueOn ?? null,
+      evidenceExpected: m.evidenceExpected ?? null,
+    }));
+
+  it('milestones with a date and the evidence expected round-trip; a new milestone joins by ordinal', async () => {
+    const v = await get(c.jonas);
+    const ms = milestonesOf(v);
+    ms[1] = { ...ms[1]!, dueOn: '2027-01-15', evidenceExpected: 'Paid-use log for 4 sites' };
+    ms.push({
+      id: null as never,
+      name: 'M4 · Renewal intent',
+      windowText: 'week 13',
+      ordinal: 4,
+      dueOn: '2027-02-26',
+      evidenceExpected: 'Signed renewal intent',
+    });
+    const res = await save(c.jonas, v.draft!.rowVersion, { milestones: ms });
+    expect(res.statusCode).toBe(200);
+    const out = API.pilot.saveDraft.response.parse(res.json());
+    expect(out.draft!.milestones.map((m) => [m.ordinal, m.dueOn, m.evidenceExpected])).toEqual([
+      [1, null, null],
+      [2, '2027-01-15', 'Paid-use log for 4 sites'],
+      [3, null, null],
+      [4, '2027-02-26', 'Signed renewal intent'],
+    ]);
+    expect((await get(c.jonas)).draft!.milestones[1]!.dueOn).toBe('2027-01-15');
+    expect(await auditActions(t, s, out.draft!.id)).toContain('pilot_plan.draft_saved');
+  });
+
+  it('a new task names its milestone and dependencies by ordinal and carries a one-time budget line', async () => {
+    const v = await get(c.jonas);
+    const tasks = draftTasks(v).map((x) => ({ ...x }));
+    const body = {
+      tasks: [
+        ...tasks,
+        {
+          id: null,
+          title: 'Renewal conversation',
+          milestoneId: null,
+          milestoneOrdinal: 4,
+          function: 'sales' as const,
+          ownerId: s.user('jonas'),
+          dependsOnTaskIds: [],
+          dependsOnOrdinals: [6],
+          dueOn: '2027-02-20',
+          dueRule: null,
+          deliverable: 'Renewal intent per site',
+          conditionKey: null,
+          budgetLine: { amount: '8000.00', currency: 'EUR', note: 'Travel to 4 sites' },
+        },
+      ],
+    };
+    const res = await save(c.jonas, v.draft!.rowVersion, body);
+    expect(res.statusCode).toBe(200);
+    const out = API.pilot.saveDraft.response.parse(res.json());
+    const m4 = out.draft!.milestones.find((m) => m.ordinal === 4)!;
+    const t7 = out.taskSet!.tasks.find((x) => x.ordinal === 7)!;
+    expect(t7).toMatchObject({
+      title: 'Renewal conversation',
+      milestoneId: m4.id,
+      dependsOnLabel: 'Task 6',
+      budgetLine: { amount: '8000.00', currency: 'EUR', note: 'Travel to 4 sites' },
+    });
+    // Absent budget lines are kept, not cleared; the others stay without one.
+    expect(out.taskSet!.tasks.filter((x) => x.budgetLine).map((x) => x.ordinal)).toEqual([7]);
+  });
+
+  it('refuses ordinal cycles, a foreign currency, lines above the ceiling and unknown ordinals (400)', async () => {
+    const v = await get(c.jonas);
+    const base = v.taskSet!.tasks.map((x) => ({
+      ...draftTasks(v).find((d) => d.id === x.id)!,
+      budgetLine: x.budgetLine ?? null,
+    }));
+    const cycle = base.map((x, i) => (i === 0 ? { ...x, dependsOnTaskIds: [], dependsOnOrdinals: [7] } : x));
+    const r1 = await save(c.jonas, v.draft!.rowVersion, { tasks: cycle });
+    expect(r1.statusCode).toBe(400);
+    expect(problem(r1.body).title).toBe('Task dependencies form a cycle.');
+    const usd = base.map((x, i) =>
+      i === 6 ? { ...x, budgetLine: { amount: '8000.00', currency: 'USD', note: null } } : x,
+    );
+    expect((await save(c.jonas, v.draft!.rowVersion, { tasks: usd })).statusCode).toBe(400);
+    const over = base.map((x, i) =>
+      i === 0 ? { ...x, budgetLine: { amount: '112000.01', currency: 'EUR', note: null } } : x,
+    );
+    const r3 = await save(c.jonas, v.draft!.rowVersion, { tasks: over });
+    expect(r3.statusCode).toBe(400);
+    expect(problem(r3.body).title).toMatch(/more than the approved €120k/);
+    const nine = base.map((x, i) => (i === 6 ? { ...x, milestoneId: null, milestoneOrdinal: 9 } : x));
+    expect((await save(c.jonas, v.draft!.rowVersion, { tasks: nine })).statusCode).toBe(400);
+    // Nothing changed: the draft row version is the same.
+    expect((await get(c.jonas)).draft!.rowVersion).toBe(v.draft!.rowVersion);
+  });
+
+  it('cross-tenant → 404; finance reviewer and read-only reviewer → 403; stale If-Match → 412', async () => {
+    const v = await get(c.jonas);
+    // Display keys are per tenant: another tenant addresses this case by its id.
+    expect(
+      (
+        await call(t.app, API.pilot.saveDraft, {
+          params: { caseRef: ids(s).case },
+          body: {},
+          cookie: c.other,
+          ifMatch: v.draft!.rowVersion,
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect((await save(c.daniel, v.draft!.rowVersion, {})).statusCode).toBe(403);
+    expect((await save(c.opsLead, v.draft!.rowVersion, {})).statusCode).toBe(403);
+    expect((await save(c.maya, v.draft!.rowVersion - 1, {})).statusCode).toBe(412);
+  });
+});
+
+describe('stop-rule trips (D-112, D-127): a sponsor review item and nothing else', () => {
+  let s: SeededTenant;
+  const c = {} as Record<'jonas' | 'maya' | 'daniel' | 'opsLead' | 'lena' | 'elena' | 'agent', string>;
+  const rule = (key: 'SR1' | 'SR2' | 'SR3') =>
+    s.id(gates.g2.structuredStopRules.find((r) => r.key === key)!.id);
+  const trip = (cookie: string, key: 'SR1' | 'SR2' | 'SR3', idempotencyKey: string | true = true) =>
+    call(t.app, API.pilot.tripStopRule, {
+      params: { caseRef: 'ME-104', stopRuleId: rule(key) },
+      body: { evidence: 'Specialist reported a breached hygiene condition at site 3' },
+      cookie,
+      idempotencyKey,
+    });
+  /** Everything a trip must leave alone (never-rule 7). */
+  const stateFacts = () =>
+    inTenant(t, s, async (tx) => ({
+      plan: await tx.selectFrom('me.pilot_plan').select(['status', 'current_version_id']).execute(),
+      tasks: await tx.selectFrom('platform.task').select(['id', 'status']).orderBy('id').execute(),
+      gates: await tx.selectFrom('platform.gate_request').select(['id', 'status']).orderBy('id').execute(),
+      stage: await caseStage(t, s),
+      approvals: await tx.selectFrom('platform.approval').select(['id']).orderBy('id').execute(),
+    }));
+
+  beforeAll(async () => {
+    s = await seedTenant(t.db, 'aster-demo');
+    for (const p of ['jonas', 'maya', 'daniel', 'opsLead', 'lena', 'elena'] as const)
+      c[p] = await login(t.app, s.user(p));
+    c.agent = await agentCookie(t, s);
+  });
+
+  it('before G2 is approved there is no approved stop rule (404), and the view lists none', async () => {
+    expect((await trip(c.jonas, 'SR2')).statusCode).toBe(404);
+    const v = API.pilot.get.response.parse(
+      (await call(t.app, API.pilot.get, { params: { caseRef: 'ME-104' }, cookie: c.jonas })).json(),
+    );
+    expect(v.stopRules).toEqual([]);
+  });
+
+  it('after approval S11 lists SR1–SR3 from the approved snapshot, not tripped', async () => {
+    await activatePilot(t, s);
+    const v = API.pilot.get.response.parse(
+      (await call(t.app, API.pilot.get, { params: { caseRef: 'ME-104' }, cookie: c.jonas })).json(),
+    );
+    expect(v.stopRules!.map((r) => [r.key, r.status, r.owner.displayName, r.consequence])).toEqual([
+      ['SR1', 'not_tripped', 'Jonas Klein', 'pause_and_request_review'],
+      ['SR2', 'not_tripped', 'Lena Hoffmann', 'pause_and_request_review'],
+      ['SR3', 'not_tripped', 'Jonas Klein', 'recommend_stop'],
+    ]);
+  });
+
+  it('cross-tenant 404, finance and read-only reviewers 403, the agent is refused, an unknown rule 404', async () => {
+    const other = await call(t.app, API.pilot.tripStopRule, {
+      params: { caseRef: ids(s).case, stopRuleId: rule('SR2') },
+      body: { evidence: 'x' },
+      cookie: k.jonasB,
+      idempotencyKey: true,
+    });
+    expect(other.statusCode).toBe(404);
+    expect((await trip(c.daniel, 'SR2')).statusCode).toBe(403);
+    expect((await trip(c.opsLead, 'SR2')).statusCode).toBe(403);
+    const agent = await trip(c.agent, 'SR2');
+    expect(agent.statusCode).toBe(403);
+    expect(problem(agent.body).code).toBe('AGENT_IDENTITY_FORBIDDEN');
+    const unknown = await call(t.app, API.pilot.tripStopRule, {
+      params: { caseRef: 'ME-104', stopRuleId: randomUUID() },
+      body: { evidence: 'x' },
+      cookie: c.jonas,
+      idempotencyKey: true,
+    });
+    expect(unknown.statusCode).toBe(404);
+  });
+
+  it('the pilot owner trips SR2: exactly one sponsor review item; plan, tasks, gates and stage unchanged; replay returns the same item', async () => {
+    const before = await stateFacts();
+    const key = randomUUID();
+    const res = await trip(c.jonas, 'SR2', key);
+    expect(res.statusCode).toBe(201);
+    const v = API.pilot.tripStopRule.response.parse(res.json());
+    const sr2 = v.stopRules!.find((r) => r.key === 'SR2')!;
+    expect(sr2).toMatchObject({ status: 'tripped', trippedBy: { displayName: 'Jonas Klein' } });
+    expect(sr2.reviewRequestId).toBeTruthy();
+    expect(v.stopRules!.filter((r) => r.status === 'tripped')).toHaveLength(1);
+    const replay = await trip(c.jonas, 'SR2', key);
+    expect(replay.statusCode).toBe(201);
+    expect(
+      API.pilot.tripStopRule.response.parse(replay.json()).stopRules!.find((r) => r.key === 'SR2')!
+        .reviewRequestId,
+    ).toBe(sr2.reviewRequestId);
+    const items = await inTenant(t, s, (tx) =>
+      tx.selectFrom('platform.review_request').selectAll().where('target_type', '=', 'stop_rule').execute(),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: sr2.reviewRequestId,
+      area: 'sponsor',
+      target_id: rule('SR2'),
+      reviewer_user_id: s.user('elena'),
+      requested_by: s.user('jonas'),
+      status: 'open',
+    });
+    expect(items[0]!.what_to_check).toEqual([
+      'Pre-registered consequence: Pause tasks and request a sponsor review',
+      'Evidence: Specialist reported a breached hygiene condition at site 3',
+    ]);
+    expect(await stateFacts()).toEqual(before);
+    expect(await caseStage(t, s)).toBe('pilot_running');
+    expect(await auditActions(t, s, rule('SR2'))).toEqual(['stop_rule.tripped']);
+    // Elena's Reviews inbox shows the item.
+    const inbox = API.work.reviewsInbox.response.parse(
+      (await call(t.app, API.work.reviewsInbox, { cookie: c.elena, query: { tab: 'awaiting' } })).json(),
+    );
+    expect(inbox.reviewRequests.filter((r) => r.targetType === 'stop_rule').map((r) => r.id)).toEqual([
+      sr2.reviewRequestId,
+    ]);
+  });
+
+  it('a second trip while the review is open → 409; after the sponsor answers, the rule owner (Lena) may trip again', async () => {
+    const again = await trip(c.lena, 'SR2');
+    expect(again.statusCode).toBe(409);
+    expect(problem(again.body).code).toBe('INVALID_TRANSITION');
+    const [open] = await inTenant(t, s, (tx) =>
+      tx.selectFrom('platform.review_request').select('id').where('target_type', '=', 'stop_rule').execute(),
+    );
+    const answered = await call(t.app, API.work.respondToReview, {
+      params: { id: open!.id },
+      body: { response: 'confirm', reason: 'Pause site 3 until the condition is met again' },
+      cookie: c.elena,
+      idempotencyKey: true,
+    });
+    expect(answered.statusCode).toBe(200);
+    const lena = await trip(c.lena, 'SR2');
+    expect(lena.statusCode).toBe(201);
+    expect(
+      API.pilot.tripStopRule.response.parse(lena.json()).stopRules!.find((r) => r.key === 'SR2')!.trippedBy!
+        .displayName,
+    ).toBe('Lena Hoffmann');
+    // SR1 belongs to Jonas; Maya (case owner, pilot.edit_plan) may report it too.
+    const maya = await trip(c.maya, 'SR1');
+    expect(maya.statusCode).toBe(201);
+    expect(await caseStage(t, s)).toBe('pilot_running');
+    expect(
+      (await inTenant(t, s, (tx) => tx.selectFrom('platform.analytics_event').select('name').execute()))
+        .map((e) => e.name)
+        .filter((n) => /stop/.test(n)),
+    ).toEqual([]);
   });
 });

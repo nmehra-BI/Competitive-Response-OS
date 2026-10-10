@@ -4,8 +4,8 @@
  * plan version and locks its task set for WS6 (`owner_type 'pilot_plan_version'`, authorizing gate =
  * G2); WS4b never sends tasks. Task completion never passes a gate. Message drafts stay drafts.
  */
-import { API, type TaskStatus } from '@growth-os/contracts';
-import { sql, type Tx } from '@growth-os/db';
+import { API, STOP_RULE_CONSEQUENCE_LABELS, type TaskStatus } from '@growth-os/contracts';
+import type { Tx } from '@growth-os/db';
 import { caseMachine } from '@growth-os/domain';
 import { caseVisible, roleAllows } from '../../../platform/authz';
 import type { Authorization } from '../../../platform/context';
@@ -23,6 +23,7 @@ import {
 } from '../gates/lib/common';
 import { moveCase, SYSTEM_GATE } from '../gates/lib/moves';
 import { contentOf, snapshotById } from '../gates/lib/serialize';
+import { saveMilestones, saveTasks } from './draft';
 import {
   activationFacts,
   messageDrafts,
@@ -62,22 +63,23 @@ const needPlan = (plan: PilotPlanRow | undefined): PilotPlanRow => {
   return plan;
 };
 
-/** Reject dependency cycles (DFS over the proposed edges). */
-function assertAcyclic(edges: Map<string, string[]>): void {
-  const state = new Map<string, 1 | 2>();
-  const visit = (n: string): boolean => {
-    if (state.get(n) === 1) return false;
-    if (state.get(n) === 2) return true;
-    state.set(n, 1);
-    for (const m of edges.get(n) ?? []) if (!visit(m)) return false;
-    state.set(n, 2);
-    return true;
-  };
-  for (const n of edges.keys())
-    if (!visit(n))
-      throw new ApiError('VALIDATION_FAILED', 'Task dependencies form a cycle.', {
-        errors: [{ path: 'body.tasks', code: 'custom', message: 'Dependency cycle' }],
-      });
+/** A stop rule of the approved G2 snapshot of this case's pilot plan (D-127); otherwise 404. */
+async function stopRuleCtx(tx: Tx, ref: string, stopRuleId: string) {
+  const { c, plan: p } = await caseAndPlan(tx, ref);
+  const plan = needPlan(p);
+  const gate = plan.gate_request_id
+    ? await tx
+        .selectFrom('platform.gate_request')
+        .select(['id', 'status', 'current_snapshot_id'])
+        .where('id', '=', plan.gate_request_id)
+        .executeTakeFirst()
+    : undefined;
+  const decided =
+    gate && ['approved', 'approved_with_conditions', 'invalidated', 'expired'].includes(gate.status);
+  const snap = decided && gate.current_snapshot_id ? await snapshotById(tx, gate.current_snapshot_id) : null;
+  const rule = snap ? contentOf(snap).stopRules?.find((r) => r.id === stopRuleId) : undefined;
+  if (!rule) throw notFound();
+  return { c, plan, rule, gateRequestId: gate!.id };
 }
 
 async function taskCtx(tx: Tx, id: string) {
@@ -124,116 +126,8 @@ export const pilotHandlers: HandlerMap = {
       if (!draft.task_set_id) throw new ApiError('INVALID_TRANSITION', 'The plan has no task set yet.');
       const setId = draft.task_set_id;
       const { tx } = t;
-      if (ctx.body.milestones) {
-        const existing = await tx
-          .selectFrom('platform.milestone')
-          .select('id')
-          .where('task_set_id', '=', setId)
-          .execute();
-        await tx
-          .updateTable('platform.milestone')
-          .set({ ordinal: sql`ordinal + 1000` })
-          .where('task_set_id', '=', setId)
-          .execute();
-        const keep = new Set<string>();
-        for (const m of ctx.body.milestones) {
-          if (m.id && existing.some((e) => e.id === m.id)) {
-            keep.add(m.id);
-            await tx
-              .updateTable('platform.milestone')
-              .set({ name: m.name, window_text: m.windowText, ordinal: m.ordinal })
-              .where('id', '=', m.id)
-              .execute();
-          } else {
-            const r = await tx
-              .insertInto('platform.milestone')
-              .values({
-                tenant_id: tenantIdSql,
-                task_set_id: setId,
-                name: m.name,
-                window_text: m.windowText,
-                ordinal: m.ordinal,
-              })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            keep.add(r.id);
-          }
-        }
-        const drop = existing.filter((e) => !keep.has(e.id)).map((e) => e.id);
-        if (drop.length) {
-          await tx
-            .updateTable('platform.task')
-            .set({ milestone_id: null })
-            .where('milestone_id', 'in', drop)
-            .execute();
-          await tx.deleteFrom('platform.milestone').where('id', 'in', drop).execute();
-        }
-      }
-      if (ctx.body.tasks) {
-        const existing = await taskRows(tx, setId);
-        const ids = ctx.body.tasks.map((x) => x.id).filter((x): x is string => !!x);
-        if (ids.some((id) => !existing.some((e) => e.id === id))) throw notFound();
-        // Temporary ordinals avoid unique collisions while re-ordering.
-        await tx
-          .updateTable('platform.task')
-          .set({ ordinal: sql`ordinal + 1000` })
-          .where('task_set_id', '=', setId)
-          .execute();
-        const idOf: string[] = [];
-        for (const [i, x] of ctx.body.tasks.entries()) {
-          const values = {
-            ordinal: i + 1,
-            title: x.title,
-            milestone_id: x.milestoneId,
-            function: x.function,
-            owner_user_id: x.ownerId,
-            due_on: x.dueOn,
-            due_rule: x.dueRule,
-            deliverable: x.deliverable,
-            condition_key: x.conditionKey,
-          };
-          if (x.id) {
-            await tx.updateTable('platform.task').set(values).where('id', '=', x.id).execute();
-            idOf.push(x.id);
-          } else {
-            const r = await tx
-              .insertInto('platform.task')
-              .values({ ...values, tenant_id: tenantIdSql, case_id: c.id, task_set_id: setId })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            idOf.push(r.id);
-          }
-        }
-        const removed = existing.filter((e) => !idOf.includes(e.id)).map((e) => e.id);
-        if (removed.length) {
-          const linked = await tx
-            .selectFrom('platform.external_task_link')
-            .select('task_id')
-            .where('task_id', 'in', removed)
-            .executeTakeFirst();
-          if (linked)
-            throw new ApiError(
-              'INVALID_TRANSITION',
-              'A task already sent to the task tool cannot be removed.',
-            );
-          await tx
-            .deleteFrom('platform.task_dependency')
-            .where((eb) => eb.or([eb('task_id', 'in', removed), eb('depends_on_task_id', 'in', removed)]))
-            .execute();
-          await tx.deleteFrom('platform.task').where('id', 'in', removed).execute();
-        }
-        const edges = new Map<string, string[]>();
-        ctx.body.tasks.forEach((x, i) => edges.set(idOf[i]!, x.dependsOnTaskIds));
-        for (const deps of edges.values()) if (deps.some((d) => !idOf.includes(d))) throw notFound();
-        assertAcyclic(edges);
-        await tx.deleteFrom('platform.task_dependency').where('task_id', 'in', idOf).execute();
-        for (const [taskId, deps] of edges)
-          for (const d of deps)
-            await tx
-              .insertInto('platform.task_dependency')
-              .values({ tenant_id: tenantIdSql, task_id: taskId, depends_on_task_id: d })
-              .execute();
-      }
+      if (ctx.body.milestones) await saveMilestones(tx, setId, ctx.body.milestones);
+      if (ctx.body.tasks) await saveTasks(tx, c, setId, draft, ctx.body.tasks);
       const upd = await tx
         .updateTable('me.pilot_plan_version')
         .set({ updated_at: ctx.now })
@@ -593,6 +487,72 @@ export const pilotHandlers: HandlerMap = {
         gateRequestId: null,
         createdAt: new Date(scr.created_at).toISOString(),
       };
+    },
+  }),
+
+  [API.pilot.tripStopRule.id]: command(API.pilot.tripStopRule, {
+    load: (ctx, tx) => stopRuleCtx(tx, ctx.params.caseRef, ctx.params.stopRuleId),
+    // The rule's owner reports a trip; so may the case owner or the pilot owner (pilot.edit_plan).
+    authorize: (ctx, { c, rule }) => {
+      const subject = ctx.identity.subject;
+      const v = caseVisible(subject, c);
+      if (!v.allow) return v;
+      if (subject.actor.kind === 'human' && ctx.userId === rule.ownerId)
+        return { allow: true, rule: 'stop_rule.owner', authorityGrantId: null };
+      return roleAllows(subject, 'pilot.edit_plan', { businessUnitId: c.businessUnitId, caseId: c.id });
+    },
+    handle: async (ctx, t, { c, rule, gateRequestId }) => {
+      const { tx } = t;
+      const open = await tx
+        .selectFrom('platform.review_request')
+        .select('id')
+        .where('case_id', '=', c.id)
+        .where('target_type', '=', 'stop_rule')
+        .where('target_id', '=', rule.id)
+        .where('status', '=', 'open')
+        .executeTakeFirst();
+      if (open)
+        throw new ApiError(
+          'INVALID_TRANSITION',
+          `${rule.key} is already tripped · the sponsor review is open.`,
+        );
+      // The only write: a review item for the sponsor. No task, gate, plan or case state changes
+      // (never-rule 7); the sponsor decides what happens next.
+      const rr = await tx
+        .insertInto('platform.review_request')
+        .values({
+          tenant_id: tenantIdSql,
+          case_id: c.id,
+          area: 'sponsor',
+          target_type: 'stop_rule',
+          target_id: rule.id,
+          question: `${rule.key} tripped: ${rule.trigger.text}. Review the pilot and decide what happens next.`,
+          what_to_check: [
+            `Pre-registered consequence: ${STOP_RULE_CONSEQUENCE_LABELS[rule.consequence]}`,
+            `Evidence: ${ctx.body.evidence.trim()}`,
+          ],
+          requested_by: ctx.userId,
+          reviewer_user_id: c.sponsorUserId,
+          due_on: null,
+          created_at: ctx.now,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await t.audit({
+        action: 'stop_rule.tripped',
+        objectType: 'stop_rule',
+        objectId: rule.id,
+        caseId: c.id,
+        summary: `${rule.key} tripped · sponsor review requested (no task, gate or case change)`,
+        details: { key: rule.key, reviewRequestId: rr.id, gateRequestId, consequence: rule.consequence },
+      });
+      return pilotView(
+        tx,
+        c,
+        (await pilotPlanOf(tx, c.id))!,
+        asOfDate(ctx.now, ctx.identity.tenant.timeZone),
+        ctx.now,
+      );
     },
   }),
 
