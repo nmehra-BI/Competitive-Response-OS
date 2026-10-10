@@ -7,6 +7,9 @@ import { expect, test } from './support/fixtures';
 
 const PILOT = '/me/cases/ME-104/pilot';
 
+// Each journey runs axe several times; leave room on a loaded machine.
+test.setTimeout(90_000);
+
 test('S11: edit the plan draft, record and reverse spend, refuse spend above the approval', async ({
   page,
   loginAs,
