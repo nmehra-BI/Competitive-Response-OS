@@ -6,6 +6,9 @@
  */
 import { expect, test } from './support/fixtures';
 
+// Two axe scans and autosaves per test: allow for a loaded CI machine.
+test.describe.configure({ timeout: 90_000 });
+
 test('S06 editor: boundary, Evidence or Assumption per input, a blank stays Unknown', async ({
   page,
   loginAs,

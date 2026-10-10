@@ -197,7 +197,8 @@ test('an operator builds sizing v1 and economics v1 for a new case in the editor
   await expect(header.getByRole('textbox', { name: 'Horizon (years)' })).toHaveValue('3');
   // Drivers follow the register; Downside is linked here by hand.
   await page
-    .getByRole('combobox', { name: 'Adoption by year 3 · Downside · assumption' })
+    .getByRole('row', { name: /^Adoption by year 3 · Downside/ })
+    .getByRole('combobox', { name: 'Assumption link' })
     .selectOption(asm['adoption_rate.downside']!);
   await page.getByRole('textbox', { name: /^Opex scope note/ }).fill('Sales and admin only; excludes COGS');
   await page.getByRole('textbox', { name: /^Opex scope note/ }).blur();

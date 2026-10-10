@@ -32,6 +32,7 @@ import {
   Skeleton,
   TextAreaField,
   formatContributionK,
+  formatLineageValue,
   formatCount,
   formatGrossContribution,
   formatNotAvailable,
@@ -252,7 +253,9 @@ function LinkSelect({
     <select
       className="gos-select"
       style={{ fontSize: 12.5, padding: '4px 6px', maxWidth: 260 }}
-      aria-label={`${label} · assumption`}
+      // Named apart from the driver so the value field keeps the driver's name to itself.
+      aria-label="Assumption link"
+      title={`Assumption for ${label}`}
       value={value ?? ''}
       onChange={(e) => onLink(fits.find((a) => a.id === e.target.value) ?? null)}
       onBlur={onBlur}
@@ -260,7 +263,7 @@ function LinkSelect({
       <option value="">Draft value · not linked</option>
       {fits.map((a) => (
         <option key={a.id} value={a.id}>
-          {`${a.key} · ${a.name}`}
+          {`${a.key} · ${formatLineageValue({ value: a.current.value, unit: a.current.unit }, a.current.currency ?? 'EUR')}`}
         </option>
       ))}
     </select>

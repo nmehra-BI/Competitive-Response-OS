@@ -120,10 +120,13 @@ describe('S08 Economics', () => {
     );
     expect(screen.getByRole('textbox', { name: /^Opex scope note/ })).toBeTruthy();
     // Each driver follows an assumption of the register (same unit) or holds a draft value.
-    const marginLink = screen.getByRole('combobox', {
-      name: 'Gross margin · assumption',
+    const marginRow = within(screen.getByRole('table', { name: 'Economics drivers' }))
+      .getByRole('rowheader', { name: 'Gross margin' })
+      .closest('tr')!;
+    const marginLink = within(marginRow).getByRole('combobox', {
+      name: 'Assumption link',
     }) as HTMLSelectElement;
-    await waitFor(() => expect(marginLink.selectedOptions[0]!.textContent).toBe('ASM-09 · Gross margin 60%'));
+    await waitFor(() => expect(marginLink.selectedOptions[0]!.textContent).toBe('ASM-09 · 60%'));
     // The one-time investment has its own block, outside the /year drivers table.
     const drivers = screen.getByRole('table', { name: 'Economics drivers' });
     expect(within(drivers).queryByText(/investment/i)).toBeNull();
