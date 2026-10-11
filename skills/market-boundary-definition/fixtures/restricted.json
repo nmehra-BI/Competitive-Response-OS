@@ -1,0 +1,40 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "rs-1", "tool": "evidence.get", "args": { "sourceKey": "SRC-030" } },
+      { "callId": "rs-2", "tool": "evidence.get", "args": { "sourceKey": "SRC-014" } },
+      {
+        "callId": "rs-3",
+        "tool": "intelligence.search",
+        "args": { "query": "vendor market estimate water monitoring" }
+      }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Boundary proposal without the vendor estimate, which is not licensed for you.",
+      "proposals": [
+        {
+          "type": "market_boundary",
+          "marketUnit": "Annual spend on water monitoring per food-processing site",
+          "populationUnit": "site",
+          "includes": ["German food-processing sites with a process-water treatment step"],
+          "excludes": ["One-time installation spend"]
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "The vendor estimate gives the European market size.",
+            "kind": "evidence",
+            "evidenceIds": ["${passage:SRC-030}"],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": ["Vendor market estimate not available to this requester"],
+      "notChecked": ["Vendor market estimate (restricted)"]
+    }
+  }
+]

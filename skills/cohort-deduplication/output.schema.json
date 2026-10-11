@@ -1,0 +1,92 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "claim"
+              },
+              "claim": {
+                "type": "object",
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["evidence", "assumption", "scenario", "actual", "inference_ai", "unknown"]
+                  },
+                  "evidenceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "confidenceNote": {
+                    "type": "null",
+                    "default": null
+                  }
+                },
+                "required": ["statement", "kind", "evidenceIds"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "claim"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "cohort_dedup"
+              },
+              "cohortAId": {
+                "$ref": "#/properties/proposals/items/anyOf/0/properties/claim/properties/evidenceIds/items"
+              },
+              "cohortBId": {
+                "$ref": "#/properties/proposals/items/anyOf/0/properties/claim/properties/evidenceIds/items"
+              },
+              "proposedOverlap": {
+                "type": "integer"
+              },
+              "method": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "cohortAId", "cohortBId", "proposedOverlap", "method"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notChecked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["summary", "proposals", "unknowns", "notChecked"],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cohort-deduplication output",
+  "description": "SkillOutput (@growth-os/contracts) for cohort-deduplication. Allowed proposal types: cohort_dedup, claim."
+}

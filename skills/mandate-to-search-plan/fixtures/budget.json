@@ -1,0 +1,43 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "bud-1", "tool": "portfolio.get_product", "args": {} },
+      { "callId": "bud-2", "tool": "evidence.get", "args": { "sourceKey": "SRC-014" } }
+    ]
+  },
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "bud-3", "tool": "evidence.get", "args": { "sourceKey": "SRC-021" } },
+      { "callId": "bud-4", "tool": "intelligence.search", "args": { "query": "food processing" } }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Partial search plan: the tool budget ran out before every source was read.",
+      "proposals": [
+        {
+          "type": "search_plan",
+          "segments": ["Food processing"],
+          "geographies": ["DE"],
+          "queries": ["food-processing site census"],
+          "notValidatedNotice": "AI draft · not validated"
+        },
+        {
+          "type": "opportunity_candidate",
+          "name": "German dairy plants",
+          "trigger": "Dairy hygiene programmes in 1 trade source",
+          "fitRationale": "Subset of food processing with similar water processes.",
+          "fitCriteria": [{ "criterion": "Inside mandate segment and geography", "result": "met" }],
+          "unknowns": ["Site count"],
+          "evidenceIds": ["${passage:SRC-021}"],
+          "likelyDuplicateOfOpportunityId": "${id:key=OPP-07}"
+        }
+      ],
+      "unknowns": ["Trade survey not read: budget reached"],
+      "notChecked": ["Trade survey", "Trade registry records"]
+    }
+  }
+]

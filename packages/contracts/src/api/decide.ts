@@ -1,0 +1,350 @@
+/**
+ * FROZEN endpoints: validation experiments (S09), gates, snapshots and approvals (S10, brief).
+ */
+import { z } from 'zod';
+import { GateCode, GateDisposition, ReviewArea, ReviewerPosition } from '../enums';
+import { Experiment, ExperimentPlan, MetricObservation } from '../entities/experiment';
+import {
+  Condition,
+  ConditionInput,
+  DecisionPackageView,
+  DecisionSnapshot,
+  Dissent,
+  GatePreconditionsView,
+  GateRequest,
+  GateScope,
+  MaterialChange,
+  StopRuleInput,
+} from '../entities/gate';
+import { OutcomeTargetInput } from '../entities/execution';
+import { DecimalString, Id, IsoDate, Sha256Hex } from '../primitives';
+import { CaseParams, endpoint, IdParams, Rationale } from './endpoint';
+
+// ----- Experiments (S09) -----
+
+export const experimentEndpoints = {
+  list: endpoint({
+    id: 'experiments.list',
+    method: 'GET',
+    path: '/me/cases/:caseRef/experiments',
+    summary: 'Experiments with plan (original + current), amendments and all result versions.',
+    screens: ['S09'],
+    prd: ['ME-09'],
+    params: CaseParams,
+    response: z.object({ items: z.array(Experiment), examples: z.array(Experiment) }), // examples are Illustrative
+  }),
+  create: endpoint({
+    id: 'experiments.create',
+    method: 'POST',
+    path: '/me/cases/:caseRef/experiments',
+    summary: 'Create a draft experiment linked to assumptions.',
+    screens: ['S09'],
+    prd: ['ME-09'],
+    idempotent: true,
+    params: CaseParams,
+    body: z.object({
+      title: z.string().min(1),
+      assumptionIds: z.array(Id).min(1),
+      ownerId: Id,
+      fieldworkOwnerId: Id.nullable(),
+      plan: ExperimentPlan,
+    }),
+    response: Experiment,
+  }),
+  updateDraft: endpoint({
+    id: 'experiments.updateDraft',
+    method: 'PATCH',
+    path: '/me/experiments/:id',
+    summary: 'Edit a draft experiment. Rejected with INVALID_TRANSITION once locked — use amendments.',
+    screens: ['S09'],
+    prd: ['ME-09'],
+    ifMatch: true,
+    params: IdParams,
+    body: z.object({
+      title: z.string().optional(),
+      plan: ExperimentPlan.partial().optional(),
+      assumptionIds: z.array(Id).optional(),
+    }),
+    response: Experiment,
+  }),
+  amend: endpoint({
+    id: 'experiments.amend',
+    method: 'POST',
+    path: '/me/experiments/:id/amendments',
+    summary:
+      'Amend a locked plan with a reason. Creates "Amendment n"; the pre-registered original stays visible.',
+    screens: ['S09'],
+    prd: ['ME-09'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ reason: z.string().min(1), plan: ExperimentPlan.partial() }),
+    response: Experiment,
+  }),
+  start: endpoint({
+    id: 'experiments.start',
+    method: 'POST',
+    path: '/me/experiments/:id/start',
+    summary: 'Locked → Running. Requires the authorizing gate (G1) approved.',
+    screens: ['S09'],
+    prd: ['ME-09'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    response: Experiment,
+    successStatus: 200,
+  }),
+  recordResult: endpoint({
+    id: 'experiments.recordResult',
+    method: 'POST',
+    path: '/me/experiments/:id/results',
+    summary:
+      'Append a result version (Met / Not met / Inconclusive per metric) with period and source. Never overwrites.',
+    screens: ['S09'],
+    prd: ['ME-09', 'ME-14'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({
+      observations: z.array(
+        MetricObservation.omit({ result: true }).extend({ observed: DecimalString.nullable() }),
+      ),
+      periodStart: IsoDate,
+      periodEnd: IsoDate,
+      sourceText: z.string().min(1),
+      interpretation: z.string().min(1),
+      limitations: z.string().min(1),
+    }),
+    response: Experiment,
+  }),
+  recordDecision: endpoint({
+    id: 'experiments.recordDecision',
+    method: 'POST',
+    path: '/me/experiments/:id/decision',
+    summary: 'Record the decision taken per the pre-registered rule (human decides; product recommends).',
+    screens: ['S09'],
+    prd: ['ME-09'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ decisionText: z.string().min(1) }),
+    response: Experiment,
+  }),
+};
+
+// ----- Gates, snapshots, approvals (S10, brief, S02 G0, S12 G3/X) -----
+
+export const gateEndpoints = {
+  rail: endpoint({
+    id: 'gates.preconditions',
+    method: 'GET',
+    path: '/me/cases/:caseRef/gates/:gateCode/preconditions',
+    summary: 'Deterministic precondition check for a gate (the "Why?" list).',
+    screens: ['S05', 'S09', 'S10', 'S12'],
+    prd: ['§4', 'ME-11'],
+    params: CaseParams.extend({ gateCode: GateCode }),
+    response: GatePreconditionsView,
+  }),
+  createRequest: endpoint({
+    id: 'gates.createRequest',
+    method: 'POST',
+    path: '/me/cases/:caseRef/gate-requests',
+    summary:
+      'Open a draft gate request with its requested scope (G1, G2, G3 or X extension with its own cap).',
+    screens: ['S05', 'S09', 'S12'],
+    prd: ['ME-10', '§4'],
+    auth: 'human',
+    idempotent: true,
+    params: CaseParams,
+    body: z.object({
+      gateCode: GateCode,
+      scope: GateScope,
+      parentGateRequestId: Id.nullable(),
+      proposedConditions: z.array(ConditionInput),
+      /** G2 only: the pilot thresholds to pre-register (D-102). Optional; additive. */
+      outcomeTargets: z.array(OutcomeTargetInput).optional(),
+      /**
+       * G2 only: the stop rules to pre-register (D-112, CR-PD-5). Optional; additive. The
+       * `budget_and_stop_rules` precondition needs at least one on a G2 submitted after D-122.
+       */
+      stopRules: z.array(StopRuleInput).optional(),
+    }),
+    response: GateRequest,
+  }),
+  get: endpoint({
+    id: 'gates.get',
+    method: 'GET',
+    path: '/me/gate-requests/:id',
+    summary: 'Gate request with current snapshot id, status and conditions.',
+    screens: ['S10', 'BRIEF'],
+    prd: ['ME-10'],
+    params: IdParams,
+    response: GateRequest,
+  }),
+  submit: endpoint({
+    id: 'gates.submit',
+    method: 'POST',
+    path: '/me/gate-requests/:id/submit',
+    summary:
+      'Check preconditions, freeze a new snapshot (canonical JSON + SHA-256) from committed versions and submit. Prior snapshot becomes Superseded.',
+    screens: ['S05', 'S09', 'S10', 'S12'],
+    prd: ['ME-10', 'ME-11'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    response: z.object({ gateRequest: GateRequest, snapshot: DecisionSnapshot }),
+    successStatus: 200,
+  }),
+  refresh: endpoint({
+    id: 'gates.refreshSnapshot',
+    method: 'POST',
+    path: '/me/gate-requests/:id/refresh',
+    summary:
+      'Refresh a stale snapshot: creates vN+1 from current committed inputs; the stale one is Superseded.',
+    screens: ['S10'],
+    prd: ['ME-11'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    response: z.object({ gateRequest: GateRequest, snapshot: DecisionSnapshot }),
+    successStatus: 200,
+  }),
+  withdraw: endpoint({
+    id: 'gates.withdraw',
+    method: 'POST',
+    path: '/me/gate-requests/:id/withdraw',
+    summary: 'Package author withdraws an undecided request.',
+    screens: ['S10'],
+    prd: ['ME-10'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: Rationale,
+    response: GateRequest,
+    successStatus: 200,
+  }),
+  package: endpoint({
+    id: 'gates.package',
+    method: 'GET',
+    path: '/me/gate-requests/:id/package',
+    summary:
+      'Decision package (S10) / decision brief: snapshot, positions, dissent, conditions, approval panel state for the viewer.',
+    screens: ['S10', 'BRIEF', 'S02'],
+    prd: ['ME-10', 'ME-11'],
+    params: IdParams,
+    query: z.object({
+      version: z.coerce.number().int().positive().optional(),
+      compareTo: z.coerce.number().int().positive().optional(),
+    }),
+    response: DecisionPackageView,
+  }),
+  diff: endpoint({
+    id: 'gates.snapshotDiff',
+    method: 'GET',
+    path: '/me/snapshots/:id/diff',
+    summary:
+      '"See what changed": differences between this snapshot and another, or the current committed inputs.',
+    screens: ['S10'],
+    prd: ['ME-11'],
+    params: IdParams,
+    query: z.object({ against: z.union([Id, z.literal('current_inputs')]) }),
+    response: z.object({
+      changes: z.array(
+        z.object({
+          path: z.string(),
+          label: z.string(),
+          from: z.string().nullable(),
+          to: z.string().nullable(),
+          material: z.boolean(),
+        }),
+      ),
+    }),
+  }),
+  decide: endpoint({
+    id: 'gates.decide',
+    method: 'POST',
+    path: '/me/gate-requests/:id/decisions',
+    summary:
+      'Record a decision on an exact snapshot. Requires interactive human session, authority grant for gate/BU/amount, not author/owner, snapshot current and hash equal. Approve adds conditions.',
+    screens: ['S10', 'BRIEF', 'S02'],
+    prd: ['ME-11', 'ME-10', '§4'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({
+      snapshotId: Id,
+      snapshotHash: Sha256Hex,
+      disposition: GateDisposition,
+      rationale: z.string().min(1),
+      note: z.string().nullable(),
+      conditions: z.array(ConditionInput), // only with approve_with_conditions
+      delegateToUserId: Id.nullable(), // only with delegate, and only where policy allows
+    }),
+    response: DecisionPackageView,
+  }),
+  recordPosition: endpoint({
+    id: 'gates.recordPosition',
+    method: 'POST',
+    path: '/me/snapshots/:id/positions',
+    summary:
+      'Reviewer signs a position (supports / supports with conditions / dissents / abstains) on a snapshot version.',
+    screens: ['S10', 'REVIEWS'],
+    prd: ['ME-10', 'ME-06'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ area: ReviewArea, position: ReviewerPosition, scopeText: z.string().min(1) }),
+    response: DecisionPackageView,
+  }),
+  recordDissent: endpoint({
+    id: 'gates.recordDissent',
+    method: 'POST',
+    path: '/me/cases/:caseRef/dissent',
+    summary: "Signed dissent in the reviewer's own words. Carried into every later package.",
+    screens: ['S09', 'S10'],
+    prd: ['ME-10'],
+    auth: 'human',
+    idempotent: true,
+    params: CaseParams,
+    body: z.object({ statement: z.string().min(1), scopeText: z.string().min(1) }),
+    response: Dissent,
+  }),
+  markConditionMet: endpoint({
+    id: 'conditions.markMet',
+    method: 'POST',
+    path: '/me/conditions/:id/met',
+    summary: 'Mark a condition met with evidence. Blocking conditions gate execution until met.',
+    screens: ['S11', 'MYWORK'],
+    prd: ['ME-11', 'ME-12'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ evidence: z.string().min(1) }),
+    response: Condition,
+    successStatus: 200,
+  }),
+  materialChanges: endpoint({
+    id: 'gates.materialChanges',
+    method: 'GET',
+    path: '/me/cases/:caseRef/material-changes',
+    summary: 'Material-change log with affected snapshots and approvals; uncertain items await escalation.',
+    screens: ['S10', 'S13'],
+    prd: ['§4', 'ME-11', 'ME-20'],
+    params: CaseParams,
+    response: z.object({ items: z.array(MaterialChange) }),
+  }),
+  resolveMateriality: endpoint({
+    id: 'gates.resolveMateriality',
+    method: 'POST',
+    path: '/me/material-changes/:id/resolution',
+    summary: 'Escalation owner classifies an uncertain change as material or not material.',
+    screens: ['S10'],
+    prd: ['§4'],
+    auth: 'human',
+    idempotent: true,
+    params: IdParams,
+    body: z.object({ classification: z.enum(['material', 'not_material']), rationale: z.string().min(1) }),
+    response: MaterialChange,
+    successStatus: 200,
+  }),
+};

@@ -1,0 +1,43 @@
+/**
+ * Screen registry (shared, append-only †). Each WS8 stream adds ONE line per screen it lands,
+ * keyed by the frozen route id in app/routes.ts. Routes without an entry show a placeholder.
+ *
+ *   caseSizing: lazy(() => import('./sizing/SizingScreen')),
+ *
+ * Screens default-export a component with no props; they read params with useParams() and deep
+ * links with useSearchParams(). Case screens render inside CaseLayout and start at <h2>.
+ * Screen-specific MSW handlers live in ./<screen>/mocks.ts (export `handlers`).
+ */
+import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import type { RouteId } from '../app/routes';
+
+export type ScreenComponent = LazyExoticComponent<ComponentType>;
+
+// Keep `lazy` imported for the one-line entries streams append below.
+void lazy;
+
+export const SCREENS: Partial<Record<RouteId, ScreenComponent>> = {
+  // ↓ WS8 streams: append one line per screen below this comment.
+  overview: lazy(() => import('./overview/OverviewScreen')),
+  cases: lazy(() => import('./overview/CasesScreen')),
+  mandates: lazy(() => import('./mandate/MandatesScreen')),
+  mandateNew: lazy(() => import('./mandate/MandateNewScreen')),
+  mandate: lazy(() => import('./mandate/MandateScreen')),
+  opportunities: lazy(() => import('./opportunities/OpportunitiesScreen')),
+  compare: lazy(() => import('./compare/CompareScreen')),
+  myWork: lazy(() => import('./my-work/MyWorkScreen')),
+  reviews: lazy(() => import('./reviews/ReviewsScreen')),
+  caseThesis: lazy(() => import('./thesis/ThesisScreen')),
+  caseSizing: lazy(() => import('./sizing/SizingScreen')),
+  caseFeasibility: lazy(() => import('./feasibility/FeasibilityScreen')),
+  caseEconomics: lazy(() => import('./economics/EconomicsScreen')),
+  caseValidation: lazy(() => import('./validation/ValidationScreen')),
+  caseDecisions: lazy(() => import('./decisions/DecisionsScreen')),
+  caseBrief: lazy(() => import('./brief/BriefScreen')),
+  casePilot: lazy(() => import('./pilot/PilotScreen')),
+  caseOutcomes: lazy(() => import('./outcomes/OutcomesScreen')),
+  caseHistory: lazy(() => import('./history/HistoryScreen')),
+  evidence: lazy(() => import('./evidence/EvidenceScreen')),
+  evidenceSource: lazy(() => import('./evidence/EvidenceScreen')),
+  admin: lazy(() => import('./admin/AdminScreen')),
+};

@@ -1,0 +1,238 @@
+// @vitest-environment jsdom
+/** S06 Sizing against the MSW mocks (acceptance steps 6–8 and the blocking variants). */
+import { people } from '@growth-os/fixtures-aster';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { API } from '@growth-os/contracts';
+import { mock } from '../../mocks/define';
+import { session } from '../../mocks/node';
+import { setAssessmentScenario } from './mock-state';
+import { sizingView } from './mocks';
+import { mockServer, renderAt, resetAll } from './test-utils';
+
+beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
+afterEach(() => {
+  cleanup();
+  mockServer.resetHandlers();
+  resetAll();
+  sessionStorage.clear();
+});
+afterAll(() => mockServer.close());
+
+function ladderRow(name: string | RegExp) {
+  return screen.getByRole('group', { name });
+}
+
+describe('S06 Sizing', () => {
+  it('shows the measure ladder with exact fixture values and no total row (step 6)', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    expect(await screen.findByRole('heading', { name: 'Measure ladder' }, { timeout: 5000 })).toBeTruthy();
+    const tam = await waitFor(() => ladderRow('TAM'));
+    expect(tam.textContent).toContain('5,000 unique sites');
+    expect(tam.textContent).toContain('€100m/year');
+    const sam = ladderRow('SAM');
+    expect(sam.textContent).toContain('2,000 unique sites');
+    expect(sam.textContent).toContain('€40m/year');
+    const reach = ladderRow('Reachable pool');
+    expect(reach.textContent).toContain('500 unique sites');
+    expect(reach.textContent).toContain('—');
+    expect(reach.textContent).not.toContain('€');
+    const som = ladderRow('SOM · Base · Year 3');
+    expect(som.textContent).toContain('100 customers');
+    expect(som.textContent).toContain('€2.0m annual revenue');
+    // Signed overlap arithmetic from the engine.
+    expect(screen.getByRole('group', { name: 'Formula for SAM' }).textContent).toContain(
+      '(1,400 + 1,100 − 500) × €20,000',
+    );
+    expect(screen.getByText('−500')).toBeTruthy();
+    // No total row anywhere on the ladder.
+    expect(screen.queryByRole('group', { name: /total/i })).toBeNull();
+    expect(screen.getAllByRole('group').filter((g) => g.hasAttribute('data-measure'))).toHaveLength(4);
+    expect(screen.getByText(/No total row\./)).toBeTruthy();
+  });
+
+  it('switches the SOM scenario and shows the capacity cap for Upside', async () => {
+    session.signIn(people.maya.id);
+    const { router } = renderAt('/me/cases/ME-104/sizing');
+    await screen.findByRole('heading', { name: 'Measure ladder' });
+    fireEvent.click(await screen.findByRole('button', { name: '▲ Upside' }));
+    const som = await waitFor(() => ladderRow('SOM · Upside · Year 3'));
+    expect(som.textContent).toContain('120 customers');
+    expect(som.textContent).toContain('€2.4m annual revenue');
+    expect(screen.getByText(/capped at 120/)).toBeTruthy();
+    expect(router.state.location.search).toContain('scenario=upside');
+  });
+
+  it('blocks when the TAM edit makes SAM larger than TAM; ladder hidden; undo restores (step 7)', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit draft input' }));
+    const form = screen.getByRole('form', { name: 'Edit a draft input' });
+    fireEvent.change(within(form).getByLabelText(/New value/), { target: { value: '500' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save to draft' }));
+    expect(await screen.findByText('Blocking: SAM is larger than TAM')).toBeTruthy();
+    expect(screen.getByText('Ladder values are hidden while a blocking check is open')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'SAM' })).toBeNull();
+    expect(screen.queryByText('€40m/year')).toBeNull();
+    const snap = screen.getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement;
+    expect(snap.disabled).toBe(true);
+    expect(screen.getByText('Blocked: SAM above TAM.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo edit' }));
+    await waitFor(() => expect(screen.queryByText('Blocking: SAM is larger than TAM')).toBeNull());
+    expect((await waitFor(() => ladderRow('SAM'))).textContent).toContain('€40m/year');
+  });
+
+  it('pauses on a duplicate cohort until one is kept', async () => {
+    session.signIn(people.maya.id);
+    setAssessmentScenario({ sizingVariant: 'duplicate_cohort' });
+    renderAt('/me/cases/ME-104/sizing');
+    expect(await screen.findByText('Duplicate cohort — calculation paused')).toBeTruthy();
+    expect(screen.getAllByText('Paused').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('group', { name: 'TAM' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText('Blocked: resolve the duplicate cohort.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep v1' }));
+    await waitFor(() => expect(screen.queryByText('Duplicate cohort — calculation paused')).toBeNull());
+    expect((await waitFor(() => ladderRow('SAM'))).textContent).toContain('€40m/year');
+  });
+
+  it('commits v2 and opens lineage on SAM with exact value, inputs and used-by (step 8)', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    fireEvent.click(await screen.findByRole('button', { name: 'Create snapshot v2' }));
+    expect(await screen.findByText(/Snapshot v2 · committed/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Lineage for SAM' }));
+    const dialog = await screen.findByRole('dialog', { name: 'SAM' });
+    await waitFor(() => expect(dialog.textContent).toContain('€40,000,000'));
+    expect(dialog.textContent).toContain('Inputs · one level');
+    expect(dialog.textContent).toContain('Size-qualified');
+    expect(dialog.textContent).toContain('Overlap removed');
+    const usedBy = within(dialog)
+      .getAllByRole('link')
+      .map((a) => a.textContent);
+    expect(usedBy).toEqual(expect.arrayContaining(['SOM', 'Economics']));
+  });
+
+  it('shows the restricted site-list banner for an aggregate-only viewer', async () => {
+    session.signIn(people.jonas.id);
+    renderAt('/me/cases/ME-104/sizing');
+    expect(await screen.findByText('Site list restricted under your access')).toBeTruthy();
+  });
+
+  it('editor (D-112 §2): a blank input is cleared to Unknown, never 0, and blocks the snapshot', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit sizing model' }));
+    const editor = await screen.findByRole('region', { name: 'Sizing draft editor' });
+    expect((within(editor).getByLabelText('Market unit') as HTMLInputElement).value).toBe(
+      'annual spend on water monitoring',
+    );
+    expect((within(editor).getByLabelText(/^Reference year/) as HTMLInputElement).value).toBe('2026');
+    expect((within(editor).getByLabelText(/^Product boundary/) as HTMLTextAreaElement).value).toContain(
+      'monitored service',
+    );
+    expect((within(editor).getByRole('checkbox', { name: 'Software' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    // Every input names its basis: Evidence (a source) or an Assumption (a register link).
+    const capBasis = within(editor).getByLabelText(
+      'Installation and support capacity · basis',
+    ) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(capBasis.selectedOptions[0]!.textContent).toMatch(/^ASM-08 · Capacity 120 customers/),
+    );
+    fireEvent.change(capBasis, { target: { value: '' } });
+    fireEvent.blur(capBasis);
+    expect(
+      await within(editor).findByText(
+        /Not available — add Installation and support capacity before calculating/,
+      ),
+    ).toBeTruthy();
+    const ledger = screen.getByRole('table', { name: 'Input ledger' });
+    const row = within(ledger)
+      .getByRole('rowheader', { name: 'Installation and support capacity' })
+      .closest('tr')!;
+    expect(row.textContent).toContain('Unknown');
+    expect(row.textContent).toContain('Not entered · blocks the snapshot');
+    expect(row.textContent).not.toMatch(/\b0 customers/);
+    const snap = within(editor).getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement;
+    expect(snap.disabled).toBe(true);
+    expect(within(editor).getByText('Blocked: add Installation and support capacity.')).toBeTruthy();
+    // Link it again: the draft calculates and the snapshot opens.
+    fireEvent.change(capBasis, { target: { value: capBasis.options[capBasis.options.length - 1]!.value } });
+    fireEvent.blur(capBasis);
+    await waitFor(() =>
+      expect(
+        (within(editor).getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it('editor: what is typed while the first save is in flight survives the switch to the ladder', async () => {
+    // A case with no sizing yet; the first save creates the draft and the screen changes layout.
+    let created = false;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const patches: Record<string, unknown>[] = [];
+    const afterSave = async (viewerId: string | null) => ({
+      ...(await sizingView(viewerId)),
+      current: null,
+      versions: [],
+    });
+    mockServer.use(
+      mock(API.sizing.get, async ({ viewerId }) =>
+        created
+          ? afterSave(viewerId)
+          : {
+              current: null,
+              draft: null,
+              duplicateCohorts: [],
+              siteListRestricted: false,
+              siteListDataOwner: null,
+              versions: [],
+            },
+      ),
+      mock(API.sizing.saveDraft, async ({ body, viewerId }) => {
+        patches.push(body as Record<string, unknown>);
+        if (patches.length === 1) await held;
+        created = true;
+        return afterSave(viewerId);
+      }),
+    );
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    fireEvent.click(await screen.findByRole('button', { name: 'Start the sizing model' }));
+    const editor = await screen.findByRole('region', { name: 'Sizing draft editor' });
+    const e = within(editor);
+    fireEvent.change(e.getByLabelText('Market unit'), {
+      target: { value: 'annual spend on water monitoring' },
+    });
+    fireEvent.change(e.getByLabelText(/^Reference year/), { target: { value: '2026' } });
+    fireEvent.blur(e.getByLabelText(/^Reference year/)); // the first save starts and is held
+    await waitFor(() => expect(patches).toHaveLength(1));
+    const boundary = e.getByLabelText(/^Product boundary/) as HTMLTextAreaElement;
+    fireEvent.change(boundary, { target: { value: 'Typed while the first save was in flight' } });
+    release();
+    // The draft exists: the ladder layout shows, with the same editor and the typed text kept.
+    expect(await screen.findByRole('heading', { name: 'Measure ladder' }, { timeout: 5000 })).toBeTruthy();
+    const after = screen.getByLabelText(/^Product boundary/) as HTMLTextAreaElement;
+    expect(after).toBe(boundary);
+    expect(after.value).toBe('Typed while the first save was in flight');
+    fireEvent.blur(after);
+    await waitFor(() =>
+      expect(patches.at(-1)).toMatchObject({
+        boundary: { productBoundary: 'Typed while the first save was in flight' },
+      }),
+    );
+  });
+
+  it('opens the lineage drawer from the research deep link', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing?input=adoption-rate&view=lineage');
+    const dialog = await screen.findByRole('dialog', { name: 'Adoption by year 3 · Base' });
+    await waitFor(() => expect(dialog.textContent).toContain('20%'));
+  });
+});

@@ -1,0 +1,26 @@
+# Skill bundle (D-019). Skills confer no permissions: tools are still checked by the gateway.
+key: validation-experiment-design
+version: 1.0.0
+owner: WS5 (AI/analysis) with domain reviewer sign-off
+status: active
+subject: case
+purpose: >-
+  Design a falsifiable validation experiment for the riskiest assumptions, with pre-registered metrics,
+  thresholds and decision rules.
+screens: [S09]
+prd: [ME-09, ME-10]
+allowed_tools: [evidence.get, sizing.calculate]
+output_schema: SkillOutput # see output.schema.json
+allowed_proposal_types: [experiment_design, claim]
+budget:
+  wall_time_ms: 300000
+  max_tool_calls: 20
+  max_input_tokens: 100000
+  max_output_tokens: 6000
+  max_cost_micros: 1500000
+model: config:ANALYSIS_MODEL # configuration only; never an identifier in code
+never:
+  - approve, decide, sign or record outcomes
+  - contact prospects or draft outreach before G1
+  - set thresholds after results are known, or move a pre-registered threshold
+  - produce probability or confidence scores

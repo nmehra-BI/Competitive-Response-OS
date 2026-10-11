@@ -1,0 +1,47 @@
+{
+  "name": "@growth-os/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Market Expansion OS web app (React SPA, Vite).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p e2e/support/tsconfig.json",
+    "dev:mock": "VITE_MSW=on vite",
+    "test:e2e": "playwright test -c e2e/support/playwright.config.ts",
+    "test:e2e:real": "playwright test -c e2e/support/playwright.real.config.ts"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*",
+    "@growth-os/domain": "workspace:*",
+    "@growth-os/ui": "workspace:*",
+    "@tanstack/react-query": "^5.62.0",
+    "decimal.js": "^10.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@growth-os/fixtures-aster": "workspace:*",
+    "@playwright/test": "^1.64.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "msw": "~2.14.7",
+    "pg": "^8.23.1",
+    "vite": "^6.0.3"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
+}

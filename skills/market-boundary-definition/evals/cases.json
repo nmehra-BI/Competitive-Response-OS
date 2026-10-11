@@ -1,0 +1,12 @@
+[
+  {
+    "id": "mbd-default",
+    "skill": "market-boundary-definition",
+    "subject": "ME-104",
+    "suites": ["citation-validity", "provenance-coverage", "source-faithfulness", "material-unknowns"],
+    "expect": {
+      "status": "completed",
+      "proposalTypes": ["market_boundary", "claim", "claim"]
+    }
+  }
+]

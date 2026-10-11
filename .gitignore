@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+
+# Node / build output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+playwright-report/
+playwright-report-real/
+test-results/
+
+# Local env and data
+.env
+.env.*
+!.env.example
+.data/
+*.log
+.DS_Store
+
+# Agent git worktrees (local only)
+.claude/worktrees/
+!docs/**/build/

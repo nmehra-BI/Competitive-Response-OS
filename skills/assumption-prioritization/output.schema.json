@@ -1,0 +1,90 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "claim"
+              },
+              "claim": {
+                "type": "object",
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["evidence", "assumption", "scenario", "actual", "inference_ai", "unknown"]
+                  },
+                  "evidenceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "confidenceNote": {
+                    "type": "null",
+                    "default": null
+                  }
+                },
+                "required": ["statement", "kind", "evidenceIds"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "claim"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "assumption_priority"
+              },
+              "assumptionId": {
+                "$ref": "#/properties/proposals/items/anyOf/0/properties/claim/properties/evidenceIds/items"
+              },
+              "suggestedSensitivity": {
+                "type": "string",
+                "enum": ["high", "medium", "low"]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "assumptionId", "suggestedSensitivity", "reason"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notChecked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": ["summary", "proposals", "unknowns", "notChecked"],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "assumption-prioritization output",
+  "description": "SkillOutput (@growth-os/contracts) for assumption-prioritization. Allowed proposal types: assumption_priority, claim."
+}

@@ -1,0 +1,31 @@
+[
+  {
+    "id": "resume-discovery-after-crash",
+    "skill": "mandate-to-search-plan",
+    "subject": "MD-21",
+    "interrupt": {
+      "tool": "evidence.get",
+      "times": 1
+    },
+    "suites": ["interrupted-run-recovery", "citation-validity"],
+    "expect": {
+      "status": "partial",
+      "notReexecuted": ["portfolio.get_product", "intelligence.search"]
+    }
+  },
+  {
+    "id": "resume-sizing-after-crash",
+    "skill": "bottom-up-sizing",
+    "subject": "ME-104",
+    "interrupt": {
+      "tool": "sizing.calculate",
+      "times": 1
+    },
+    "suites": ["interrupted-run-recovery", "arithmetic"],
+    "expect": {
+      "status": "completed",
+      "engineCalls": 1,
+      "notReexecuted": ["evidence.get"]
+    }
+  }
+]

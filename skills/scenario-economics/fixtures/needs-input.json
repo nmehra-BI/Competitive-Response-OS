@@ -1,0 +1,74 @@
+[
+  {
+    "type": "needs_input",
+    "question": "Should the summary lead with the base or the downside scenario?",
+    "options": ["Base", "Downside"]
+  },
+  {
+    "type": "tool_calls",
+    "calls": [
+      {
+        "callId": "se-1",
+        "tool": "economics.calculate",
+        "args": "${json:subject.economicsInput}"
+      }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Downside breaks even, base and upside are positive per year. The one-time investment stays separate; cash flow and payback are not available.",
+      "proposals": [
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Downside: 50 customers, €1,000,000 annual revenue, contribution after opex €0 per year (break-even).",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Base: 100 customers, €2,000,000 annual revenue, contribution after opex €600,000 per year.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Upside: capped at 120 customers by capacity, €2,400,000 annual revenue, contribution after opex €840,000 per year.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "The one-time scale-entry investment of €400,000 is shown separately and is not netted against any per-year figure.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Every scenario depends on the adoption assumption; the base case needs 20% adoption of the reachable pool.",
+            "kind": "assumption",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": [
+        "Cash flow and payback: ramp, retention, cash timing, partner margin and FX policy are not in the model"
+      ],
+      "notChecked": ["Taxes, working capital and financing"]
+    }
+  }
+]

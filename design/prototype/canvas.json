@@ -1,0 +1,184 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-08T12:00:00Z"
+ },
+ "title": "Competitive Response OS — Prototype",
+ "launch": {
+  "view": "canvas"
+ },
+ "pages": [],
+ "boards": {
+  "Main.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1440,
+   "h": 1180,
+   "title": "Overview — Maya Patel (CI lead)",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "DesignSystem.dc.html": {
+   "x": 1520,
+   "y": 0,
+   "w": 1440,
+   "h": 2700,
+   "title": "Foundations — tokens, status grammars, components",
+   "expand": "fill",
+   "is_interactive": false
+  },
+  "SignalInbox.dc.html": {
+   "x": 0,
+   "y": 3120,
+   "w": 1440,
+   "h": 1180,
+   "title": "Signal Inbox — triage and create case",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "CaseSummary.dc.html": {
+   "x": 1520,
+   "y": 3120,
+   "w": 1440,
+   "h": 1400,
+   "title": "Case Summary — CR-1042",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Evidence.dc.html": {
+   "x": 3040,
+   "y": 3120,
+   "w": 1440,
+   "h": 1360,
+   "title": "Evidence Workspace",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Impact.dc.html": {
+   "x": 0,
+   "y": 4940,
+   "w": 1440,
+   "h": 2000,
+   "title": "Impact Workspace — overlap and exposure",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "ResponseOptions.dc.html": {
+   "x": 1520,
+   "y": 4940,
+   "w": 1440,
+   "h": 1560,
+   "title": "Response Options",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Decision.dc.html": {
+   "x": 3040,
+   "y": 4940,
+   "w": 1440,
+   "h": 2050,
+   "title": "Decision Review — Elena Fischer",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "ActionPlan.dc.html": {
+   "x": 0,
+   "y": 7410,
+   "w": 1440,
+   "h": 1560,
+   "title": "Action Plan — release and sync recovery",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "MyActions.dc.html": {
+   "x": 1520,
+   "y": 7410,
+   "w": 1440,
+   "h": 1300,
+   "title": "My Actions — Jonas Weber",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Outcomes.dc.html": {
+   "x": 3040,
+   "y": 7410,
+   "w": 1440,
+   "h": 1600,
+   "title": "Outcomes — day-30 review",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Watchlists.dc.html": {
+   "x": 0,
+   "y": 9430,
+   "w": 1440,
+   "h": 1760,
+   "title": "Watchlists and portfolio import",
+   "expand": "fill",
+   "is_interactive": true
+  },
+  "Integrations.dc.html": {
+   "x": 1520,
+   "y": 9430,
+   "w": 1440,
+   "h": 1700,
+   "title": "Integrations, roles and audit",
+   "expand": "fill",
+   "is_interactive": true
+  }
+ },
+ "order": [
+  "Main.dc.html",
+  "DesignSystem.dc.html",
+  "SignalInbox.dc.html",
+  "CaseSummary.dc.html",
+  "Evidence.dc.html",
+  "Impact.dc.html",
+  "ResponseOptions.dc.html",
+  "Decision.dc.html",
+  "ActionPlan.dc.html",
+  "MyActions.dc.html",
+  "Outcomes.dc.html",
+  "Watchlists.dc.html",
+  "Integrations.dc.html"
+ ],
+ "notes": {
+  "n1": {
+   "x": 0,
+   "y": -300,
+   "text": "Foundations",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n2": {
+   "x": 0,
+   "y": 2820,
+   "text": "Signal → Evidence",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n3": {
+   "x": 0,
+   "y": 4640,
+   "text": "Impact → Decision",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n4": {
+   "x": 0,
+   "y": 7110,
+   "text": "Execution → Outcomes",
+   "kind": "title1",
+   "maxW": 3000
+  },
+  "n5": {
+   "x": 0,
+   "y": 9130,
+   "text": "Supporting views",
+   "kind": "title1",
+   "maxW": 3000
+  }
+ },
+ "designSystems": []
+}

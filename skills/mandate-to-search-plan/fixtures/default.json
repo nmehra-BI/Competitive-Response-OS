@@ -1,0 +1,96 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "msp-1", "tool": "portfolio.get_product", "args": {} },
+      {
+        "callId": "msp-2",
+        "tool": "intelligence.search",
+        "args": {
+          "query": "food-processing site census process-water trade survey",
+          "connection": "market_data"
+        }
+      },
+      {
+        "callId": "msp-3",
+        "tool": "intelligence.search",
+        "args": { "query": "food processing companies and sites Germany", "connection": "trade_registry" }
+      }
+    ]
+  },
+  {
+    "type": "tool_calls",
+    "calls": [
+      { "callId": "msp-4", "tool": "evidence.get", "args": { "sourceKey": "SRC-014" } },
+      { "callId": "msp-5", "tool": "evidence.get", "args": { "sourceKey": "SRC-021" } }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Search plan for German food-processing plants inside MD-21, with three candidates. Two overlap the existing OPP-07 and are flagged as likely duplicates. The trade registry was unavailable.",
+      "proposals": [
+        {
+          "type": "search_plan",
+          "segments": ["Food processing"],
+          "geographies": ["DE"],
+          "queries": [
+            "food-processing sites with a process-water treatment step",
+            "dairy and meat processing hygiene programmes",
+            "process-water monitoring adoption in food plants"
+          ],
+          "notValidatedNotice": "AI draft · not validated"
+        },
+        {
+          "type": "opportunity_candidate",
+          "name": "German food-processing plants",
+          "trigger": "Process-water monitoring cited in 2 trade sources (2026)",
+          "fitRationale": "Existing product monitors process water; segment and geography inside the mandate.",
+          "fitCriteria": [
+            { "criterion": "Inside mandate segment and geography", "result": "met" },
+            { "criterion": "Existing product fits the water process", "result": "met" },
+            { "criterion": "Partner channel coverage", "result": "unknown" }
+          ],
+          "unknowns": ["Adoption rate", "Specialist requirements"],
+          "evidenceIds": ["${passage:SRC-014}", "${passage:SRC-021}"],
+          "likelyDuplicateOfOpportunityId": "${id:key=OPP-07}"
+        },
+        {
+          "type": "opportunity_candidate",
+          "name": "German dairy plants",
+          "trigger": "Dairy hygiene programmes in 1 trade source",
+          "fitRationale": "Subset of food processing with similar water processes.",
+          "fitCriteria": [
+            { "criterion": "Inside mandate segment and geography", "result": "met" },
+            { "criterion": "Separate population from food processing", "result": "not_met" }
+          ],
+          "unknowns": ["Site count", "Price", "Channel"],
+          "evidenceIds": ["${passage:SRC-021}"],
+          "likelyDuplicateOfOpportunityId": "${id:key=OPP-07}"
+        },
+        {
+          "type": "opportunity_candidate",
+          "name": "German meat-processing plants",
+          "trigger": "Targeted water process named in 1 trade source",
+          "fitRationale": "Process-water treatment is part of the cleaning cycle; same product and geography.",
+          "fitCriteria": [
+            { "criterion": "Inside mandate segment and geography", "result": "met" },
+            { "criterion": "Existing product fits the water process", "result": "unknown" }
+          ],
+          "unknowns": ["Site count", "Price", "Adoption", "Channel"],
+          "evidenceIds": ["${passage:SRC-021}"],
+          "likelyDuplicateOfOpportunityId": null
+        }
+      ],
+      "unknowns": [
+        "Trade registry unavailable: company and site records not checked",
+        "Site counts for dairy and meat processing"
+      ],
+      "notChecked": [
+        "Trade registry records",
+        "CRM accounts",
+        "Prospect contact data (out of scope before G1)"
+      ]
+    }
+  }
+]

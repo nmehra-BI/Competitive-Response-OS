@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ap-default",
+    "skill": "assumption-prioritization",
+    "subject": "ME-104",
+    "suites": ["arithmetic", "material-unknowns"],
+    "expect": {
+      "status": "completed",
+      "engineCalls": 1,
+      "proposalTypes": [
+        "assumption_priority",
+        "assumption_priority",
+        "assumption_priority",
+        "assumption_priority"
+      ]
+    }
+  }
+]

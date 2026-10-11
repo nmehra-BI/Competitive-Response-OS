@@ -1,0 +1,110 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [
+      {
+        "callId": "pp-1",
+        "tool": "work.preview_tasks",
+        "args": {
+          "tasks": [
+            {
+              "title": "Confirm 4 pilot sites and contacts",
+              "function": "sales",
+              "ownerId": "${id:name=Jonas Klein}",
+              "dueOffsetDays": 14,
+              "dependsOnTitles": []
+            },
+            {
+              "title": "Install monitoring at 4 sites",
+              "function": "operations",
+              "ownerId": null,
+              "dueOffsetDays": 28,
+              "dependsOnTitles": ["Confirm 4 pilot sites and contacts"]
+            },
+            {
+              "title": "Adapt dashboards for food-processing workflow",
+              "function": "product",
+              "ownerId": "${id:name=Priya Shah}",
+              "dueOffsetDays": 21,
+              "dependsOnTitles": []
+            },
+            {
+              "title": "Weekly deployment-effort log (C2)",
+              "function": "operations",
+              "ownerId": "${id:name=Jonas Klein}",
+              "dueOffsetDays": 7,
+              "dependsOnTitles": ["Install monitoring at 4 sites"]
+            },
+            {
+              "title": "Day-90 review pack against thresholds",
+              "function": "strategy",
+              "ownerId": "${id:name=Maya Rao}",
+              "dueOffsetDays": 90,
+              "dependsOnTitles": ["Weekly deployment-effort log (C2)"]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Five pilot tasks drafted inside the approved scope; installation needs an owner before activation.",
+      "proposals": [
+        {
+          "type": "pilot_task",
+          "title": "Confirm 4 pilot sites and contacts",
+          "function": "sales",
+          "suggestedOwnerId": "${id:name=Jonas Klein}",
+          "deliverable": "Signed site list",
+          "dependsOnTitles": [],
+          "dueOffsetDays": 14
+        },
+        {
+          "type": "pilot_task",
+          "title": "Install monitoring at 4 sites",
+          "function": "operations",
+          "suggestedOwnerId": null,
+          "deliverable": "Install reports",
+          "dependsOnTitles": ["Confirm 4 pilot sites and contacts"],
+          "dueOffsetDays": 28
+        },
+        {
+          "type": "pilot_task",
+          "title": "Adapt dashboards for food-processing workflow",
+          "function": "product",
+          "suggestedOwnerId": "${id:name=Priya Shah}",
+          "deliverable": "Adaptation list v1",
+          "dependsOnTitles": [],
+          "dueOffsetDays": 21
+        },
+        {
+          "type": "pilot_task",
+          "title": "Weekly deployment-effort log (C2)",
+          "function": "operations",
+          "suggestedOwnerId": "${id:name=Jonas Klein}",
+          "deliverable": "Effort log per site",
+          "dependsOnTitles": ["Install monitoring at 4 sites"],
+          "dueOffsetDays": 7
+        },
+        {
+          "type": "pilot_task",
+          "title": "Day-90 review pack against thresholds",
+          "function": "strategy",
+          "suggestedOwnerId": "${id:name=Maya Rao}",
+          "deliverable": "Review pack",
+          "dependsOnTitles": ["Weekly deployment-effort log (C2)"],
+          "dueOffsetDays": 90
+        },
+        {
+          "type": "message_draft",
+          "title": "Internal kick-off note for the pilot team",
+          "body": "The 90-day monitoring pilot is approved for 4 sites. Please confirm your tasks and owners before activation. This is a draft; nothing has been sent."
+        }
+      ],
+      "unknowns": ["Owner for installation (operations)"],
+      "notChecked": ["Task tool project permissions (checked at preview by the pilot owner)"]
+    }
+  }
+]

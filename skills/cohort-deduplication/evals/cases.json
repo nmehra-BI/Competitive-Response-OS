@@ -1,0 +1,30 @@
+[
+  {
+    "id": "cd-default",
+    "skill": "cohort-deduplication",
+    "subject": "ME-104",
+    "suites": ["duplicate-population", "arithmetic"],
+    "expect": {
+      "status": "completed",
+      "engineCalls": 1,
+      "cohortDuplicates": [["Size-qualified", "Process-qualified"]]
+    }
+  },
+  {
+    "id": "cd-imported-duplicate",
+    "skill": "cohort-deduplication",
+    "subject": "ME-104",
+    "fixture": "duplicate",
+    "world": {
+      "duplicateCohort": true
+    },
+    "suites": ["duplicate-population", "material-unknowns"],
+    "expect": {
+      "status": "completed",
+      "cohortDuplicates": [
+        ["Process-qualified", "Process-qualified (imported)"],
+        ["Size-qualified", "Process-qualified"]
+      ]
+    }
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "type": "final",
+    "output": {
+      "summary": "Candidates",
+      "proposals": [{ "type": "opportunity_candidate", "name": "German food-processing plants" }],
+      "unknowns": []
+    }
+  },
+  {
+    "type": "final",
+    "output": {
+      "proposals": [{ "type": "gate_request", "gate": "G2" }],
+      "notChecked": "everything"
+    }
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "id": "se-default",
+    "skill": "scenario-economics",
+    "subject": "ME-104",
+    "suites": ["arithmetic", "unsupported-precision", "provenance-coverage", "material-unknowns"],
+    "expect": {
+      "status": "completed",
+      "engineCalls": 1,
+      "proposalTypes": ["claim", "claim", "claim", "claim", "claim"]
+    }
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "name": "@growth-os/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TaskConnector interface, typed connector errors, the simulated task tool with fault injection, and the Jira Cloud adapter (OAuth 2.0 3LO).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./jira-mock": "./src/jira/mock.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@growth-os/contracts": "workspace:*",
+    "kysely": "^0.27.5"
+  }
+}

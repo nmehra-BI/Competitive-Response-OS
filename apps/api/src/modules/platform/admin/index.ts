@@ -1,0 +1,584 @@
+/**
+ * Administration (S14). Tenant administrators configure roles, delegated authority, policies,
+ * connections and mappings, and read diagnostics. Invariants (never-rule 6, D-016):
+ *  - admins configure but never approve: no grant to a tenant administrator, no decision role
+ *    (sponsor, investment committee) together with tenant_admin, no change to one's own roles or grants;
+ *  - only human principals hold roles or authority;
+ *  - self-approval cannot be enabled: gate policy bodies carry selfApprovalAllowed: false (frozen schema);
+ *  - policies are versioned: publishing retires the previous active version, which stays readable.
+ */
+import {
+  API,
+  AnalysisRun,
+  ROLE_LABELS,
+  RUN_STATUS_LABELS,
+  type AuthorityGrant,
+  type GateCode,
+  type GatePolicyBody,
+  type Policy,
+  type RoleAssignment,
+  type RoleCode,
+} from '@growth-os/contracts';
+import type { Tx } from '@growth-os/db';
+import { roleAllows } from '../../../platform/authz';
+import type { Authorization, Identity } from '../../../platform/context';
+import { ApiError, forbidden, notFound } from '../../../platform/errors';
+import { command, query, type HandlerMap } from '../../../platform/pipeline';
+import { isoDate, isoDateTime, isoDateTimeOrNull, personRef } from '../../../platform/serialize';
+import { committeeHandlers } from './committee';
+import { licenceHandlers } from './licences';
+import { liveAnalysisHandlers } from './live-analysis';
+
+const configure = (identity: Identity): Authorization => roleAllows(identity.subject, 'admin.configure');
+const DECISION_ROLES: readonly RoleCode[] = ['sponsor', 'investment_committee'];
+const GATES: readonly GateCode[] = ['G0', 'G1', 'G2', 'G3', 'X'];
+
+export const invalid = (path: string, message: string) =>
+  new ApiError('VALIDATION_FAILED', 'Request validation failed', {
+    errors: [{ path, code: 'invalid', message }],
+  });
+
+// ----- serializers -----------------------------------------------------------------------------
+
+type RoleRow = {
+  id: string;
+  user_id: string;
+  role: string;
+  business_unit_id: string | null;
+  case_id: string | null;
+  granted_by: string;
+  granted_at: Date;
+  revoked_at: Date | null;
+};
+const toRole = (r: RoleRow): RoleAssignment => ({
+  id: r.id,
+  userId: r.user_id,
+  role: r.role as RoleCode,
+  businessUnitId: r.business_unit_id,
+  caseId: r.case_id,
+  grantedBy: r.granted_by,
+  grantedAt: isoDateTime(r.granted_at),
+  revokedAt: isoDateTimeOrNull(r.revoked_at),
+});
+
+type GrantRow = {
+  id: string;
+  user_id: string;
+  gate_code: string;
+  business_unit_id: string;
+  ceiling_amount: string | null;
+  currency: string | null;
+  valid_from: Date | string;
+  valid_to: Date | string | null;
+  granted_by: string;
+  revoked_at: Date | null;
+  doa_reference?: string | null;
+};
+export const toGrant = (g: GrantRow): AuthorityGrant => ({
+  id: g.id,
+  userId: g.user_id,
+  gateCode: g.gate_code as GateCode,
+  businessUnitId: g.business_unit_id,
+  ceilingAmount: g.ceiling_amount,
+  currency: g.currency,
+  validFrom: isoDate(g.valid_from),
+  validTo: g.valid_to === null ? null : isoDate(g.valid_to),
+  grantedBy: g.granted_by,
+  revokedAt: isoDateTimeOrNull(g.revoked_at),
+  doaReference: g.doa_reference ?? null,
+});
+
+/** D-123: a grant entered in S14 is valid for 12 months unless the DoA document says otherwise. */
+export function twelveMonthsFrom(validFrom: string): string {
+  const [y, m, d] = validFrom.split('-').map(Number) as [number, number, number];
+  const end = new Date(Date.UTC(y + 1, m - 1, d));
+  end.setUTCDate(end.getUTCDate() - 1);
+  return end.toISOString().slice(0, 10);
+}
+
+type PolicyRow = {
+  id: string;
+  kind: string;
+  key: string;
+  version: number;
+  status: string;
+  body: unknown;
+  created_by: string;
+  created_at: Date;
+};
+const toPolicy = (p: PolicyRow): Policy => ({
+  id: p.id,
+  kind: p.kind as Policy['kind'],
+  key: p.key,
+  version: p.version,
+  status: p.status as Policy['status'],
+  body: p.body,
+  createdBy: p.created_by,
+  createdAt: isoDateTime(p.created_at),
+});
+
+export async function humanUser(tx: Tx, userId: string): Promise<void> {
+  const u = await tx
+    .selectFrom('platform.app_user')
+    .select(['kind', 'is_active'])
+    .where('id', '=', userId)
+    .executeTakeFirst();
+  if (!u) throw invalid('body.userId', 'Unknown user');
+  if (u.kind !== 'human')
+    throw new ApiError('AGENT_IDENTITY_FORBIDDEN', 'Only people can hold roles or authority.');
+}
+
+export async function activeRoles(tx: Tx, userId: string, exceptId?: string): Promise<RoleCode[]> {
+  let q = tx
+    .selectFrom('platform.role_assignment')
+    .select(['id', 'role'])
+    .where('user_id', '=', userId)
+    .where('revoked_at', 'is', null);
+  if (exceptId) q = q.where('id', '<>', exceptId);
+  return (await q.execute()).map((r) => r.role as RoleCode);
+}
+
+/**
+ * D-109 / D-110 / D-122 fields of a gate policy: the committee quorum fits its seats and keeps the
+ * required seats; the sponsor ceiling is not above the committee's; the X rule only on X; G0 and G3
+ * never expire in the MVP.
+ */
+function validateGatePolicy(b: GatePolicyBody): void {
+  const seats = b.committeeSeats ?? [];
+  if (new Set(seats).size !== seats.length)
+    throw invalid('body.body.committeeSeats', 'Each committee seat appears once');
+  if (b.requiredSeats?.some((s) => !seats.includes(s)) && seats.length > 0)
+    throw invalid('body.body.requiredSeats', 'A required seat must be one of the committee seats');
+  if (seats.length > 0 && b.requiredApprovals > seats.length)
+    throw invalid('body.body.requiredApprovals', 'The quorum cannot exceed the number of seats');
+  if (seats.length > 0 && (b.requiredSeats?.length ?? 0) > b.requiredApprovals)
+    throw invalid('body.body.requiredSeats', 'Required seats must fit inside the quorum');
+  const a = b.authority;
+  if (a && a.sponsorCeiling !== null && a.committeeCeiling !== null) {
+    if (Number(a.sponsorCeiling) > Number(a.committeeCeiling))
+      throw invalid('body.body.authority', 'The sponsor ceiling cannot be above the committee ceiling');
+  }
+  if (b.extension && b.gateCode !== 'X')
+    throw invalid('body.body.extension', 'The extension rule belongs to the X gate policy');
+  if (b.extension) {
+    const share = Number(b.extension.maxBudgetShare);
+    const days = Number(b.extension.maxDurationShare);
+    if (!(share > 0 && share <= 1) || !(days > 0 && days <= 1))
+      throw invalid('body.body.extension', 'Shares are between 0 and 1');
+  }
+  if ((b.gateCode === 'G0' || b.gateCode === 'G3') && b.approvalExpires === true)
+    throw invalid('body.body.approvalExpires', 'G0 and G3 approvals do not expire in the MVP');
+}
+
+// ----- handlers -------------------------------------------------------------------------------
+
+export const adminHandlers: HandlerMap = {
+  // D-124, D-129, D-130 (E3): committee seats, licences and the live-analysis setting.
+  ...committeeHandlers,
+  ...licenceHandlers,
+  ...liveAnalysisHandlers,
+  [API.admin.roles.id]: query(API.admin.roles, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (_ctx, { tx }) => ({
+      items: (
+        await tx
+          .selectFrom('platform.role_assignment')
+          .selectAll()
+          .orderBy('granted_at')
+          .orderBy('id')
+          .execute()
+      ).map(toRole),
+    }),
+  }),
+
+  [API.admin.setRole.id]: command(API.admin.setRole, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (ctx, t) => {
+      const b = ctx.body;
+      if (b.userId === ctx.userId) throw forbidden('Administrators cannot change their own roles.');
+      await humanUser(t.tx, b.userId);
+      if (b.businessUnitId) {
+        const bu = await t.tx
+          .selectFrom('platform.business_unit')
+          .select('id')
+          .where('id', '=', b.businessUnitId)
+          .executeTakeFirst();
+        if (!bu) throw invalid('body.businessUnitId', 'Unknown business unit');
+      }
+      if (b.caseId) {
+        const c = await t.tx
+          .selectFrom('platform.workflow_case')
+          .select('id')
+          .where('id', '=', b.caseId)
+          .executeTakeFirst();
+        if (!c) throw invalid('body.caseId', 'Unknown case');
+      }
+      const existing = await t.tx
+        .selectFrom('platform.role_assignment')
+        .selectAll()
+        .where('id', '=', ctx.params.id)
+        .executeTakeFirst();
+      if (existing && existing.user_id !== b.userId)
+        throw invalid('body.userId', 'A role assignment cannot move to another person');
+      if (!b.revoked) {
+        const others = await activeRoles(t.tx, b.userId, ctx.params.id);
+        const resulting = new Set([...others, b.role]);
+        if (resulting.has('tenant_admin') && DECISION_ROLES.some((r) => resulting.has(r)))
+          throw forbidden(
+            'Administrators configure but never approve: tenant administrator and decision roles cannot be combined.',
+          );
+        if (b.role === 'tenant_admin') {
+          const grants = await t.tx
+            .selectFrom('platform.authority_grant')
+            .select('id')
+            .where('user_id', '=', b.userId)
+            .where('revoked_at', 'is', null)
+            .execute();
+          if (grants.length > 0)
+            throw forbidden(
+              'This person holds delegated authority; revoke it before making them an administrator.',
+            );
+        }
+      }
+      const values = {
+        role: b.role,
+        business_unit_id: b.businessUnitId,
+        case_id: b.caseId,
+        revoked_at: b.revoked ? (existing?.revoked_at ?? ctx.now) : null,
+      };
+      const row = existing
+        ? await t.tx
+            .updateTable('platform.role_assignment')
+            .set(values)
+            .where('id', '=', ctx.params.id)
+            .returningAll()
+            .executeTakeFirstOrThrow()
+        : await t.tx
+            .insertInto('platform.role_assignment')
+            .values({
+              id: ctx.params.id,
+              tenant_id: ctx.tenantId,
+              user_id: b.userId,
+              granted_by: ctx.userId,
+              granted_at: ctx.now,
+              ...values,
+            })
+            .returningAll()
+            .executeTakeFirstOrThrow();
+      await t.audit({
+        action: b.revoked ? 'admin.role_revoked' : existing ? 'admin.role_changed' : 'admin.role_granted',
+        objectType: 'role_assignment',
+        objectId: row.id,
+        caseId: b.caseId,
+        summary: `${b.revoked ? 'Revoked' : 'Granted'} role ${ROLE_LABELS[b.role]}`,
+        details: { userId: b.userId, role: b.role, businessUnitId: b.businessUnitId },
+        before: existing ? toRole(existing) : undefined,
+        after: toRole(row),
+      });
+      return toRole(row);
+    },
+  }),
+
+  [API.admin.authority.id]: query(API.admin.authority, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (ctx, { tx }) => {
+      const grants = await tx
+        .selectFrom('platform.authority_grant')
+        .selectAll()
+        .orderBy('created_at')
+        .execute();
+      const bus = await tx
+        .selectFrom('platform.business_unit')
+        .select(['id', 'name'])
+        .orderBy('key')
+        .execute();
+      const today = ctx.now.toISOString().slice(0, 10);
+      const effective = grants.filter(
+        (g) =>
+          !g.revoked_at &&
+          isoDate(g.valid_from) <= today &&
+          (g.valid_to === null || isoDate(g.valid_to) >= today),
+      );
+      const gaps = bus.flatMap((bu) =>
+        GATES.filter(
+          (gate) => !effective.some((g) => g.business_unit_id === bu.id && g.gate_code === gate),
+        ).map((gate) => ({
+          gateCode: gate,
+          businessUnitId: bu.id,
+          message: `No ${gate} approver in ${bu.name} · Authority gap`,
+        })),
+      );
+      return { items: grants.map(toGrant), gaps };
+    },
+  }),
+
+  [API.admin.setAuthority.id]: command(API.admin.setAuthority, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (ctx, t) => {
+      const b = ctx.body;
+      if (b.userId === ctx.userId) throw forbidden('Administrators cannot grant authority to themselves.');
+      await humanUser(t.tx, b.userId);
+      if (!b.revoked && (await activeRoles(t.tx, b.userId)).includes('tenant_admin'))
+        throw forbidden(
+          'Tenant administrators configure but never approve: they cannot hold delegated authority.',
+        );
+      if ((b.ceilingAmount === null) !== (b.currency === null))
+        throw invalid('body.currency', 'Set both a ceiling and its currency, or neither (no-spend gate)');
+      if (b.validTo !== null && b.validTo < b.validFrom)
+        throw invalid('body.validTo', 'Valid to must be on or after valid from');
+      // D-109 §2 / D-123: a grant comes from a Finance-signed delegation-of-authority document.
+      const doaReference = b.doaReference?.trim() || null;
+      const bu = await t.tx
+        .selectFrom('platform.business_unit')
+        .select('id')
+        .where('id', '=', b.businessUnitId)
+        .executeTakeFirst();
+      if (!bu) throw invalid('body.businessUnitId', 'Unknown business unit');
+      const existing = await t.tx
+        .selectFrom('platform.authority_grant')
+        .selectAll()
+        .where('id', '=', ctx.params.id)
+        .executeTakeFirst();
+      if (existing && existing.user_id !== b.userId)
+        throw invalid('body.userId', 'A grant cannot move to another person');
+      if (!b.revoked && !doaReference && !existing?.doa_reference)
+        throw invalid(
+          'body.doaReference',
+          'Enter the delegation-of-authority reference the grant comes from',
+        );
+      const values = {
+        gate_code: b.gateCode,
+        business_unit_id: b.businessUnitId,
+        ceiling_amount: b.ceilingAmount,
+        currency: b.currency,
+        valid_from: b.validFrom,
+        // A new grant without an end date gets the 12-month default (D-123).
+        valid_to: b.validTo ?? (existing ? null : twelveMonthsFrom(b.validFrom)),
+        revoked_at: b.revoked ? (existing?.revoked_at ?? ctx.now) : null,
+        doa_reference: doaReference ?? existing?.doa_reference ?? null,
+      };
+      const row = existing
+        ? await t.tx
+            .updateTable('platform.authority_grant')
+            .set(values)
+            .where('id', '=', ctx.params.id)
+            .returningAll()
+            .executeTakeFirstOrThrow()
+        : await t.tx
+            .insertInto('platform.authority_grant')
+            .values({
+              id: ctx.params.id,
+              tenant_id: ctx.tenantId,
+              user_id: b.userId,
+              granted_by: ctx.userId,
+              created_at: ctx.now,
+              ...values,
+            })
+            .returningAll()
+            .executeTakeFirstOrThrow();
+      await t.audit({
+        action: b.revoked
+          ? 'admin.authority_revoked'
+          : existing
+            ? 'admin.authority_changed'
+            : 'admin.authority_granted',
+        objectType: 'authority_grant',
+        objectId: row.id,
+        summary: `${b.revoked ? 'Revoked' : 'Set'} ${b.gateCode} authority`,
+        details: {
+          userId: b.userId,
+          gateCode: b.gateCode,
+          businessUnitId: b.businessUnitId,
+          ceiling: b.ceilingAmount,
+          currency: b.currency,
+          doaReference: values.doa_reference,
+          validTo: values.valid_to,
+        },
+        before: existing ? toGrant(existing) : undefined,
+        after: toGrant(row),
+      });
+      return toGrant(row);
+    },
+  }),
+
+  [API.admin.policies.id]: query(API.admin.policies, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (_ctx, { tx }) => ({
+      items: (
+        await tx
+          .selectFrom('platform.policy')
+          .selectAll()
+          .where('status', '=', 'active')
+          .orderBy('kind')
+          .orderBy('key')
+          .execute()
+      ).map(toPolicy),
+    }),
+  }),
+
+  [API.admin.publishPolicy.id]: command(API.admin.publishPolicy, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (ctx, t) => {
+      const { kind, key, body } = ctx.body;
+      if (kind === 'gate' && body.gateCode !== key)
+        throw invalid('body.key', 'Gate policy key must be its gate code');
+      if (kind === 'gate') validateGatePolicy(body as GatePolicyBody);
+      const prev = await t.tx
+        .selectFrom('platform.policy')
+        .select(['id', 'version', 'status'])
+        .where('kind', '=', kind)
+        .where('key', '=', key)
+        .orderBy('version', 'desc')
+        .forUpdate()
+        .execute();
+      await t.tx
+        .updateTable('platform.policy')
+        .set({ status: 'retired' })
+        .where('kind', '=', kind)
+        .where('key', '=', key)
+        .where('status', '=', 'active')
+        .execute();
+      const row = await t.tx
+        .insertInto('platform.policy')
+        .values({
+          tenant_id: ctx.tenantId,
+          kind,
+          key,
+          version: (prev[0]?.version ?? 0) + 1,
+          status: 'active',
+          body: JSON.stringify(body),
+          created_by: ctx.userId,
+          created_at: ctx.now,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await t.audit({
+        action: 'admin.policy_published',
+        objectType: 'policy',
+        objectId: row.id,
+        objectVersion: row.version,
+        summary: `Published ${kind.replace(/_/g, ' ')} policy ${key} v${row.version}`,
+        details: { kind, key, version: row.version },
+        after: body,
+      });
+      return toPolicy(row);
+    },
+  }),
+
+  [API.admin.entitlements.id]: query(API.admin.entitlements, {
+    authorize: (ctx) => configure(ctx.identity),
+    handle: async (_ctx, { tx }) => {
+      const licenses = await tx.selectFrom('platform.license').selectAll().orderBy('key').execute();
+      const ents = await tx.selectFrom('platform.source_entitlement').selectAll().execute();
+      const users = await tx.selectFrom('platform.app_user').select(['id', 'display_name']).execute();
+      const nameOf = (e: (typeof ents)[number]) =>
+        e.principal_type === 'user'
+          ? (users.find((u) => u.id === e.principal)?.display_name ?? 'Unknown person')
+          : e.principal === 'case_member'
+            ? 'Case members'
+            : e.principal === '*'
+              ? 'Everyone'
+              : (ROLE_LABELS[e.principal as RoleCode] ?? e.principal);
+      return {
+        items: licenses.map((l) => {
+          const mine = ents.filter((e) => e.license_id === l.id);
+          return {
+            licenseId: l.id,
+            sourceLabel: l.name,
+            licenseText: l.boundary_text,
+            excerptVisibleTo: mine.filter((e) => e.access === 'excerpt').map(nameOf),
+            othersSee: (mine.find((e) => e.principal_type === 'role' && e.principal === '*')?.access ??
+              'none') as 'excerpt' | 'aggregate_only' | 'none',
+          };
+        }),
+      };
+    },
+  }),
+
+  // admin.connections, admin.testConnection and admin.reconnect live in ./connections.ts (Jira Cloud,
+  // W4-E5); admin.setMapping and admin.checkMapping in ./mapping.ts (W4-E4).
+
+  [API.admin.runDiagnostics.id]: query(API.admin.runDiagnostics, {
+    authorize: (ctx) => roleAllows(ctx.identity.subject, 'diagnostics.read'),
+    handle: async (_ctx, { tx }) => {
+      const r = await tx
+        .selectFrom('platform.agent_run')
+        .selectAll()
+        .where('id', '=', _ctx.params.id)
+        .executeTakeFirst();
+      if (!r) throw notFound();
+      const requester = await tx
+        .selectFrom('platform.app_user')
+        .select(['id', 'display_name', 'title', 'initials'])
+        .where('id', '=', r.requested_by)
+        .executeTakeFirstOrThrow();
+      const steps = await tx
+        .selectFrom('platform.agent_run_step')
+        .selectAll()
+        .where('run_id', '=', r.id)
+        .orderBy('seq')
+        .execute();
+      const calls = await tx
+        .selectFrom('platform.tool_call')
+        .selectAll()
+        .where('run_id', '=', r.id)
+        .orderBy('created_at')
+        .execute();
+      const run = AnalysisRun.parse({
+        id: r.id,
+        caseId: r.case_id,
+        mandateId: r.subject_type === 'mandate' ? r.subject_id : null,
+        skill: r.skill_key,
+        skillVersion: r.skill_version,
+        goal: r.goal,
+        status: r.status,
+        statusLabel: RUN_STATUS_LABELS[r.status as keyof typeof RUN_STATUS_LABELS],
+        statusDetail: r.status_detail,
+        requestedBy: personRef(requester),
+        provider: r.provider,
+        modelConfig: r.model_config,
+        inputSnapshotHash: r.input_snapshot_hash,
+        budget: r.budget,
+        usage: r.usage,
+        lastCheckpointSeq: r.last_checkpoint_seq,
+        needsInput: r.needs_input ?? null,
+        error: r.error ?? null,
+        createdAt: isoDateTime(r.created_at),
+        startedAt: isoDateTimeOrNull(r.started_at),
+        finishedAt: isoDateTimeOrNull(r.finished_at),
+        correlationId: r.correlation_id,
+      });
+      return {
+        run,
+        steps: steps.map((s) => ({
+          id: s.id,
+          runId: s.run_id,
+          seq: s.seq,
+          kind: s.kind as 'provider_call',
+          status: s.status as 'started',
+          summary: s.summary,
+          startedAt: isoDateTime(s.started_at),
+          finishedAt: isoDateTimeOrNull(s.finished_at),
+        })),
+        toolCalls: calls.map((c) => ({
+          id: c.id,
+          runId: c.run_id,
+          tool: c.tool_name as 'evidence.get',
+          toolVersion: c.tool_version,
+          argsHash: c.args_hash,
+          argsRedacted: (c.args_redacted ?? {}) as Record<string, unknown>,
+          scopeCheck: c.scope_check as {
+            tenant: boolean;
+            entitlement: boolean | null;
+            schema: boolean;
+            budget: boolean;
+          },
+          outcome: c.outcome as 'ok',
+          resultSummary: c.result_summary,
+          latencyMs: c.latency_ms,
+          createdAt: isoDateTime(c.created_at),
+        })),
+      };
+    },
+  }),
+};

@@ -1,0 +1,37 @@
+[
+  {
+    "type": "final",
+    "output": {
+      "summary": "Mixed results: paid use 3 of 4 (not met), deployment effort above the assumption (not met), buyer fit mixed (inconclusive). Recommendation: revise and extend, not scale.",
+      "proposals": [
+        {
+          "type": "outcome_review_draft",
+          "whatWeLearned": [
+            "Three of four pilot customers met the paid-use and continuation threshold; one did not.",
+            "Deployment effort per site was above the assumption. Installation needs more operations time than planned.",
+            "The specialist sign-off covered the pilot only. Scale readiness has not been reviewed."
+          ],
+          "causalLimitations": [
+            "4 sites, no comparison group.",
+            "Winter production period only.",
+            "Results describe these sites, not the reachable pool.",
+            "No revenue is attributed to the pilot beyond its own billing."
+          ],
+          "recommendedOutcome": "extend",
+          "rationale": "Not scale. Test deployment effort and the fourth site under a scoped extension before any G3 request."
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "G3 preconditions are not met: the demand threshold and the scale-readiness review are open.",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": ["Whether the fourth site's decline was price or timing"],
+      "notChecked": ["Economics refreshed with pilot actuals"]
+    }
+  }
+]

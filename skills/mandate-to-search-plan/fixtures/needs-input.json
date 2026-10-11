@@ -1,0 +1,31 @@
+[
+  {
+    "type": "needs_input",
+    "question": "Should dairy plants count as part of food processing or as a separate candidate?",
+    "options": ["Part of food processing", "Separate candidate"]
+  },
+  {
+    "type": "tool_calls",
+    "calls": [{ "callId": "ni-1", "tool": "evidence.get", "args": { "sourceKey": "SRC-021" } }]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "Dairy plants kept as a separate candidate, flagged as a likely duplicate of OPP-07.",
+      "proposals": [
+        {
+          "type": "opportunity_candidate",
+          "name": "German dairy plants",
+          "trigger": "Dairy hygiene programmes in 1 trade source",
+          "fitRationale": "Subset of food processing with similar water processes.",
+          "fitCriteria": [{ "criterion": "Inside mandate segment and geography", "result": "met" }],
+          "unknowns": ["Site count"],
+          "evidenceIds": ["${passage:SRC-021}"],
+          "likelyDuplicateOfOpportunityId": "${id:key=OPP-07}"
+        }
+      ],
+      "unknowns": [],
+      "notChecked": ["Trade registry records"]
+    }
+  }
+]

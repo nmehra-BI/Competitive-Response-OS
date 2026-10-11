@@ -1,0 +1,26 @@
+{
+  "name": "@growth-os/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fastify API (modular monolith). Registers every endpoint in @growth-os/contracts ENDPOINTS.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.1",
+    "@fastify/multipart": "^9.4.0",
+    "@growth-os/ai": "workspace:*",
+    "@growth-os/connectors": "workspace:*",
+    "@growth-os/contracts": "workspace:*",
+    "@growth-os/db": "workspace:*",
+    "@growth-os/domain": "workspace:*",
+    "@growth-os/fixtures-aster": "workspace:*",
+    "@growth-os/ui": "workspace:*",
+    "fastify": "^5.2.0",
+    "zod": "^3.24.1"
+  }
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "id": "atw-default",
+    "skill": "ability-to-win-assessment",
+    "subject": "ME-104",
+    "suites": ["feasibility-blockers", "material-unknowns", "provenance-coverage", "citation-validity"],
+    "expect": {
+      "status": "partial"
+    }
+  }
+]

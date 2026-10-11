@@ -1,0 +1,32 @@
+[
+  {
+    "type": "tool_calls",
+    "calls": [{ "callId": "cd-1", "tool": "sizing.calculate", "args": "${json:subject.sizingInput}" }]
+  },
+  {
+    "type": "final",
+    "output": {
+      "summary": "The two committed cohorts overlap; the committed overlap of 500 sites is the one the engine applies. No other duplicate found.",
+      "proposals": [
+        {
+          "type": "cohort_dedup",
+          "cohortAId": "${id:label=Size-qualified}",
+          "cohortBId": "${id:label=Process-qualified}",
+          "proposedOverlap": 500,
+          "method": "Aggregate overlap from the dedup run (sizing engine input), not a new estimate"
+        },
+        {
+          "type": "claim",
+          "claim": {
+            "statement": "Removing the overlap of 500 sites leaves a SAM of 2,000 unique sites (sizing engine).",
+            "kind": "inference_ai",
+            "evidenceIds": [],
+            "confidenceNote": null
+          }
+        }
+      ],
+      "unknowns": ["Site-ID lists were not read (restricted); overlap rests on the aggregate count"],
+      "notChecked": ["Site-ID union method"]
+    }
+  }
+]
