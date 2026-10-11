@@ -714,6 +714,23 @@ flowchart TD
   X -->|no| XS["skipped (executed or not due)"]
 ```
 
+**Fix (2026-10-11, D-180) — entry points to the decision package.** The case header "Open decision package"
+and S01 "Decisions awaiting you" linked to `/me/cases/ME-104/decision`. That route does not exist, so the router
+showed "This page could not be found.". "Review preconditions" linked to `/gates`, and S01 "Overdue validation"
+to `/assumptions`, which were also not found. The mocks used the right shape, so only the real stack failed.
+API links now come from `apps/api/src/modules/me/cases/links.ts`:
+
+| Entry point | Link |
+|---|---|
+| Case header "Open decision package", S01 "Decisions awaiting you", Reviews inbox, My Work › Approvals | `/me/cases/ME-104/decisions?gate=G2` (`G1`, `X` alike) |
+| Case header "Review preconditions" | G0 → `/me/mandates/MD-xx`, G1 → `…/validation`, G2 → `…/decisions?gate=G2`, G3 → `…/outcomes` |
+| S01 "Overdue validation" | `…/validation?assumption=ASM-xx` |
+| S10 "Open printable decision brief" (X too, now found through the outcome review) | `…/brief?gate=X&version=n` |
+
+An empty gate on S10 names where it is prepared ("Open Validation", "Open Outcomes"). Tests: `links.test.ts`,
+`links.db.test.ts`, `app/routes.test.tsx`, `real/entry-points.spec.ts` and `aster-journey` step 10 (the S09 G1
+link).
+
 ---
 
 ### WF-07 — Pilot activation → outbox → connector, partial failure and idempotent retry
@@ -969,6 +986,14 @@ sequenceDiagram
   Domain-->>API: 4 unmet - demand 3 of 4 (4 of 4 required), specialist scale-readiness incomplete, economics and capacity not updated after the pilot, no scale budget stated
   API-->>Maya: 409 PRECONDITIONS_UNMET with four blockers, button disabled with the summary
 ```
+
+**Fix (2026-10-11, D-180) — Outcomes before the pilot.** `GET /me/cases/:caseRef/outcome-review` returns 404
+until activation creates the review. S12 showed that as "This page could not be found." on every case before
+the pilot, including a new case from S01. The frozen endpoint keeps its 404. S12 shows "No outcome review yet"
+when the case header loaded, because both reads use the same visibility rule. The page links to the next
+action: "Open G2 request", or "Open pilot plan" once G2 is approved. A hidden or unknown case still shows the
+generic not-found banner (never-rule 8). S01 "Pilots needing review" and the Outcomes tab open S12, and S12
+"Open ME-104-X1 in Decisions" opens the X package (`real/entry-points.spec.ts`).
 
 ---
 
