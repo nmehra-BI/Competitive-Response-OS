@@ -1182,6 +1182,38 @@ deleted; provenance stays. S14 edits the confirmation, term end and on-expiry ac
 | Inspect impacted cases (inaccessible ones not counted) | Maya | S13 impact | same |
 | Connections and authority gaps (admins cannot approve) | Admin | S14 | `/admin/connections`, `/admin/authority` |
 
+### WF-11 — Deploy and job processing on Vercel
+
+Deployment stage (2026-10-11; decisions D-160 … D-168; runbook `docs/market-expansion/DEPLOYMENT.md`). The build
+migrates and seeds Supabase once; at run time one function serves the API and drains jobs after each command, with a
+daily cron as the safety net. There is no always-on worker.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Op as Operator
+  participant Build as Vercel build
+  participant Fn as Vercel function (Fastify)
+  participant Cron as Vercel Cron (daily)
+  participant DB as Supabase Postgres
+  Op->>DB: cloud-db-bootstrap.sql once as postgres (roles NOBYPASSRLS, grants)
+  Op->>Build: deploy (production)
+  Build->>DB: migrate 0001…0007 + graphile_worker as me_owner (session pooler)
+  Build->>DB: seed aster-demo if the Aster tenant is absent
+  Build-->>Fn: .vercel/output (SPA, function, routes, cron)
+  actor Maya as Maya Rao
+  Maya->>Fn: POST /api/v1/... (command, behind Vercel Authentication)
+  Fn->>DB: withTenant: state + audit + analytics + outbox + add_job (one transaction, transaction pooler)
+  Fn-->>Maya: 2xx
+  Fn->>DB: waitUntil: drain as me_worker (session pooler): upsert next-occurrence cron jobs, run due jobs
+  Note over Fn,DB: outbox.dispatch re-checks authorization and approval expiry at claim (never-rule 10)
+  Fn->>DB: stop when idle or after 20 s; no job left locked
+  Cron->>Fn: GET /api/internal/jobs/run (Bearer CRON_SECRET)
+  Fn->>DB: same drain, 45 s budget
+  Op->>Fn: GET /api/internal/jobs/run without the secret
+  Fn-->>Op: 401
+```
+
 ## End-to-end journey map (2026-10-09)
 
 The 30 acceptance steps of BUILD_PLAN §8, with the workflow each exercises, the screen route, the main API endpoints

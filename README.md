@@ -79,3 +79,12 @@ Moving the clock runs the pilot-window and approval-expiry timers at once.
 The real-stack project starts its own API, AI-down API, worker and Vite on ports 4710/4711/5710/5711 and
 resets + seeds the e2e database before each spec file. Set `E2E_CHROMIUM_PATH` to use a preinstalled
 Chromium; otherwise run `pnpm --filter @growth-os/web exec playwright install chromium` once.
+
+## Deploy
+
+A demo deployment runs on **Vercel** (SPA, one function wrapping the Fastify API, job drains) with **Supabase
+Postgres** as the database, behind Vercel Authentication. `pnpm vercel-build` migrates and seeds (production builds),
+builds the web app and writes `.vercel/output`; jobs run in a bounded drain after each command and from a daily cron
+(`/api/internal/jobs/run`, Bearer `CRON_SECRET`). Dev login on a hosted runtime needs `AUTH_MODE=dev` **and**
+`DEMO_MODE=1`. One-time database setup: `scripts/cloud-db-bootstrap.sql`. Full runbook (environment variables,
+secrets rotation, reseed, Jira Cloud, limits): [`docs/market-expansion/DEPLOYMENT.md`](docs/market-expansion/DEPLOYMENT.md).

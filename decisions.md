@@ -2526,3 +2526,96 @@ residency, SSO/SCIM, backups and a pen test (PRD §13).
 integration account; (2) the disconnect endpoint (CR-E5-1); (3) customer Finance values for ceilings and the
 committee entered in S14; (4) licence confirmations entered for every licensed source; (5) SSO and the hosting items
 above. Nothing in the product workflow itself blocks a pilot any more.
+
+## Stage: Deployment — Vercel and Supabase (2026-10-11)
+
+A demo deployment of the full stack: web, API and jobs on Vercel (Hobby), the system of record on Supabase
+Postgres 17 (project "Competitive-intel", ap-southeast-1). Synthetic Aster data only, behind Vercel Authentication.
+Runbook: `docs/market-expansion/DEPLOYMENT.md`; workflow: `artifacts.md` WF-11.
+
+### D-160 — One Vercel function wraps the Fastify app; Build Output API; static SPA
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: `apps/vercel` (new workspace) holds the function entry (`handler.ts`) and the build (`build.ts`). The
+  build writes `.vercel/output` (Build Output API v3): the Vite SPA as static files with an `index.html` fallback,
+  one Node 22 function (`api.func`, an esbuild bundle of the existing `buildServer()` with every registry handler)
+  serving `/api/*` and `/healthz`, the routes with security headers, and the cron. One Fastify app and one small
+  `me_app` pool (max 3) per warm instance. Region `sin1`, next to the database. `apps/api`, `apps/worker` and
+  `packages/db` gained package `exports` for the entry; no contract changed.
+- Alternatives considered: `api/[...path].ts` with zero-config `@vercel/node` (workspace packages ship TypeScript
+  source, D-002, which that builder does not compile reliably across packages); a container host (not available).
+- Consequences: the API is the same code as locally; `pnpm dev` and CI are unchanged.
+
+### D-161 — Jobs: a bounded drain after every command, an HTTP drain endpoint and a daily cron
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: no always-on worker. After a successful state-changing `/api/v1` request the function calls
+  `waitUntil(drainJobs({ budgetMs: 20 s }))` (`apps/worker/src/drain.ts`): graphile-worker `run()` with concurrency 1
+  on the session pooler, stopped gracefully when no job is due or the budget is spent, so no job is left locked.
+  One drain per instance at a time. `GET|POST /api/internal/jobs/run` runs the same drain (45 s) and requires
+  `Authorization: Bearer CRON_SECRET` (constant-time compare; no secret configured → 503, fail closed). Vercel Cron
+  calls it once a day (`17 3 * * *`), the Hobby maximum.
+- Consequences: outbox dispatch, analysis runs, evidence ingest and timers run seconds after the command that
+  enqueued them. Never-rule 10 holds: the outbox re-checks authorization at claim, and approval effectiveness is
+  computed from `expires_at` (D-075), so a late timer only delays the visible "Expired" status.
+
+### D-162 — Periodic tasks become "next occurrence" jobs
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: graphile-worker's in-process crontab needs a running worker. Each drain instead upserts one job per
+  `CRONTAB` task at its next UTC occurrence with `job_key cron:<task>` and `job_key_mode preserve_run_at`. A pending
+  (possibly overdue) occurrence keeps its time and runs at the next drain; missed occurrences collapse into one;
+  after it runs, the next drain schedules the following one. The long-running worker keeps its crontab.
+- Consequences: sweeps run at most once per occurrence and no later than the next command or the daily cron.
+
+### D-163 — Supabase: pooler roles, TLS and a one-time bootstrap
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: the API connects as `me_app` through the **transaction pooler** (6543); `withTenant()` already uses
+  `set_config(…, true)` (transaction-local), the app issues no session `SET`, `LISTEN` or named prepared statements.
+  Jobs (`me_worker`) and the build (`me_owner`) use the **session pooler** (5432). Pooler user names are
+  `<role>.<project_ref>`; the working host is `aws-1-ap-southeast-1.pooler.supabase.com`. `DATABASE_SSL`
+  (`disable`/`require`/`verify` + `DATABASE_CA_CERT`) feeds every client through `pgConfig()`; deployment uses
+  `require`. `scripts/cloud-db-bootstrap.sql`, run once as `postgres`, creates the three roles (NOSUPERUSER,
+  NOBYPASSRLS; Supabase's `postgres` may not name those attributes in ALTER ROLE, so they are set at CREATE),
+  grants CONNECT/CREATE as `db-up.sh` does, puts `extensions` (pgcrypto's schema on Supabase) on the roles'
+  `search_path`, and pre-creates `public.schema_migration` owned by `me_owner` with RLS on and no Data API grants.
+  The migration runner checks for that table before `CREATE TABLE IF NOT EXISTS`, which needs CREATE on `public`
+  even when the table exists.
+- Consequences: migrations 0001–0007 needed no change (no unqualified `digest()`; `gen_random_uuid()` and
+  `sha256()` are built in). The full `test:db` suite (68 files) passes on a local database laid out like Supabase
+  (pgcrypto in `extensions`, owner without CREATE on `public`).
+
+### D-164 — Migrate and seed in the production build, idempotently
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: production builds run the repo's own `migrateDatabase()` (append-only, checksummed) and the graphile-worker
+  schema as `me_owner`, then seed `aster-demo` only when the Aster tenant is absent (`AlreadySeededError` → skip).
+  Preview builds skip both unless `MIGRATE_ON_BUILD=1`. Only host names and step results are logged.
+- Consequences: redeploys never reseed; reseeding is a documented manual reset.
+
+### D-165 — Dev login and dev routes on a hosted runtime need DEMO_MODE=1
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: `devFeaturesAllowed()` (packages/db/clock.ts) = `AUTH_MODE=dev` and, when `NODE_ENV=production` or
+  `VERCEL=1`, also `DEMO_MODE=1`; the API's `authMode` comes from it, so without the flag the persona picker, dev
+  clock and simulator routes are not even registered. The dev clock's former `NODE_ENV≠production` checks now read
+  `hostedWithoutDemo()`. Illustrative-tenant checks (database and API) are unchanged. This demo runs with
+  `DEMO_MODE=1`. Supersedes the "production code paths read no offset" consequence of D-091 only for a hosted demo
+  that sets the flag explicitly.
+
+### D-166 — Demo limits accepted on Vercel
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: uploaded source files go to the function's `/tmp` (per instance, ephemeral); a bucket behind the
+  `ObjectStore` interface is needed before real use. Skill bundles ship next to the function for the fixture
+  provider. `ANALYSIS_PROVIDER=fixture` (D-120) and `TASK_CONNECTOR=simulated` (no Atlassian OAuth app yet).
+
+### D-167 — Access: Vercel Authentication on every deployment; secrets as sensitive variables
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Decision: project `market-expansion-os` has Vercel Authentication on all deployments, production included
+  (allowed on Hobby), so only the owner's Vercel team can open it. All variables are `sensitive` for Production and
+  Preview; `SESSION_SECRET`, `CRON_SECRET`, `CONNECTOR_TOKEN_KEY` and the role passwords were generated locally and
+  never printed. Responses carry a CSP (self, Google Fonts, vercel.live), HSTS, `nosniff`, `frame-ancestors 'none'`
+  and `Cache-Control: no-store` on `/api/*`; the session cookie stays `Secure`.
+
+### D-168 — Deploy by upload, not by Git, for this branch
+- Date: 2026-10-11 · Stage: Deployment · Status: Accepted
+- Context: this branch is not pushed (the orchestrator integrates), and Vercel can only build pushed commits.
+- Decision: the deployment uploads two files — `vercel-bootstrap.sh` and the branch's code diff as `overlay.patch`.
+  The build downloads the public base commit `e39afc2` (main), applies the patch, installs with the lockfile
+  (pnpm 10.28.0) and runs `pnpm vercel-build`. After the branch merges, link the project to the repository and
+  deploy `main` directly with `vercel.json` (`pnpm vercel-build`).
