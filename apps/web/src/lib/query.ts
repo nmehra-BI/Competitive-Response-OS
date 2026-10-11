@@ -153,7 +153,16 @@ const EXTRA: Record<string, string[]> = {
   'admin.completeAuthorization': [...g('taskSync'), ...g('pilot')],
 };
 
-const NOT_CASE_SCOPED = new Set(['auth', 'search', 'admin', 'dev', 'evidence', 'mandates', 'comparisons']);
+const NOT_CASE_SCOPED = new Set([
+  'auth',
+  'search',
+  'admin',
+  'dev',
+  'evidence',
+  'mandates',
+  'comparisons',
+  'onboarding', // CR-ONB-1 (D-191): the person's own guide state, never case-scoped
+]);
 
 function groupOf(id: string): keyof typeof API | undefined {
   return (Object.keys(API) as (keyof typeof API)[]).find((k) =>
