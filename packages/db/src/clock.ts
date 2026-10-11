@@ -6,8 +6,23 @@
 import { sql } from 'kysely';
 import type { Tx } from './index';
 
+/**
+ * Dev features (persona login, dev clock, simulator routes) need AUTH_MODE=dev. On a hosted runtime
+ * (NODE_ENV=production or Vercel) they also need the explicit demo flag DEMO_MODE=1 (D-165); the
+ * illustrative-tenant checks still apply on top of this.
+ */
+export function devFeaturesAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.AUTH_MODE === 'dev' && !hostedWithoutDemo(env);
+}
+
+/** A hosted runtime (NODE_ENV=production or Vercel) without DEMO_MODE=1: no dev feature may answer. */
+export function hostedWithoutDemo(env: NodeJS.ProcessEnv = process.env): boolean {
+  const hosted = env.NODE_ENV === 'production' || env.VERCEL === '1';
+  return hosted && env.DEMO_MODE !== '1';
+}
+
 export function devClockAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.AUTH_MODE === 'dev' && env.NODE_ENV !== 'production';
+  return devFeaturesAllowed(env);
 }
 
 /** The current tenant's dev-clock offset in ms (0 when none is set). Runs inside withTenant(). */

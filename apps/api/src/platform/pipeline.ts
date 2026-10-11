@@ -25,7 +25,7 @@ import {
   type DomainEvent,
   type EndpointDef,
 } from '@growth-os/contracts';
-import { auditWriter, businessNow, enqueueJob, withTenant, type Tx } from '@growth-os/db';
+import { auditWriter, businessNow, hostedWithoutDemo, enqueueJob, withTenant, type Tx } from '@growth-os/db';
 import type { Allowed, Authorization, Identity, PlatformDeps, SessionRef, UploadedFile } from './context';
 import { ApiError, zodFieldErrors } from './errors';
 import { sha256Hex, stableStringify, stateHash } from './hash';
@@ -266,8 +266,7 @@ function buildCtx<D extends EndpointDef>(
  */
 export async function clockFor(tx: Tx, d: PlatformDeps, identity: Identity): Promise<Date> {
   const base = d.now();
-  if (d.config.authMode !== 'dev' || !identity.tenant.illustrative || process.env.NODE_ENV === 'production')
-    return base;
+  if (d.config.authMode !== 'dev' || !identity.tenant.illustrative || hostedWithoutDemo()) return base;
   return businessNow(tx, base, true);
 }
 

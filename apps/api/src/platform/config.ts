@@ -1,4 +1,6 @@
 /** Runtime configuration read once from the environment (see .env.example). */
+import { devFeaturesAllowed } from '@growth-os/db';
+
 export interface PlatformConfig {
   authMode: 'dev' | 'oidc';
   /** Slug of the illustrative tenant offered by the dev persona picker. */
@@ -16,7 +18,7 @@ export interface PlatformConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   return {
-    authMode: env.AUTH_MODE === 'dev' ? 'dev' : 'oidc',
+    authMode: devFeaturesAllowed(env) ? 'dev' : 'oidc',
     devTenantSlug: env.DEV_TENANT_SLUG ?? 'aster-industrial',
     sessionTtlMs: Number(env.SESSION_TTL_MS ?? 12 * 60 * 60 * 1000),
     cookieName: 'gos_session',

@@ -1,0 +1,22 @@
+{
+  "name": "@growth-os/vercel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vercel deployment: one function wrapping the Fastify API, the bounded job drain, and the build that migrates, seeds and writes .vercel/output (decisions.md D-160).",
+  "type": "module",
+  "scripts": {
+    "vercel-build": "tsx src/build.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@growth-os/api": "workspace:*",
+    "@growth-os/db": "workspace:*",
+    "@growth-os/worker": "workspace:*",
+    "@vercel/functions": "^2.2.13",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
+}

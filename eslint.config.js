@@ -54,6 +54,7 @@ export default tseslint.config(
     ignores: [
       '**/node_modules/**',
       '.claude/**',
+      '.vercel/**',
       '**/dist/**',
       '**/coverage/**',
       'design/**',
@@ -79,7 +80,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**', '**/scripts/**', '**/*.config.{js,ts}', 'packages/db/src/cli/**'],
+    files: [
+      'scripts/**',
+      '**/scripts/**',
+      '**/*.config.{js,ts}',
+      'packages/db/src/cli/**',
+      'apps/vercel/src/build.ts',
+    ],
     rules: { 'no-console': 'off' },
   },
   purePackages,

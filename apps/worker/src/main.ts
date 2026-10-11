@@ -3,8 +3,9 @@
  * Each task sets tenant context before touching data. Streams add their task maps in `tasks.ts`
  * (WS5 analysis and WS6 outbox still to come). Crontab entries run only for registered tasks.
  */
+import pg from 'pg';
 import { parseCronItems, run } from 'graphile-worker';
-import { createDb, createObjectStore, DB_URLS } from '@growth-os/db';
+import { createDb, createObjectStore, pgConfig } from '@growth-os/db';
 import { CRONTAB } from './jobs/catalog';
 import { cronItemsFrom } from './schedule';
 import { createTaskList } from './tasks';
@@ -13,9 +14,11 @@ const db = createDb('worker', 5);
 const objects = createObjectStore();
 
 const taskList = createTaskList({ db, objects });
+// Own pool so TLS settings apply (DATABASE_SSL, D-163). Session pooler or direct connection only.
+const pgPool = new pg.Pool({ ...pgConfig('worker'), max: 6 });
 
 const runner = await run({
-  connectionString: DB_URLS.worker,
+  pgPool,
   concurrency: 4,
   noHandleSignals: false,
   pollInterval: 1000,
@@ -26,3 +29,4 @@ const runner = await run({
 console.warn(`worker running: ${Object.keys(taskList).join(', ')}`);
 await runner.promise;
 await db.destroy();
+await pgPool.end();

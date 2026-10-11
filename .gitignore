@@ -23,3 +23,4 @@ test-results/
 # Agent git worktrees (local only)
 .claude/worktrees/
 !docs/**/build/
+.vercel/

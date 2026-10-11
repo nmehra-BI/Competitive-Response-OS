@@ -13,12 +13,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { runMigrations } from 'graphile-worker';
-import { DB_URLS } from './config';
+import { DB_URLS, sslConfig } from './config';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '../migrations');
 
 export async function applySqlMigrations(client: pg.Client): Promise<void> {
-  await client.query(`CREATE TABLE IF NOT EXISTS public.schema_migration (
+  // Check first: on a hosted database the bootstrap pre-creates the table and the owner role has no
+  // CREATE on `public`, and CREATE TABLE IF NOT EXISTS checks that privilege even when it exists (D-163).
+  const exists = await client.query<{ t: string | null }>(
+    `SELECT to_regclass('public.schema_migration') AS t`,
+  );
+  if (!exists.rows[0]?.t)
+    await client.query(`CREATE TABLE IF NOT EXISTS public.schema_migration (
     name text PRIMARY KEY, sha256 char(64) NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`);
   const applied = new Map<string, string>(
     (
@@ -75,13 +81,16 @@ const JOB_QUEUE_GRANTS = `
 
 /** Apply SQL migrations, the job queue schema and the role grants. Idempotent. */
 export async function migrateDatabase(connectionString: string = DB_URLS.owner): Promise<void> {
-  const client = new pg.Client({ connectionString });
+  const ssl = sslConfig();
+  const client = new pg.Client({ connectionString, ssl });
   await client.connect();
+  const pgPool = new pg.Pool({ connectionString, ssl, max: 2 });
   try {
     await applySqlMigrations(client);
-    await runMigrations({ connectionString });
+    await runMigrations({ pgPool });
     await client.query(JOB_QUEUE_GRANTS);
   } finally {
+    await pgPool.end();
     await client.end();
   }
 }

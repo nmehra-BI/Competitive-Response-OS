@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
+    "vercel-build": "pnpm --filter @growth-os/vercel run vercel-build",
     "typecheck": "pnpm -r --workspace-concurrency=4 run typecheck",
     "test": "vitest run --project unit",
     "test:all": "vitest run",
