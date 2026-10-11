@@ -3,13 +3,17 @@
 import { people } from '@growth-os/fixtures-aster';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { API } from '@growth-os/contracts';
+import { mock } from '../../mocks/define';
 import { session } from '../../mocks/node';
 import { setAssessmentScenario } from './mock-state';
+import { sizingView } from './mocks';
 import { mockServer, renderAt, resetAll } from './test-utils';
 
 beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
   cleanup();
+  mockServer.resetHandlers();
   resetAll();
   sessionStorage.clear();
 });
@@ -164,6 +168,64 @@ describe('S06 Sizing', () => {
       expect(
         (within(editor).getByRole('button', { name: 'Create snapshot v2' }) as HTMLButtonElement).disabled,
       ).toBe(false),
+    );
+  });
+
+  it('editor: what is typed while the first save is in flight survives the switch to the ladder', async () => {
+    // A case with no sizing yet; the first save creates the draft and the screen changes layout.
+    let created = false;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const patches: Record<string, unknown>[] = [];
+    const afterSave = async (viewerId: string | null) => ({
+      ...(await sizingView(viewerId)),
+      current: null,
+      versions: [],
+    });
+    mockServer.use(
+      mock(API.sizing.get, async ({ viewerId }) =>
+        created
+          ? afterSave(viewerId)
+          : {
+              current: null,
+              draft: null,
+              duplicateCohorts: [],
+              siteListRestricted: false,
+              siteListDataOwner: null,
+              versions: [],
+            },
+      ),
+      mock(API.sizing.saveDraft, async ({ body, viewerId }) => {
+        patches.push(body as Record<string, unknown>);
+        if (patches.length === 1) await held;
+        created = true;
+        return afterSave(viewerId);
+      }),
+    );
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-104/sizing');
+    fireEvent.click(await screen.findByRole('button', { name: 'Start the sizing model' }));
+    const editor = await screen.findByRole('region', { name: 'Sizing draft editor' });
+    const e = within(editor);
+    fireEvent.change(e.getByLabelText('Market unit'), {
+      target: { value: 'annual spend on water monitoring' },
+    });
+    fireEvent.change(e.getByLabelText(/^Reference year/), { target: { value: '2026' } });
+    fireEvent.blur(e.getByLabelText(/^Reference year/)); // the first save starts and is held
+    await waitFor(() => expect(patches).toHaveLength(1));
+    const boundary = e.getByLabelText(/^Product boundary/) as HTMLTextAreaElement;
+    fireEvent.change(boundary, { target: { value: 'Typed while the first save was in flight' } });
+    release();
+    // The draft exists: the ladder layout shows, with the same editor and the typed text kept.
+    expect(await screen.findByRole('heading', { name: 'Measure ladder' }, { timeout: 5000 })).toBeTruthy();
+    const after = screen.getByLabelText(/^Product boundary/) as HTMLTextAreaElement;
+    expect(after).toBe(boundary);
+    expect(after.value).toBe('Typed while the first save was in flight');
+    fireEvent.blur(after);
+    await waitFor(() =>
+      expect(patches.at(-1)).toMatchObject({
+        boundary: { productBoundary: 'Typed while the first save was in flight' },
+      }),
     );
   });
 
