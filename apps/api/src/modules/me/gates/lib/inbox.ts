@@ -11,6 +11,7 @@ import { asOfDate, shortDate } from './common';
 import { grantCeiling, loadGovernance } from './governance';
 import { buttonLabel, scopeOf, snapshotById } from './serialize';
 import { gateResource } from './package';
+import { decisionHref } from '../../cases/links';
 
 const policy = createPolicyEngine();
 
@@ -92,7 +93,7 @@ export async function awaitingDecisions(
       dueText: g.gate.submitted_at
         ? `Submitted ${shortDate(g.gate.submitted_at)} · ${snapshotLabel(code, snap.version)}`
         : snapshotLabel(code, snap.version),
-      href: g.caseRow ? `/me/cases/${key}/decisions?gate=${code}` : `/me/mandates/${key}?gate=${g.gate.id}`,
+      href: g.caseRow ? decisionHref(key, code) : `/me/mandates/${key}?gate=${g.gate.id}`,
     });
   }
   return out;
