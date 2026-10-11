@@ -77,7 +77,7 @@ Re-running it rotates the role passwords and re-applies the grants.
 
 `pnpm vercel-build` (`apps/vercel/src/build.ts`) runs in the Vercel build container:
 
-1. **Migrate** (production builds, or `MIGRATE_ON_BUILD=1`): `packages/db` migrations 0001–0007 as
+1. **Migrate** (production builds, or `MIGRATE_ON_BUILD=1`): `packages/db` migrations 0001–0008 as
    `me_owner`, then graphile-worker's schema and the job-queue grants. Append-only and checksummed:
    an edited applied migration fails the build.
 2. **Seed** `aster-demo` only when the Aster tenant is absent (`AlreadySeededError` → skipped), so

@@ -2620,3 +2620,104 @@ Runbook: `docs/market-expansion/DEPLOYMENT.md`; workflow: `artifacts.md` WF-11.
   The build downloads the public base commit `e39afc2` (main), applies the patch, installs with the lockfile
   (pnpm 10.28.0) and runs `pnpm vercel-build`. After the branch merges, link the project to the repository and
   deploy `main` directly with `vercel.json` (`pnpm vercel-build`).
+
+## Stage: Onboarding — live guide and explainer (2026-10-11)
+
+First-run onboarding for Market Expansion OS: a welcome dialog on the first sign-in, an opt-in 84-second motion
+explainer, a role-aware "Getting started" guide with coach marks, and a demo-only reset. Design:
+`docs/market-expansion/design/ONBOARDING.md`; workflow: `artifacts.md` WF-12. D-169 … D-189 are reserved for other
+streams.
+
+### D-190 — Onboarding is calm, opt-in and role-aware; it never acts on the workflow
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Context: secondary research (ONBOARDING.md §1: NN/g on tutorials vs contextual help and on coach marks, Linear,
+  Notion, Attio, Stripe, APG dialog/tooltip, WCAG 2.2.2, Chrome autoplay) favours contextual, pull-style help over
+  forced tours. Our users are time-poor approvers and specialists who come to one job.
+- Decision: one welcome dialog on the first sign-in only; the explainer plays only after "Play the 90-second tour";
+  the guide is a side panel opened from the top-bar Guide button, ⌘K "Guide" or the account menu; coach marks appear
+  only on "Show me". Five role paths in research §8.2 landing order: Build (case owner), Decide (sponsor, committee),
+  Run (pilot owner), Review (finance, product, specialist, commercial, read-only reviewers), Configure (admin). The
+  guide has no write path into the workflow and never pre-fills, enables or triggers a business action. Copy follows
+  research §7.4 ("Complete", not the task-reserved "Done").
+- Consequences: never-rules 1, 6, 7 and 11 hold by construction; a person can ignore the guide entirely.
+
+### D-191 — CR-ONB-1 accepted: three additive onboarding endpoints
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted (additive change request under D-031)
+- Decision: `packages/contracts/src/api/onboarding.ts`: `onboarding.get` (`GET /me/onboarding`, human),
+  `onboarding.update` (`PATCH /me/onboarding`, human, idempotent, one `OnboardingPatch` change) and
+  `onboarding.reset` (`POST /dev/onboarding/reset`, dev_only, idempotent). New enums/labels `GuidePath`,
+  `GuideStepKey`, `GuideStepCompletion`, `ExplainerStatus`. No path parameter, so no one can address another
+  person's state. The registry grows from 165 to 168 (the Wave 4 count guard is updated with this reference).
+- Consequences: API.md §12; web invalidation map treats `onboarding` as not case-scoped.
+
+### D-192 — `platform.user_onboarding` (migration 0008): per-person preference row, RLS, people only
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Decision: one row per tenant + person, updated in place (it is a preference, not business state; each change is an
+  `audit_event`), deleted only by the demo reset. Guard trigger: human principals only, same tenant, cannot move to
+  another person, `row_version` advances. RLS ENABLE + FORCE; `me_app` only. The API serializes one person's changes
+  with `pg_advisory_xact_lock` so two tabs never lose a change. Stored server-side so it follows the person across
+  devices.
+- Consequences: DATA_MODEL.md "Onboarding addition"; DEPLOYMENT migrates 0001–0008.
+
+### D-193 — The explainer is in-app React + SVG motion graphics, captions only
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Decision: no video dependency. Each chapter scene is a pure function of time (`explainer/scenes.tsx`), driven by a
+  requestAnimationFrame clock, so pause, scrubbing, chapter jumps and still frames are exact and the scenes use the
+  design tokens, fonts, gate diamonds, kind line styles and ▼●▲ marks directly. Eight chapters, 84 s. No audio track
+  (so no mute control); captions on by default and a full transcript. With `prefers-reduced-motion: reduce` (read
+  live) the player shows a still storyboard with the chapter text. All figures are the Aster fixture's
+  (`expectedDisplay`, `pilotTasks`, `outcomeObservations`, `expectedExtension`), labelled "Illustrative data".
+- Alternatives considered: a hosted video (needs captions tracks, can't follow tokens or dark mode, adds a heavy
+  player); Lottie (a dependency and an authoring tool for eight scenes).
+
+### D-194 — Checklist progress comes from the viewer's own records; Next from views they can already read
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Decision: "state" steps are derived at read time only from rows tied to the viewer (cases they own, opportunities in
+  their mandates or converted into their cases, sizing and experiments on their cases, G2 they submitted, decisions
+  they recorded, their tasks Confirmed with an external key, their outcome observations, review requests addressed to
+  them). "Visit" steps (open Reviews, read a package, check connections) complete when the person opens that place;
+  the API refuses a click-completion of a state step. The Next card reads `reviews.inbox` ("You have a G2 decision
+  waiting · Approve pilot €120k · 90 days · ME-104 … Nothing is approved until you choose an action and give a
+  rationale"), then an open review request, then the first incomplete step.
+- Consequences: never-rule 8 holds (no hidden count or name); "Confirmed" requires the external key (never-rule 9).
+
+### D-195 — Shell hooks: new files plus small, marked hooks in shared files
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Decision: everything lives in `apps/web/src/onboarding/**`. Shared files touched, each with an "Onboarding hook
+  (D-195)" comment: `app/shell/ShellLayout.tsx` (wraps the shell in `OnboardingProvider`), `app/shell/AppShell.tsx`
+  (Guide button, account-menu items, `data-guide="nav-…"` on nav items), `app/shell/SearchDialog.tsx` (pinned ⌘K
+  "Guide" command; it only opens the guide), `mocks/handlers.ts` (onboarding mocks), `lib/query.ts` (`onboarding`
+  not case-scoped), `test-setup.ts` and `e2e/support/fixtures.ts` (D-196). `app/case/**`, link targets and the Outcomes
+  / decision-package handlers are untouched (other streams).
+
+### D-196 — Automated tests opt out of the automatic welcome; onboarding tests opt back in
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Context: every seeded persona is a first-time user, so the welcome would open over every existing journey.
+- Decision: `localStorage["gos.onboarding.autostart"] = "off"` stops only the automatic welcome in that browser.
+  The Playwright fixture sets it for every context unless a spec uses `test.use({ onboardingAutostart: true })`;
+  the unit-test setup sets it and the onboarding component tests clear it. No assertion of any existing test changed.
+- Consequences: real users never have the key; the welcome, guide and tour are covered by their own specs.
+
+### D-197 — No analytics events for onboarding yet; CR-ONB-2 proposed
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted (CR-ONB-2 open)
+- Decision: PRD §17 has a closed event list (contracts count guard), so this stage records audit events only.
+  CR-ONB-2 proposes `onboarding_welcome_seen`, `onboarding_tour_completed` / `_skipped` and
+  `onboarding_step_completed {path, step, completion}` to measure first-week activation (ONBOARDING.md §9). Flagged to
+  the Principal Architect.
+
+### D-198 — Coach marks are non-modal dialogs with staged anchors
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Decision: APG says content with buttons is a dialog, not a tooltip, so coach marks are `role="dialog"`
+  `aria-modal="false"`, focus their heading and return focus on close. Anchors are listed most-specific first
+  (existing screen `aria-label`s and case tabs, then `#main h1`, then `data-guide` nav hooks); the search starts once
+  the step's page is on screen, accepts visible elements only, and allows each fallback 0.7 s later. The real-stack
+  spec asserts that every coach mark of every role path anchors to a visible element.
+
+### D-199 — MP4 rendition of the explainer
+- Date: 2026-10-11 · Stage: Onboarding · Status: Accepted
+- Decision: a 1440×900 H.264 recording of the in-app player (Chromium via Playwright on the mock-mode app, CDP
+  screencast frames assembled by ffmpeg from their timestamps; Playwright's own video recorder needed an ffmpeg build
+  not installed here). 88 s, 1.4 MB, captions as on screen, no audio, committed at
+  `design/market-expansion/onboarding/market-expansion-tour-1440x900.mp4` (under the 5 MB limit). The in-app player
+  stays the source of truth; re-record after a scene change.
+
