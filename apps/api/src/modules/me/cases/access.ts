@@ -283,4 +283,5 @@ export function shortDate(at: Date | string): string {
   return `${Number(d)} ${MONTHS[Number(m) - 1]}`;
 }
 
-export const caseHref = (key: string, tab = '') => `/me/cases/${key}${tab ? `/${tab}` : ''}`;
+/** Case links live in ./links (typed against the frozen route table, D-180). */
+export { caseHref } from './links';

@@ -2454,6 +2454,54 @@ on `growth_os_pe`. Additive contract and migration changes went through D-031 an
 - Proof: the spec passed 25 of 25 repeats on the real stack (`growth_os_fix_e2e`, ports 4780/5780/4781/5781 +
   mock Jira 4782); full real e2e 67 passed; typecheck, lint, format:check; unit 77 files / 2,273 tests.
 
+### D-180 — "This page could not be found." on the decision package and Outcomes: links and the no-review state
+- Numbering: the highest ID on `origin/main` (`e39afc2`) is D-159. A deployment stream may add D-160 onward at the
+  same time, so this fix stream starts at D-180 to avoid a clash.
+- Symptom (real stack, `aster-demo` and a new case from S01): "Open decision package" and Outcomes showed "This
+  page could not be found.". Every entry point was clicked as Elena, Maya, Jonas, Daniel and Priya
+  (`growth_os_fix404_e2e`, ports 4790/5790). Failures:
+  - `/me/cases/ME-104/decision`: the case header "Open decision package" and S01 "Decisions awaiting you" /
+    "Open decision brief". No route matched, so the router's `*` page showed (no API call).
+  - `/me/cases/<key>/gates`: the case header "Review preconditions" on any case whose next gate was not yet
+    awaiting a decision (every new case). Same router 404.
+  - `/me/cases/<key>/assumptions`: S01 "Overdue validation". Same router 404.
+  - `/me/cases/ME-104/outcomes`: `GET /api/v1/me/cases/ME-104/outcome-review` returned
+    `404 {"code":"NOT_FOUND","title":"Not found"}` because no outcome review exists before activation, and S12
+    showed it as the not-found banner.
+  - Not broken: S09 G1 and G2 links, S12 `?gate=X`, the Reviews inbox, My Work, the brief → Decisions link and
+    the tabs. The gate rail has no links.
+- Root cause: `caseHref(key, tab)` in the API took any string, and the header and overview passed `'decision'`,
+  `'gates'` and `'assumptions'`. The web mocks used the right shapes (`decisions?gate=G2&version=3`), so the mock
+  e2e could not catch it. For Outcomes, the frozen `OutcomeReviewView` has no "not started" state (`id`,
+  `version` and `causalLimitations.min(1)` are required), so the API answers "no review yet" with 404.
+- Fix:
+  1. `apps/api/src/modules/me/cases/links.ts`: typed builders. `caseHref` accepts only the case-tab segments
+     of the frozen route table. `decisionHref(key, gate)` builds `/decisions?gate=G2`. `assumptionHref` builds
+     `/validation?assumption=ASM-03`. `gatePreparationHref` maps G0 to the mandate (S02), G1 to Validation,
+     G2 to Decisions and G3 to Outcomes. The case header, S01 and the Reviews inbox use them.
+  2. S12: an outcome-review 404 for a case whose header loaded (same `caseVisible` rule) shows "No outcome
+     review yet" with the next action ("Open G2 request", or "Open pilot plan" once G2 is approved). If the
+     header also fails (hidden, cross-tenant or unknown case), the generic not-found banner stays
+     (never-rule 8).
+  3. S10: an empty gate names where it is prepared ("Open Validation", "Open Outcomes", the G0 mandate). The
+     brief finds X through the outcome review, the same way S10 does (D-068). It used to say "No X decision
+     package yet" even when X1 existed.
+- Contracts: unchanged. `outcomes.get` keeps its frozen response and 404. Changing it to a "not started" view
+  would not be additive, so no change request was opened. If a later version wants the API to say "not
+  started" itself, raise a change request for an optional view or a nullable response.
+- Tests: `links.test.ts` (unit: every builder output is a case route with declared query params);
+  `app/routes.test.tsx` (unit: every entry-point href resolves to its route, and the old shapes reach `*`);
+  `OutcomesScreen.test.tsx` (+2: the empty state, and a hidden case still not found); `links.db.test.ts` (5:
+  header, new case, direct case at G0, S01 and inbox hrefs, outcome review 404 kept, admin and cross-tenant
+  404, owner self-approval 403); `real/entry-points.spec.ts` (6: G2 from inbox, My Work, S01, header, tab and
+  S09; G1 history; Outcomes empty state and `?gate=X` empty; hidden case; after the pilot window: S01 "Pilots
+  needing review", Outcomes tab, S12 → X package, X brief, inbox, My Work and S01 → X; a case from S01 "New
+  case" for Elena and Maya); `aster-journey` step 10 now clicks the S09 G1 "Open decision package" and the
+  header link while G1 awaits. No test skipped or weakened.
+- Proof: typecheck, lint, format:check; unit 79 files / 2,283 tests; `test:db` 68 files / 499 tests
+  (`growth_os_fix404`); mock e2e 41 passed; full real e2e 73 passed (`growth_os_fix404_e2e`, ports
+  4790/5790/4791/5791 + mock Jira 4792).
+
 ### Change-request register — Wave 4 integration
 
 | CR | Request | Decision | Record |

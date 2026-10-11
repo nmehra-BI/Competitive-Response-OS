@@ -94,14 +94,28 @@ export default function DecisionsScreen() {
       ) : gate === 'G2' && isOwner ? (
         <PrepareG2 caseKey={h.case.key} />
       ) : (
-        <EmptyState title={`No ${gate} request yet`}>
+        <EmptyState title={`No ${gate} request yet`} action={<PreparedOn caseKey={h.case.key} gate={gate} />}>
           {gate === 'G2'
             ? `${h.case.owner.displayName} prepares the pilot request once validation results are recorded.`
-            : 'Nothing has been requested for this gate.'}
+            : gate === 'G1'
+              ? `${h.case.owner.displayName} requests validation spend from the Validation tab.`
+              : gate === 'G3'
+                ? 'Scale approval is requested from the outcome review.'
+                : gate === 'G0'
+                  ? 'G0 approves the mandate; it is requested from the mandate page.'
+                  : 'Nothing has been requested for this gate.'}
         </EmptyState>
       )}
     </div>
   );
+}
+
+/** D-180: an empty gate names where it is prepared, so a "no request yet" page is never a dead end. */
+function PreparedOn({ caseKey, gate }: { caseKey: string; gate: GateCode }) {
+  const base = `/me/cases/${encodeURIComponent(caseKey)}`;
+  if (gate === 'G1') return <Link to={`${base}/validation`}>Open Validation</Link>;
+  if (gate === 'G3') return <Link to={`${base}/outcomes`}>Open Outcomes</Link>;
+  return null;
 }
 
 /** The extension (X) request of the case's outcome review, decided like any other gate (D-110). */
@@ -118,7 +132,12 @@ function ExtensionRequestView(props: {
   const x = review.data?.extensionRequest ?? null;
   if (!x)
     return (
-      <EmptyState title="No X request yet">An extension is requested from the outcome review.</EmptyState>
+      <EmptyState
+        title="No X request yet"
+        action={<Link to={`/me/cases/${encodeURIComponent(props.caseKey)}/outcomes`}>Open Outcomes</Link>}
+      >
+        An extension is requested from the outcome review.
+      </EmptyState>
     );
   return (
     <RequestView

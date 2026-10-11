@@ -298,6 +298,17 @@ test('steps 10–12: EXP-03 and G1; Elena approves validation €15k; VAL tasks 
   await expect(g1).toContainText(fp);
   expect(await analytics('gate_submitted')).toHaveLength(1);
   await expectAccessible();
+  // D-180: the G1 card's "Open decision package" and the case header's open the G1 package, never
+  // "This page could not be found.".
+  for (const from of [g1, page.getByRole('region', { name: 'Case header' })]) {
+    await from.getByRole('link', { name: 'Open decision package' }).click();
+    await expect(page).toHaveURL(/\/me\/cases\/ME-104\/decisions\?gate=G1$/);
+    await settled(page);
+    await expect(page.getByText('This page could not be found.')).toHaveCount(0);
+    await expect(page.getByRole('article', { name: 'Decision package' })).toContainText('G1 · Snapshot v1');
+    await page.goto(`${CASE}/validation`);
+    await settled(page);
+  }
 
   // 11 · Elena: Reviews › Awaiting → "Approve validation €15k" with rationale → stage Validation; plan locked.
   await loginAs('elena');

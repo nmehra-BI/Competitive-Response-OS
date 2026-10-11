@@ -15,6 +15,7 @@ import { readAudit } from '../../../platform/audit-read';
 import { query, type HandlerMap } from '../../../platform/pipeline';
 import { isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
 import { asOf, caseHref, policy, shortDate, subjectAt } from '../cases/access';
+import { assumptionHref, decisionHref } from '../cases/links';
 import { accessibleCases } from '../cases';
 import { buttonLabel, displayStatus, scopeOf } from '../gates/lib/serialize';
 import { buildListRow } from '../cases/read';
@@ -79,7 +80,7 @@ export const overviewHandlers: HandlerMap = {
           buttonLabel: buttonLabel(g.gate_code as GateCode, scopeOf(g)),
           snapshotVersion: snap?.version ?? 1,
           dueText: g.submitted_at ? `Submitted ${shortDate(g.submitted_at)}` : 'Awaiting decision',
-          href: caseHref(c.display_key, 'decision'),
+          href: decisionHref(c.display_key, g.gate_code as GateCode),
         });
       }
       const spendRows = gates
@@ -145,7 +146,7 @@ export const overviewHandlers: HandlerMap = {
             title: `${a.display_key} · ${a.name}`,
             caseKey: c.display_key,
             dueText: `Due ${shortDate(String(a.due_on))}`,
-            href: caseHref(c.display_key, 'assumptions'),
+            href: assumptionHref(c.display_key, a.display_key),
           };
         }),
         pilotsNeedingReview: cases
