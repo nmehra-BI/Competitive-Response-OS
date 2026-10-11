@@ -80,9 +80,11 @@ test('Elena’s first sign-in: welcome, tour (frames), skip; stored and audited;
   await player.getByRole('button', { name: 'Close' }).click();
   await expect(player).toBeHidden();
 
-  // Server state and audit (the never-downgraded "skipped" over nothing yet: Elena skipped).
-  const me = await page.request.get('/api/v1/me/onboarding');
-  expect(await me.json()).toMatchObject({ path: 'decide', welcomeSeen: true, explainer: 'skipped' });
+  // Server state and audit: Elena closed the tour before the end, so it is recorded as skipped.
+  // The write is asynchronous (the UI never waits on onboarding), so poll the server state.
+  await expect
+    .poll(async () => (await page.request.get('/api/v1/me/onboarding')).json())
+    .toMatchObject({ path: 'decide', welcomeSeen: true, explainer: 'skipped' });
   const audit = await auditActions();
   expect(audit.filter((a) => a === 'onboarding.updated').length).toBeGreaterThanOrEqual(2);
 
