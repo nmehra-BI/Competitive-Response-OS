@@ -3,6 +3,7 @@ import { GUIDE_PATH_LABELS, type GuidePath } from '@growth-os/contracts';
 import { Icon } from '@growth-os/ui';
 import { useRef } from 'react';
 import { OnbDialog } from './Dialog';
+import { TOUR_BUTTON_LABEL } from './explainer/script';
 
 const ROLE_LINE: Record<GuidePath, string> = {
   build: 'You build expansion cases: shortlist, size, validate and submit them for a decision.',
@@ -57,7 +58,7 @@ export function WelcomeDialog({
         ) : null}
         <div className="onb-welcome__actions">
           <button ref={play} type="button" className="gos-btn gos-btn--primary" onClick={onPlay}>
-            Play the 90-second tour
+            {TOUR_BUTTON_LABEL}
           </button>
           <button type="button" className="gos-btn gos-btn--secondary" onClick={onGuide}>
             Show me around
@@ -67,8 +68,8 @@ export function WelcomeDialog({
           </button>
         </div>
         <p className="onb-welcome__hint">
-          The tour has captions and no sound. You can replay it, or open the guide, from the Guide button or
-          your account menu.
+          The tour is narrated, with captions on and music you can turn off. You can replay it, or open the
+          guide, from the Guide button or your account menu.
         </p>
       </div>
     </OnbDialog>

@@ -1,12 +1,15 @@
 /**
- * The in-app explainer (ONBOARDING.md §5): React + SVG motion graphics, captions only (no audio track, so no
- * mute). Play/Pause (Space or K), previous/next chapter (← →), a chapter list, a time slider, captions on/off,
- * a full transcript, Skip. It never starts by itself: `autoPlay` is passed only after the person pressed
- * "Play the 90-second tour". With `prefers-reduced-motion: reduce` it shows a still storyboard with the text.
+ * The in-app explainer (ONBOARDING.md §5, "Audio"): React + SVG motion graphics with a narrated voice and an
+ * ambient music bed. Play/Pause (Space or K), previous/next chapter (← →), a chapter list, a time slider,
+ * captions (on by default, identical to the narration), a full transcript, Mute, Music on/off, voice and music
+ * volume, Skip. It never starts by itself: `autoPlay` is passed only after the person pressed "Play the tour",
+ * so sound starts from that click. With `prefers-reduced-motion: reduce` it shows a still storyboard with the
+ * text, and the narration plays only on request ("Play narration"). Closing the dialog stops all audio.
  */
 import type { GuidePath } from '@growth-os/contracts';
 import { Icon } from '@growth-os/ui';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { loadPrefs, savePrefs, TourAudio, type AudioPrefs } from './audio';
 import { Stage } from './scenes';
 import {
   captionAt,
@@ -35,6 +38,8 @@ export interface ExplainerPlayerProps {
   /** Test hook: force the reduced-motion storyboard. */
   forceReducedMotion?: boolean;
 }
+
+const pct = (v: number) => Math.round(v * 100);
 
 function isControl(el: EventTarget | null): boolean {
   const e = el as HTMLElement | null;
@@ -76,7 +81,48 @@ export function ExplainerPlayer({
     if (reduced) setPlaying(false);
   }, [reduced]);
 
+  // Audio: created when the tour opens (lazy), destroyed (stopped) when it closes.
+  const audioBox = useRef<HTMLDivElement>(null);
+  const audio = useRef<TourAudio | null>(null);
+  const [prefs, setPrefsState] = useState<AudioPrefs>(loadPrefs);
+  const [narrating, setNarrating] = useState(false);
+  const setPrefs = (p: Partial<AudioPrefs>) =>
+    setPrefsState((cur) => {
+      const next = { ...cur, ...p };
+      savePrefs(next);
+      return next;
+    });
+  useEffect(() => {
+    if (!audioBox.current) return undefined;
+    const a = new TourAudio(
+      audioBox.current,
+      CHAPTERS.map((c) => c.id),
+      path,
+    );
+    audio.current = a;
+    return () => {
+      a.destroy();
+      audio.current = null;
+    };
+  }, [path]);
+  useEffect(() => {
+    audio.current?.apply(prefs);
+  }, [prefs]);
+
   const { index, local } = reduced ? { index: boardIndex, local: CHAPTERS[boardIndex]!.duration } : locate(t);
+  // Motion mode: the voice and music follow the visual clock on every tick (play, pause, seek, jump, mute).
+  useEffect(() => {
+    if (!reduced) audio.current?.sync({ playing, index, local, t });
+  }, [reduced, playing, index, local, t, prefs]);
+  // Storyboard mode: narration only on request; changing chapter or muting stops it.
+  useEffect(() => {
+    if (!reduced) return;
+    if (narrating && !prefs.muted) audio.current?.narrate(boardIndex);
+    else audio.current?.stop();
+  }, [reduced, narrating, boardIndex, prefs.muted]);
+  useEffect(() => {
+    setNarrating(false);
+  }, [boardIndex]);
   const caption = captionAt(index, reduced ? 0 : local, path);
   const ending = ROLE_ENDINGS[path];
   const atEnd = reduced ? boardIndex === CHAPTERS.length - 1 : ended || index === CHAPTERS.length - 1;
@@ -130,8 +176,8 @@ export function ExplainerPlayer({
             How Market Expansion works
           </h2>
           <p className="onb-player__sub">
-            {reduced ? 'Storyboard · reduced motion' : `${clock(TOTAL_SECONDS)} · 8 chapters`} · Captions only
-            — no sound · Illustrative data
+            {reduced ? 'Storyboard · reduced motion' : `${clock(TOTAL_SECONDS)} · 8 chapters`} · Narrated,
+            with captions · Illustrative data
           </p>
         </div>
         <button type="button" className="gos-btn gos-btn--ghost" onClick={onSkip}>
@@ -240,6 +286,62 @@ export function ExplainerPlayer({
         >
           Transcript
         </button>
+      </div>
+
+      <div className="onb-player__sound" role="group" aria-label="Sound">
+        {reduced ? (
+          <button
+            type="button"
+            className="gos-btn gos-btn--secondary"
+            aria-pressed={narrating}
+            onClick={() => setNarrating((n) => !n)}
+            disabled={prefs.muted}
+          >
+            {narrating ? 'Stop narration' : 'Play narration'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="gos-btn gos-btn--ghost"
+          aria-pressed={prefs.muted}
+          onClick={() => setPrefs({ muted: !prefs.muted })}
+        >
+          {prefs.muted ? 'Unmute' : 'Mute'}
+        </button>
+        <button
+          type="button"
+          className="gos-btn gos-btn--ghost"
+          aria-pressed={prefs.musicOn}
+          onClick={() => setPrefs({ musicOn: !prefs.musicOn })}
+        >
+          {prefs.musicOn ? 'Music on' : 'Music off'}
+        </button>
+        <label className="onb-player__vol">
+          Voice
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={pct(prefs.voice)}
+            aria-valuetext={`Voice volume ${pct(prefs.voice)}%`}
+            onChange={(e) => setPrefs({ voice: Number(e.target.value) / 100 })}
+          />
+        </label>
+        <label className="onb-player__vol">
+          Music
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={pct(prefs.music)}
+            aria-valuetext={`Music volume ${pct(prefs.music)}%`}
+            disabled={!prefs.musicOn}
+            onChange={(e) => setPrefs({ music: Number(e.target.value) / 100 })}
+          />
+        </label>
+        <div ref={audioBox} hidden data-testid="tour-audio" />
       </div>
 
       <nav aria-label="Tour chapters">

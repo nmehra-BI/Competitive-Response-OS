@@ -10,12 +10,17 @@
  *
  * Screenshots go to `ONB_SHOTS` when set (design review), else to the test output folder.
  */
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../support/fixtures';
 import { apiCall, auditActions, resetStack } from '../support/real';
 import type { PersonaKey } from '../support/personas';
+
+/** The narration timing the player uses (written by scripts/onboarding-audio/generate.py). */
+const timing = JSON.parse(
+  readFileSync(new URL('../../src/onboarding/explainer/timing.json', import.meta.url), 'utf8'),
+) as { total: number; chapters: { id: string; duration: number }[] };
 
 test.use({ onboardingAutostart: true, viewport: { width: 1440, height: 900 } });
 test.beforeAll(() => resetStack('aster-demo'));
@@ -58,17 +63,22 @@ test('Elena’s first sign-in: welcome, tour (frames), skip; stored and audited;
   const welcome = page.getByRole('dialog', { name: 'Welcome to Market Expansion, Elena' });
   await expect(welcome).toBeVisible();
   await expect(welcome).toContainText('Nothing is approved until you decide.');
-  await expect(welcome.getByRole('button', { name: 'Play the 90-second tour' })).toBeFocused();
+  await expect(welcome.getByRole('button', { name: /^Play the .+ tour$/ })).toBeFocused();
   await expectAccessible();
   await shot(page, '01-welcome-modal');
 
-  await welcome.getByRole('button', { name: 'Play the 90-second tour' }).click();
+  await welcome.getByRole('button', { name: /^Play the .+ tour$/ }).click();
   const player = page.getByRole('dialog', { name: 'How Market Expansion works' });
   await expect(player.getByRole('button', { name: 'Pause' })).toBeVisible();
   await player.getByRole('button', { name: 'Pause' }).click();
   // One frame per chapter, near its end (the scene is a pure function of time).
-  const ends = [8.5, 18.5, 30.5, 42.5, 55.5, 65.5, 75.5, 83.5];
-  const ids = ['problem', 'case', 'kinds', 'ladder', 'gates', 'pilot', 'outcomes', 'role'];
+  // Near each chapter's end (on the slider's half-second grid), from the narration timing.
+  const ids = timing.chapters.map((c) => c.id);
+  let acc = 0;
+  const ends = timing.chapters.map((c) => {
+    acc += c.duration;
+    return Math.floor((acc - 0.6) * 2) / 2;
+  });
   for (const [i, t] of ends.entries()) {
     await seek(page, t);
     await expect(player.getByTestId('explainer-stage')).toHaveAttribute('data-chapter', ids[i]!);
@@ -104,6 +114,51 @@ test('Elena’s first sign-in: welcome, tour (frames), skip; stored and audited;
   await page2.keyboard.press('Escape');
   await expect(page2.getByRole('dialog', { name: 'How Market Expansion works' })).toBeHidden();
   await other.close();
+});
+
+test('the tour’s narration and music load, match the timeline (±10%), play from the click and stop on close', async ({
+  page,
+  loginAs,
+}) => {
+  await firstSignIn(page, loginAs, 'maya');
+  await page.getByRole('button', { name: /^Play the .+ tour$/ }).click();
+  const player = page.getByRole('dialog', { name: 'How Market Expansion works' });
+  await expect(player.getByRole('button', { name: 'Pause' })).toBeVisible();
+  const box = player.getByTestId('tour-audio');
+  await expect(box.locator('audio')).toHaveCount(9);
+  // Every file is served and decodable; each voice lasts its chapter, the music the whole tour.
+  const info = await box.evaluate(async (el) => {
+    const audios = Array.from(el.querySelectorAll('audio'));
+    await Promise.all(
+      audios.map((a) =>
+        a.readyState >= 1
+          ? undefined
+          : new Promise((res, rej) => {
+              a.addEventListener('loadedmetadata', res, { once: true });
+              a.addEventListener('error', () => rej(new Error(`${a.src} failed`)), { once: true });
+            }),
+      ),
+    );
+    return audios.map((a) => ({ id: a.dataset.testid, src: a.currentSrc, duration: a.duration }));
+  });
+  for (const c of timing.chapters) {
+    const v = info.find((x) => x.id === `tour-voice-${c.id}`)!;
+    expect(v.src).toMatch(c.id === 'role' ? /voice-role-build\.webm$/ : new RegExp(`voice-${c.id}\\.webm$`));
+    expect(Math.abs(v.duration - c.duration) / c.duration).toBeLessThanOrEqual(0.1);
+  }
+  const music = info.find((x) => x.id === 'tour-music')!;
+  expect(Math.abs(music.duration - timing.total) / timing.total).toBeLessThanOrEqual(0.1);
+  // Sound is playing after the click (the first chapter's voice and the music).
+  await expect
+    .poll(() =>
+      box.evaluate((el) => Array.from(el.querySelectorAll('audio')).filter((a) => !a.paused).length),
+    )
+    .toBe(2);
+  const handles = await box.locator('audio').elementHandles();
+  // Escape closes the tour and stops every element.
+  await page.keyboard.press('Escape');
+  await expect(player).toBeHidden();
+  for (const h of handles) expect(await h.evaluate((a) => (a as HTMLAudioElement).paused)).toBe(true);
 });
 
 test('the checklist shows Elena’s steps and Next from her real inbox', async ({

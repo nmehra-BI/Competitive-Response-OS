@@ -16,10 +16,10 @@ test('first sign-in: welcome → tour → skip; guide with role steps; coach mar
   await loginAs('maya');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Market Expansion, Maya' });
   await expect(welcome).toBeVisible();
-  await expect(welcome.getByRole('button', { name: 'Play the 90-second tour' })).toBeFocused();
+  await expect(welcome.getByRole('button', { name: /^Play the .+ tour$/ })).toBeFocused();
   await expectAccessible();
 
-  await welcome.getByRole('button', { name: 'Play the 90-second tour' }).click();
+  await welcome.getByRole('button', { name: /^Play the .+ tour$/ }).click();
   const player = page.getByRole('dialog', { name: 'How Market Expansion works' });
   await expect(player.getByRole('button', { name: 'Pause' })).toBeVisible();
   await expect(player.getByTestId('explainer-caption')).toContainText('Expansion decisions usually live in');
@@ -61,7 +61,7 @@ test('first sign-in: welcome → tour → skip; guide with role steps; coach mar
 test('reduced motion shows the storyboard instead of motion', async ({ page, loginAs }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await loginAs('elena');
-  await page.getByRole('button', { name: 'Play the 90-second tour' }).click();
+  await page.getByRole('button', { name: /^Play the .+ tour$/ }).click();
   const player = page.getByRole('dialog', { name: 'How Market Expansion works' });
   await expect(player.getByText(/Storyboard · reduced motion/)).toBeVisible();
   await expect(player.getByRole('button', { name: /^(Play|Pause)$/ })).toHaveCount(0);

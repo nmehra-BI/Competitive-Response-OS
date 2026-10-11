@@ -18,8 +18,11 @@ import {
   locate,
   ROLE_ENDINGS,
   TOTAL_SECONDS,
+  TOUR_BUTTON_LABEL,
   transcript,
 } from './explainer/script';
+import narration from './explainer/narration.json';
+import timing from './explainer/timing.json';
 
 const run = (events: UiEvent[], from: UiState = INITIAL_UI) => events.reduce(reduce, from);
 
@@ -129,13 +132,36 @@ describe('Next follows real state', () => {
 });
 
 describe('explainer script', () => {
-  it('is 8 chapters, 84 seconds, with contiguous chapter starts', () => {
+  it('is 8 chapters timed by the narration, with contiguous chapter starts', () => {
     expect(CHAPTERS).toHaveLength(8);
-    expect(TOTAL_SECONDS).toBe(84);
-    expect(CHAPTER_STARTS).toEqual([0, 9, 19, 31, 43, 56, 66, 76]);
+    expect(TOTAL_SECONDS).toBeCloseTo(timing.total, 5);
+    // Narration may lengthen a scene, never shorten it (D-201).
+    expect(CHAPTERS.map((c) => c.duration).every((d, i) => d >= [9, 10, 12, 12, 13, 10, 10, 8][i]!)).toBe(
+      true,
+    );
+    let at = 0;
+    CHAPTERS.forEach((c, i) => {
+      expect(CHAPTER_STARTS[i]).toBeCloseTo(at, 5);
+      at += c.duration;
+    });
     expect(locate(0)).toEqual({ index: 0, local: 0 });
-    expect(locate(44)).toEqual({ index: 4, local: 1 });
-    expect(locate(999)).toEqual({ index: 7, local: 8 });
+    const s4 = CHAPTER_STARTS[4]!;
+    expect(locate(s4 + 1).index).toBe(4);
+    expect(locate(s4 + 1).local).toBeCloseTo(1, 5);
+    expect(locate(9999)).toEqual({ index: 7, local: CHAPTERS[7]!.duration });
+    expect(TOUR_BUTTON_LABEL).toBe(
+      TOTAL_SECONDS <= 95
+        ? 'Play the 90-second tour'
+        : `Play the ${Math.round(TOTAL_SECONDS / 60)}-minute tour`,
+    );
+  });
+
+  it('the captions are exactly the narration (one cue = one spoken sentence group)', () => {
+    CHAPTERS.forEach((c, i) => {
+      expect(c.cues.map((q) => q.text)).toEqual(narration.chapters[i]!.cues.map((q) => q.text));
+      expect(c.cues.map((q) => q.at)).toEqual(timing.chapters[i]!.cues.map((q) => q.at));
+    });
+    expect(ROLE_ENDINGS.decide.line).toBe(narration.roleLines.decide);
   });
 
   it('uses the fixture’s figures and labels verbatim', () => {
@@ -167,7 +193,7 @@ describe('explainer script', () => {
   it('the last chapter speaks to the viewer’s role', () => {
     expect(captionAt(7, 0, 'decide')).toBe(ROLE_ENDINGS.decide.line);
     expect(captionAt(7, 0, 'build')).toBe(ROLE_ENDINGS.build.line);
-    expect(captionAt(7, 6, 'build')).toContain('Illustrative data');
+    expect(captionAt(7, CHAPTERS[7]!.cues[1]!.at + 0.1, 'build')).toContain('Illustrative data');
     expect(ROLE_ENDINGS.configure.line).toContain('they never approve');
   });
 });

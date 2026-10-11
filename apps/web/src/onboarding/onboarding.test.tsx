@@ -12,13 +12,21 @@ import { AppProviders } from '../app/providers';
 import { buildRoutes } from '../app/router';
 import { createQueryClient } from '../lib/query';
 import { mockServer, resetMockState, resetReplay, session } from '../mocks/node';
+import { installMediaMock } from './explainer/audio-mock';
 import { ExplainerPlayer } from './explainer/ExplainerPlayer';
+import { CHAPTERS, TOTAL_SECONDS, TOUR_BUTTON_LABEL } from './explainer/script';
 import { resetOnboardingMocks } from './mocks';
 
 beforeAll(() => mockServer.listen({ onUnhandledRequest: 'error' }));
-beforeEach(() => localStorage.removeItem('gos.onboarding.autostart')); // a real first-time browser
+let media: ReturnType<typeof installMediaMock>;
+beforeEach(() => {
+  localStorage.removeItem('gos.onboarding.autostart'); // a real first-time browser
+  localStorage.removeItem('gos.onboarding.audio');
+  media = installMediaMock(); // jsdom has no media playback
+});
 afterEach(() => {
-  cleanup();
+  cleanup(); // unmount first: closing the tour stops its audio through the mock
+  media.restore();
   resetMockState();
   resetReplay();
   resetOnboardingMocks();
@@ -40,7 +48,7 @@ function renderAt(url: string) {
 const welcome = () => screen.findByRole('dialog', { name: /Welcome to Market Expansion/ });
 
 describe('first login', () => {
-  it('shows the welcome once, focused on "Play the 90-second tour"; Escape skips and it never returns', async () => {
+  it('shows the welcome once, focused on the play button; Escape skips and it never returns', async () => {
     session.signIn(people.elena.id);
     renderAt('/reviews?tab=awaiting');
     const dialog = await welcome();
@@ -48,7 +56,7 @@ describe('first login', () => {
     expect(within(dialog).getByText('Welcome to Market Expansion, Elena')).toBeTruthy();
     expect(within(dialog).getByText(/Nothing is approved until you decide/)).toBeTruthy();
     expect(within(dialog).getByText(/Illustrative data/)).toBeTruthy();
-    const play = within(dialog).getByRole('button', { name: 'Play the 90-second tour' });
+    const play = within(dialog).getByRole('button', { name: TOUR_BUTTON_LABEL });
     await waitFor(() => expect(document.activeElement).toBe(play));
     fireEvent.keyDown(dialog, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /Welcome/ })).toBeNull());
@@ -73,10 +81,10 @@ describe('first login', () => {
   it('plays the tour after the click, and Skip closes it', async () => {
     session.signIn(people.maya.id);
     renderAt('/me/overview?view=operator');
-    fireEvent.click(within(await welcome()).getByRole('button', { name: 'Play the 90-second tour' }));
+    fireEvent.click(within(await welcome()).getByRole('button', { name: TOUR_BUTTON_LABEL }));
     const player = await screen.findByRole('dialog', { name: 'How Market Expansion works' });
     expect(within(player).getByRole('button', { name: 'Pause' })).toBeTruthy(); // playing after the click
-    expect(within(player).getByText(/Captions only — no sound/)).toBeTruthy();
+    expect(within(player).getByText(/Narrated, with captions/)).toBeTruthy();
     expect(within(player).getAllByRole('button', { name: /Scattered decisions|Your role/ })).toHaveLength(2);
     fireEvent.click(within(player).getByRole('button', { name: 'Skip tour' }));
     await waitFor(() =>
@@ -208,9 +216,7 @@ describe('explainer player', () => {
   it('does not play until asked; chapters, slider, captions and transcript work; the end offers the role CTA', async () => {
     render(<ExplainerPlayer {...props} />);
     expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy(); // not playing until asked
-    expect(screen.getByTestId('explainer-caption').textContent).toBe(
-      'Expansion decisions usually live in slides, spreadsheets, email threads and task tools.',
-    );
+    expect(screen.getByTestId('explainer-caption').textContent).toBe(CHAPTERS[0]!.cues[0]!.text);
     fireEvent.click(screen.getByRole('button', { name: /The measure ladder/ }));
     expect(screen.getByTestId('explainer-stage').getAttribute('data-chapter')).toBe('ladder');
     expect(screen.getByRole('button', { name: /The measure ladder/ }).getAttribute('aria-current')).toBe(
@@ -229,7 +235,7 @@ describe('explainer player', () => {
       '“Approve pilot €120k · 90 days”',
     );
     // Scrub to the end: completion is recorded once and the role call to action appears.
-    fireEvent.change(slider, { target: { value: '83.5' } });
+    fireEvent.change(slider, { target: { value: String(Math.floor((TOTAL_SECONDS - 0.5) * 2) / 2) } });
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     await waitFor(() => expect(props.onFinished).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Open Reviews' }));
@@ -242,6 +248,75 @@ describe('explainer player', () => {
     fireEvent.keyDown(screen.getByTestId('explainer-stage'), { key: ' ' });
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
     expect(screen.getByRole('button', { name: /^(Play|Resume)$/ })).toBeTruthy();
+  });
+
+  it('sound starts from the play click and follows play, pause, seek and chapter jumps', () => {
+    render(<ExplainerPlayer {...props} />);
+    const box = screen.getByTestId('tour-audio');
+    const audios = Array.from(box.querySelectorAll('audio'));
+    expect(audios).toHaveLength(CHAPTERS.length + 1); // one voice per chapter + the music bed
+    expect(media.playing(box)).toHaveLength(0); // nothing before the click
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    const voice0 = box.querySelector<HTMLAudioElement>('[data-testid="tour-voice-problem"]')!;
+    const music = box.querySelector<HTMLAudioElement>('[data-testid="tour-music"]')!;
+    expect(voice0.paused).toBe(false);
+    expect(music.paused).toBe(false);
+    // Chapter jump: the gates voice plays from its start, the first one stops, the music follows the clock.
+    fireEvent.click(screen.getByRole('button', { name: /Gates G0–G3/ }));
+    const gates = box.querySelector<HTMLAudioElement>('[data-testid="tour-voice-gates"]')!;
+    expect(gates.paused).toBe(false);
+    expect(gates.currentTime).toBe(0);
+    expect(voice0.paused).toBe(true);
+    expect(
+      Math.abs(music.currentTime - CHAPTERS.slice(0, 4).reduce((s, c) => s + c.duration, 0)),
+    ).toBeLessThan(0.5);
+    // Seek with the slider (inside the same chapter): the voice is moved to the new time.
+    const start4 = CHAPTERS.slice(0, 4).reduce((s, c) => s + c.duration, 0);
+    fireEvent.change(screen.getByRole('slider', { name: 'Tour position' }), {
+      target: { value: String(Math.round((start4 + 4) * 2) / 2) },
+    });
+    expect(Math.abs(gates.currentTime - (Math.round((start4 + 4) * 2) / 2 - start4))).toBeLessThan(0.35);
+    // Pause pauses everything.
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(media.playing(box)).toHaveLength(0);
+  });
+
+  it('Mute and Music off are remembered; volumes apply; closing the tour stops all audio', () => {
+    const { unmount } = render(<ExplainerPlayer {...props} autoPlay />);
+    const box = screen.getByTestId('tour-audio');
+    const els = Array.from(box.querySelectorAll('audio'));
+    const music = box.querySelector<HTMLAudioElement>('[data-testid="tour-music"]')!;
+    expect(music.paused).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Music on' }));
+    expect(screen.getByRole('button', { name: 'Music off' }).getAttribute('aria-pressed')).toBe('false');
+    expect(music.paused).toBe(true);
+    expect(media.playing(box)).toHaveLength(1); // the voice continues
+    fireEvent.change(screen.getByRole('slider', { name: /^Voice/ }), { target: { value: '40' } });
+    expect(els[0]!.volume).toBeCloseTo(0.4);
+    fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
+    expect(screen.getByRole('button', { name: 'Unmute' }).getAttribute('aria-pressed')).toBe('true');
+    expect(media.playing(box)).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('gos.onboarding.audio')!)).toMatchObject({
+      muted: true,
+      musicOn: false,
+      voice: 0.4,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Unmute' }));
+    expect(media.playing(box)).toHaveLength(1);
+    unmount(); // Skip, Escape and Close all unmount the player
+    expect(els.every((el) => el.paused)).toBe(true);
+    expect(els.every((el) => !el.isConnected)).toBe(true);
+  });
+
+  it('remembers the sound settings for the next tour', () => {
+    localStorage.setItem(
+      'gos.onboarding.audio',
+      JSON.stringify({ muted: true, musicOn: false, voice: 1, music: 1 }),
+    );
+    render(<ExplainerPlayer {...props} autoPlay />);
+    expect(screen.getByRole('button', { name: 'Unmute' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Music off' })).toBeTruthy();
+    expect(media.playing(screen.getByTestId('tour-audio'))).toHaveLength(0);
   });
 
   it('with reduced motion it shows a still storyboard with text and never plays', () => {
@@ -259,7 +334,13 @@ describe('explainer player', () => {
       expect(screen.queryByRole('button', { name: /^(Play|Pause)$/ })).toBeNull();
       expect(screen.getByText(/Storyboard · reduced motion/)).toBeTruthy();
       expect(screen.getByRole('heading', { name: '1. Scattered decisions' })).toBeTruthy();
-      fireEvent.click(screen.getByRole('button', { name: /Your role/ }));
+      const box = screen.getByTestId('tour-audio');
+      expect(media.playing(box)).toHaveLength(0); // no sound until asked
+      fireEvent.click(screen.getByRole('button', { name: 'Play narration' }));
+      expect(box.querySelector<HTMLAudioElement>('[data-testid="tour-voice-problem"]')!.paused).toBe(false);
+      expect(box.querySelector<HTMLAudioElement>('[data-testid="tour-music"]')!.paused).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: /Your role/ })); // changing chapter stops it
+      expect(media.playing(box)).toHaveLength(0);
       expect(screen.getByRole('heading', { name: '8. Your role' })).toBeTruthy();
       expect(props.onFinished).toHaveBeenCalled(); // read to the end
     } finally {
