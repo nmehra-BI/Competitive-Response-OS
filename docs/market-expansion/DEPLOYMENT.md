@@ -28,9 +28,10 @@ Browser ──HTTPS──▶ Vercel edge (Vercel Authentication, security header
   jobs), all `NOSUPERUSER NOBYPASSRLS`. The API uses the **transaction pooler**: `withTenant()` sets
   `app.tenant_id` etc. with `set_config(…, true)` (transaction-local), no session `SET`, no
   `LISTEN`, no prepared statements. Jobs and migrations use the **session pooler**.
-- **Pooler host:** `aws-1-ap-southeast-1.pooler.supabase.com`, user names `<role>.eqtqayemckaaatvajbez`.
-  The cluster index (`aws-0`/`aws-1`) cannot be derived from the region; take it from the Supabase
-  dashboard (Connect) or try it in a build.
+- **Pooler host:** `aws-0-ap-southeast-1.pooler.supabase.com`, user names `<role>.eqtqayemckaaatvajbez`.
+  The cluster index cannot be derived from the region: a build against `aws-1-…` failed with
+  "tenant/user me_owner.eqtqayemckaaatvajbez not found"; `aws-0-…` works. The Supabase dashboard
+  (Connect) shows the host for a project.
 - **TLS:** `DATABASE_SSL=require` (encrypted; chain not verified). For full verification set
   `DATABASE_SSL=verify` and `DATABASE_CA_CERT` to the Supabase CA (dashboard › Database › SSL).
 
@@ -121,7 +122,15 @@ graphile_worker CASCADE; TRUNCATE public.schema_migration;` then redeploy produc
 migrates and seeds `aster-demo` again. Moving the dev clock forward is the only other way time moves.
 
 **Logs.** Build logs: Vercel deployment › Build. Runtime: Vercel › Logs (`job drain:` lines show
-drains). Database: Supabase › Logs.
+drains). Database: Supabase › Logs. A `[core] ERROR: Error with notify listener … Connection terminated
+unexpectedly` line can appear when a frozen instance resumes: graphile-worker's LISTEN connection from
+the last drain was closed by the pooler; it reconnects and no job is affected.
+
+**Supabase advisors** (security) report, for this project: `function_search_path_mutable` on the app's
+guard functions and graphile-worker's functions (schemas not exposed over the Data API; pinning
+`search_path` would need a new migration), `rls_enabled_no_policy` on `public.schema_migration`
+(intended: only its owner reads it), and `public.rls_auto_enable()` executable by `anon` — a function
+that existed before this deployment and was left untouched.
 
 ## 7. Turning on Jira Cloud later
 

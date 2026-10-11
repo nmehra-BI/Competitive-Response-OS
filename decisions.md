@@ -2570,7 +2570,8 @@ Runbook: `docs/market-expansion/DEPLOYMENT.md`; workflow: `artifacts.md` WF-11.
 - Decision: the API connects as `me_app` through the **transaction pooler** (6543); `withTenant()` already uses
   `set_config(…, true)` (transaction-local), the app issues no session `SET`, `LISTEN` or named prepared statements.
   Jobs (`me_worker`) and the build (`me_owner`) use the **session pooler** (5432). Pooler user names are
-  `<role>.<project_ref>`; the working host is `aws-1-ap-southeast-1.pooler.supabase.com`. `DATABASE_SSL`
+  `<role>.<project_ref>`; the working host is `aws-0-ap-southeast-1.pooler.supabase.com` (a build against `aws-1-…`
+  failed with "tenant/user … not found"). `DATABASE_SSL`
   (`disable`/`require`/`verify` + `DATABASE_CA_CERT`) feeds every client through `pgConfig()`; deployment uses
   `require`. `scripts/cloud-db-bootstrap.sql`, run once as `postgres`, creates the three roles (NOSUPERUSER,
   NOBYPASSRLS; Supabase's `postgres` may not name those attributes in ALTER ROLE, so they are set at CREATE),
