@@ -1,0 +1,142 @@
+{
+  "chapters": [
+    {
+      "id": "problem",
+      "duration": 10.7,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 5.43
+        },
+        {
+          "at": 5.98,
+          "end": 9.97
+        }
+      ]
+    },
+    {
+      "id": "case",
+      "duration": 14.3,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 7.16
+        },
+        {
+          "at": 7.71,
+          "end": 13.58
+        }
+      ]
+    },
+    {
+      "id": "kinds",
+      "duration": 13.6,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 2.62
+        },
+        {
+          "at": 3.17,
+          "end": 9.47
+        },
+        {
+          "at": 10.02,
+          "end": 12.93
+        }
+      ]
+    },
+    {
+      "id": "ladder",
+      "duration": 20.0,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 8.23
+        },
+        {
+          "at": 8.78,
+          "end": 15.54
+        },
+        {
+          "at": 16.09,
+          "end": 19.31
+        }
+      ]
+    },
+    {
+      "id": "gates",
+      "duration": 22.5,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 6.65
+        },
+        {
+          "at": 7.2,
+          "end": 15.16
+        },
+        {
+          "at": 15.71,
+          "end": 21.81
+        }
+      ]
+    },
+    {
+      "id": "pilot",
+      "duration": 14.9,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 3.55
+        },
+        {
+          "at": 4.1,
+          "end": 11.81
+        },
+        {
+          "at": 12.36,
+          "end": 14.25
+        }
+      ]
+    },
+    {
+      "id": "outcomes",
+      "duration": 16.6,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 4.04
+        },
+        {
+          "at": 4.59,
+          "end": 11.53
+        },
+        {
+          "at": 12.08,
+          "end": 15.91
+        }
+      ]
+    },
+    {
+      "id": "role",
+      "duration": 12.5,
+      "cues": [
+        {
+          "at": 0.5,
+          "end": 6.42
+        },
+        {
+          "at": 6.97,
+          "end": 11.81
+        }
+      ]
+    }
+  ],
+  "total": 125.1,
+  "voice": {
+    "engine": "Piper (local neural TTS)",
+    "model": "en-us-libritts-high.onnx",
+    "speaker": 0
+  }
+}
