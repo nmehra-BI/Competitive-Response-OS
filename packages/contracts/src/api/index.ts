@@ -24,6 +24,7 @@ import {
 import { experimentEndpoints, gateEndpoints } from './decide';
 import { budgetEndpoints, outcomeEndpoints, pilotEndpoints, taskSyncEndpoints } from './execute';
 import { adminEndpoints, analysisEndpoints, devEndpoints, evidenceEndpoints } from './support';
+import { onboardingEndpoints } from './onboarding';
 
 export * from './endpoint';
 export * from './shell';
@@ -32,6 +33,7 @@ export * from './assessment';
 export * from './decide';
 export * from './execute';
 export * from './support';
+export * from './onboarding';
 
 export const API = {
   auth: authEndpoints,
@@ -60,6 +62,8 @@ export const API = {
   analysis: analysisEndpoints,
   admin: adminEndpoints,
   dev: devEndpoints,
+  // CR-ONB-1 (D-191): additive, first-run guide state of the signed-in person.
+  onboarding: onboardingEndpoints,
 } as const;
 
 export const ENDPOINTS: readonly EndpointDef[] = Object.values(API).flatMap(

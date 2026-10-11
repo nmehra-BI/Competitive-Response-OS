@@ -7,6 +7,9 @@ import { Icon, Kbd, Mono, type IconName } from '@growth-os/ui';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '../../lib/query';
+// Onboarding hook (D-195): ⌘K "Guide" opens the Getting started guide.
+import { wantsGuide } from '../../onboarding/GuideEntryPoints';
+import { useOnboarding } from '../../onboarding/OnboardingProvider';
 import { Modal } from './Modal';
 
 const TYPE_ICON: Record<SearchHit['type'], IconName> = {
@@ -40,12 +43,44 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
     { enabled: term.length > 0, staleTime: 10_000 },
   );
   const hits = term ? (data?.hits ?? []) : [];
-  const go = (h: SearchHit | undefined) => {
-    if (!h) return;
+  // Onboarding hook (D-195): a pinned "Guide" command when the term asks for it. It only opens the guide.
+  const onboarding = useOnboarding();
+  const guide = onboarding?.state && wantsGuide(q) ? onboarding : null;
+  const options: {
+    id: string;
+    title: string;
+    subtitle: string;
+    key: string | null;
+    icon: IconName;
+    run: () => void;
+  }[] = [
+    ...(guide
+      ? [
+          {
+            id: 'guide',
+            title: 'Guide · Getting started',
+            subtitle: 'Your steps, what to do next, and the tour',
+            key: null,
+            icon: 'help' as IconName,
+            run: () => guide.openGuide(),
+          },
+        ]
+      : []),
+    ...hits.map((h) => ({
+      id: h.id,
+      title: h.title,
+      subtitle: h.subtitle,
+      key: h.key,
+      icon: TYPE_ICON[h.type],
+      run: () => navigate(h.href),
+    })),
+  ];
+  const go = (o: (typeof options)[number] | undefined) => {
+    if (!o) return;
     onClose();
-    navigate(h.href);
+    o.run();
   };
-  const activeHit = hits[Math.min(active, hits.length - 1)];
+  const activeHit = options[Math.min(active, options.length - 1)];
   return (
     <Modal label="Search" onClose={onClose} initialFocus={input}>
       <div className="app-search-input">
@@ -53,7 +88,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
         <input
           ref={input}
           role="combobox"
-          aria-expanded={hits.length > 0}
+          aria-expanded={options.length > 0}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-label="Search cases, opportunities, assumptions, experiments and sources"
@@ -67,7 +102,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
-              setActive((a) => Math.min(a + 1, hits.length - 1));
+              setActive((a) => Math.min(a + 1, options.length - 1));
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               setActive((a) => Math.max(a - 1, 0));
@@ -80,7 +115,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
         <Kbd>Esc</Kbd>
       </div>
       <ul id={listId} role="listbox" aria-label="Results" className="app-search-results">
-        {hits.map((h, i) => (
+        {options.map((h, i) => (
           <li
             key={h.id}
             id={`${listId}-${h.id}`}
@@ -91,7 +126,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
             onClick={() => go(h)}
           >
             <span style={{ color: 'var(--text-secondary)', display: 'inline-flex' }}>
-              <Icon name={TYPE_ICON[h.type]} size={16} />
+              <Icon name={h.icon} size={16} />
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>{h.title}</span>

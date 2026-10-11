@@ -15,9 +15,14 @@
     "@growth-os/contracts": "workspace:*",
     "@growth-os/db": "workspace:*",
     "@growth-os/domain": "workspace:*",
-    "graphile-worker": "^0.16.6"
+    "graphile-worker": "^0.16.6",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
-    "@growth-os/fixtures-aster": "workspace:*"
+    "@growth-os/fixtures-aster": "workspace:*",
+    "@types/pg": "^8.11.10"
+  },
+  "exports": {
+    "./drain": "./src/drain.ts"
   }
 }

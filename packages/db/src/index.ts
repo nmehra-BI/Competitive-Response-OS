@@ -8,10 +8,10 @@
 import { Kysely, PostgresDialect, sql, type Transaction } from 'kysely';
 import pg from 'pg';
 import type { DB } from './generated/db';
-import { DB_URLS } from './config';
+import { pgConfig, type DbRole } from './config';
 
 export type { DB } from './generated/db';
-export { DB_URLS } from './config';
+export { DB_URLS, pgConfig, sslConfig, type DbRole } from './config';
 export { sql };
 
 export type Db = Kysely<DB>;
@@ -23,9 +23,11 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (v) => v);
 // Keep dates as ISO strings (YYYY-MM-DD) rather than local-time Date objects.
 pg.types.setTypeParser(pg.types.builtins.DATE, (v) => v);
 
-export function createDb(role: 'app' | 'worker' | 'owner' = 'app', max = 10): Db {
+export function createDb(role: DbRole = 'app', max = 10, opts: { idleTimeoutMillis?: number } = {}): Db {
   return new Kysely<DB>({
-    dialect: new PostgresDialect({ pool: new pg.Pool({ connectionString: DB_URLS[role], max }) }),
+    dialect: new PostgresDialect({
+      pool: new pg.Pool({ ...pgConfig(role), max, ...opts }),
+    }),
   });
 }
 
@@ -132,4 +134,10 @@ export {
   type ApprovalGateFacts,
 } from './approval';
 
-export { businessNow, devClockAllowed, devClockOffsetMs } from './clock';
+export {
+  businessNow,
+  devClockAllowed,
+  devClockOffsetMs,
+  devFeaturesAllowed,
+  hostedWithoutDemo,
+} from './clock';

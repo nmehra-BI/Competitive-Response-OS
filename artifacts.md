@@ -23,6 +23,7 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-08 | Outcome review → revise/extend, scale gate blocked | ME-14, §6, S12 |
 | WF-09 | Analysis run lifecycle with checkpoint and resume | §8, ME-15, ME-16 |
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
+| WF-12 | First-run onboarding: welcome, explainer, role guide, coach marks | §7, ME-16, research §8.2 |
 
 
 ### Update — Wave 4 contracts landed (2026-10-10)
@@ -714,6 +715,23 @@ flowchart TD
   X -->|no| XS["skipped (executed or not due)"]
 ```
 
+**Fix (2026-10-11, D-180) — entry points to the decision package.** The case header "Open decision package"
+and S01 "Decisions awaiting you" linked to `/me/cases/ME-104/decision`. That route does not exist, so the router
+showed "This page could not be found.". "Review preconditions" linked to `/gates`, and S01 "Overdue validation"
+to `/assumptions`, which were also not found. The mocks used the right shape, so only the real stack failed.
+API links now come from `apps/api/src/modules/me/cases/links.ts`:
+
+| Entry point | Link |
+|---|---|
+| Case header "Open decision package", S01 "Decisions awaiting you", Reviews inbox, My Work › Approvals | `/me/cases/ME-104/decisions?gate=G2` (`G1`, `X` alike) |
+| Case header "Review preconditions" | G0 → `/me/mandates/MD-xx`, G1 → `…/validation`, G2 → `…/decisions?gate=G2`, G3 → `…/outcomes` |
+| S01 "Overdue validation" | `…/validation?assumption=ASM-xx` |
+| S10 "Open printable decision brief" (X too, now found through the outcome review) | `…/brief?gate=X&version=n` |
+
+An empty gate on S10 names where it is prepared ("Open Validation", "Open Outcomes"). Tests: `links.test.ts`,
+`links.db.test.ts`, `app/routes.test.tsx`, `real/entry-points.spec.ts` and `aster-journey` step 10 (the S09 G1
+link).
+
 ---
 
 ### WF-07 — Pilot activation → outbox → connector, partial failure and idempotent retry
@@ -970,6 +988,14 @@ sequenceDiagram
   API-->>Maya: 409 PRECONDITIONS_UNMET with four blockers, button disabled with the summary
 ```
 
+**Fix (2026-10-11, D-180) — Outcomes before the pilot.** `GET /me/cases/:caseRef/outcome-review` returns 404
+until activation creates the review. S12 showed that as "This page could not be found." on every case before
+the pilot, including a new case from S01. The frozen endpoint keeps its 404. S12 shows "No outcome review yet"
+when the case header loaded, because both reads use the same visibility rule. The page links to the next
+action: "Open G2 request", or "Open pilot plan" once G2 is approved. A hidden or unknown case still shows the
+generic not-found banner (never-rule 8). S01 "Pilots needing review" and the Outcomes tab open S12, and S12
+"Open ME-104-X1 in Decisions" opens the X package (`real/entry-points.spec.ts`).
+
 ---
 
 ### WF-09 — Analysis run lifecycle with checkpoint and resume
@@ -1181,6 +1207,94 @@ deleted; provenance stays. S14 edits the confirmation, term end and on-expiry ac
 | Challenge; mark stale (materiality runs on the server); replace | Maya | S13 actions | `/evidence/SRC-014` |
 | Inspect impacted cases (inaccessible ones not counted) | Maya | S13 impact | same |
 | Connections and authority gaps (admins cannot approve) | Admin | S14 | `/admin/connections`, `/admin/authority` |
+
+### WF-11 — Deploy and job processing on Vercel
+
+Deployment stage (2026-10-11; decisions D-160 … D-168; runbook `docs/market-expansion/DEPLOYMENT.md`). The build
+migrates and seeds Supabase once; at run time one function serves the API and drains jobs after each command, with a
+daily cron as the safety net. There is no always-on worker.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Op as Operator
+  participant Build as Vercel build
+  participant Fn as Vercel function (Fastify)
+  participant Cron as Vercel Cron (daily)
+  participant DB as Supabase Postgres
+  Op->>DB: cloud-db-bootstrap.sql once as postgres (roles NOBYPASSRLS, grants)
+  Op->>Build: deploy (production)
+  Build->>DB: migrate 0001…0007 + graphile_worker as me_owner (session pooler)
+  Build->>DB: seed aster-demo if the Aster tenant is absent
+  Build-->>Fn: .vercel/output (SPA, function, routes, cron)
+  actor Maya as Maya Rao
+  Maya->>Fn: POST /api/v1/... (command, behind Vercel Authentication)
+  Fn->>DB: withTenant: state + audit + analytics + outbox + add_job (one transaction, transaction pooler)
+  Fn-->>Maya: 2xx
+  Fn->>DB: waitUntil: drain as me_worker (session pooler): upsert next-occurrence cron jobs, run due jobs
+  Note over Fn,DB: outbox.dispatch re-checks authorization and approval expiry at claim (never-rule 10)
+  Fn->>DB: stop when idle or after 20 s; no job left locked
+  Cron->>Fn: GET /api/internal/jobs/run (Bearer CRON_SECRET)
+  Fn->>DB: same drain, 45 s budget
+  Op->>Fn: GET /api/internal/jobs/run without the secret
+  Fn-->>Op: 401
+```
+
+### WF-12 — First-run onboarding
+
+Onboarding stage (2026-10-11; decisions D-190 … D-199; design `docs/market-expansion/design/ONBOARDING.md`). A person's
+first sign-in shows one welcome dialog; the tour plays only after a click; the role guide derives progress from the
+person's own records and never acts on the workflow. State is per person on the server (`platform.user_onboarding`,
+RLS, people only), every change is one audited `PATCH /me/onboarding`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Loading: sign-in (dev persona picker or SSO)
+  Loading --> Welcome: GET /me/onboarding · welcomeSeen = false · autostart on
+  Loading --> Idle: welcomeSeen = true (second sign-in, any device)
+  Welcome --> Explainer: Play the 90-second tour · PATCH welcomeSeen
+  Welcome --> Guide: Show me around · PATCH welcomeSeen
+  Welcome --> Idle: Skip for now / Escape · PATCH welcomeSeen
+  state Explainer {
+    [*] --> Playing
+    Playing --> Paused: Pause / Space
+    Paused --> Playing: Resume
+    Playing --> EndCard: 1:24 reached · PATCH explainer=completed
+    Playing --> Storyboard: prefers-reduced-motion
+  }
+  Explainer --> Idle: Skip tour / Close / Escape · PATCH explainer=skipped (never downgrades completed)
+  Explainer --> Idle: role call to action (navigates)
+  Idle --> Guide: Guide button / ⌘K Guide / account menu
+  Guide --> CoachMark: Show me (navigates to the step's page)
+  CoachMark --> CoachMark: Next (next incomplete step) · PATCH dismissCoachMark
+  CoachMark --> Idle: Got it / × / Escape · PATCH dismissCoachMark · focus returns
+  Guide --> Idle: Close / Escape · focus to the Guide button
+  Guide --> Explainer: Play the tour again
+  Idle --> Explainer: Replay the tour (account menu)
+  Guide --> Welcome: Reset onboarding (demo) · POST /dev/onboarding/reset
+```
+
+Step completion: **state** steps come from the viewer's own rows (owned case, committed sizing, experiment, G2
+submitted, a recorded decision, a task "Confirmed · KEY", an outcome observation, a responded review request);
+**visit** steps complete when the person opens the place (`PATCH visitedStep`, refused for state steps). Next reads
+`reviews.inbox` first ("You have a G2 decision waiting"). Failure paths: agent or service session → 403
+`AGENT_IDENTITY_FORBIDDEN` (API) and the table guard; another tenant's row is invisible (RLS); reset outside an
+illustrative workspace → 403, outside dev features → route not registered; a failed write never blocks the page.
+
+#### UI walkthrough (WF-12)
+
+Elena signs in → "Welcome to Market Expansion, Elena" (focus on "Play the 90-second tour") → the tour (8 chapters,
+captions, transcript, chapter list, slider) → Close → Guide "2 of 3": Next "You have a G2 decision waiting" → Show me
+on "Read the decision package" → coach mark beside the awaiting decision → Escape. Proven by
+`apps/web/e2e/real/onboarding.spec.ts` (every coach mark of all five paths anchors to a visible element; second
+sign-in is quiet; demo reset) and `apps/web/e2e/onboarding.spec.ts` (mocks, axe, reduced motion).
+
+**Update — narration and music (2026-10-11, D-200 … D-205).** The button now reads "Play the 2-minute tour"; the
+click starts the narrated tour (Piper voice, one file per chapter) with an original ambient bed ducked 21 dB under
+speech. The visual clock drives the audio: Pause, slider, chapter jumps and ←/→ move it; Mute, Music on/off and the
+Voice/Music volumes are remembered per browser; Skip, Escape and Close stop every element. Reduced motion: the
+storyboard offers "Play narration" per chapter. `real/onboarding.spec.ts` checks the files load, last their
+chapter/tour (±10%), play after the click and stop on close.
 
 ## End-to-end journey map (2026-10-09)
 

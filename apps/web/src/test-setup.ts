@@ -6,6 +6,13 @@
 if (typeof document !== 'undefined') {
   const { configure } = await import('@testing-library/react');
   configure({ asyncUtilTimeout: 5000 });
+  // First-run welcome (D-196): component tests of other screens run as returning users; the onboarding
+  // tests clear this key to exercise the first-login trigger.
+  try {
+    localStorage.setItem('gos.onboarding.autostart', 'off');
+  } catch {
+    /* no storage */
+  }
 }
 
 export {};

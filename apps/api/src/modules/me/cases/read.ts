@@ -16,7 +16,8 @@ import { STAGE_SEGMENT, type GateEvaluation } from '@growth-os/domain';
 import type { Tx } from '@growth-os/db';
 import type { Identity } from '../../../platform/context';
 import { isoDateTime, isoDateTimeOrNull } from '../../../platform/serialize';
-import { caseHref, moneyLabel, peopleMap, shortDate, toWorkflowCase, who, type CaseRecord } from './access';
+import { moneyLabel, peopleMap, shortDate, toWorkflowCase, who, type CaseRecord } from './access';
+import { decisionHref, gatePreparationHref } from './links';
 import { toCaseLite } from '../gates/lib/common';
 import { caseGateState, caseSourceIds } from '../gates/lib/facts';
 import { buttonLabel, displayStatus, gateById, scopeOf, type GateRow } from '../gates/lib/serialize';
@@ -175,7 +176,12 @@ function segmentOf(c: CaseRecord): RailSegment {
   return held ?? 'discovery_assessment';
 }
 
-async function nextDecision(tx: Tx, c: CaseRecord, r: RailInfo): Promise<NextDecision> {
+async function nextDecision(
+  tx: Tx,
+  c: CaseRecord,
+  r: RailInfo,
+  mandateKey: string | null,
+): Promise<NextDecision> {
   const people = await peopleMap(tx, [c.sponsor_user_id, c.owner_user_id]);
   const pending = r.rail.find((n) => n.gateCode !== 'X' && !APPROVED.has(n.status));
   if (!pending || ['stopped', 'closed'].includes(c.stage))
@@ -206,8 +212,11 @@ async function nextDecision(tx: Tx, c: CaseRecord, r: RailInfo): Promise<NextDec
     blocked,
     why: blocked ? ev!.blockers : [],
     primaryAction: awaiting
-      ? { label: 'Open decision package', href: caseHref(c.display_key, 'decision') }
-      : { label: 'Review preconditions', href: caseHref(c.display_key, 'gates') },
+      ? { label: 'Open decision package', href: decisionHref(c.display_key, pending.gateCode) }
+      : {
+          label: 'Review preconditions',
+          href: gatePreparationHref(c.display_key, pending.gateCode, mandateKey),
+        },
   };
 }
 
@@ -258,7 +267,7 @@ export async function buildHeader(tx: Tx, identity: Identity, c: CaseRecord, now
         : 'Currency not stated',
     currentSegment: segmentOf(c),
     rail: rail.rail,
-    nextDecision: await nextDecision(tx, c, rail),
+    nextDecision: await nextDecision(tx, c, rail, mv?.mandateKey ?? null),
     freshness: await freshness(tx, c, now),
     tabCounts: await tabCounts(tx, c),
     illustrative: identity.tenant.illustrative,

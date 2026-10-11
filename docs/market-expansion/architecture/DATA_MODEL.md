@@ -455,6 +455,20 @@ PK (tenant_id) · Check: live_enabled ⇒ addendum_ref, addendum_signed_on, eval
 | `changed_by` | uuid | yes | → `platform.app_user` |
 | `changed_at` | timestamptz | no | default `now()` |
 
+## Onboarding addition — migration `0008_onboarding.sql` (CR-ONB-1, D-192)
+
+`platform.user_onboarding` — one row per person per tenant (PK `tenant_id, user_id`): `welcome_seen_at`,
+`explainer_status` (`not_started · completed · skipped`), `explainer_updated_at`, `guide_dismissed`,
+`visited_steps text[]`, `coach_marks_dismissed text[]` (each ≤ 64), `row_version`, `created_at`, `updated_at`.
+
+- A preference row, not business state: updated in place (each change is an `audit_event` `onboarding.updated`);
+  the demo-only reset deletes it (`onboarding.reset`). Checklist steps that complete from workspace state are never
+  stored; they are derived at read time from the viewer's own records.
+- Guard `platform.guard_user_onboarding()`: people only (`app_user.kind = 'human'`), the person must belong to the
+  row's tenant, a row cannot move to another person, `row_version` and `updated_at` advance on update.
+- RLS `tenant_isolation` (ENABLE + FORCE); `me_app` has SELECT, INSERT, UPDATE, DELETE; the worker has no grant.
+- Concurrent changes by the same person are serialized with a transaction-scoped advisory lock in the API.
+
 ---
 
 ## Appendix A — Column reference (generated from the migrated schema)

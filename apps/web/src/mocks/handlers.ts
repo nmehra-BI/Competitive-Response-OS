@@ -35,6 +35,7 @@ import {
 } from './data';
 import { mock, MockProblem, notMockedYet } from './define';
 import { session, state } from './state';
+import { handlers as onboardingHandlers } from '../onboarding/mocks';
 
 const notFound = () => new MockProblem('NOT_FOUND', 'Not found.');
 const HUMAN_IDS: Set<string> = new Set(
@@ -242,7 +243,8 @@ export function screenHandlers(): HttpHandler[] {
 
 /** Screen handlers first (they may override), then these, then the "not mocked yet" fallback. */
 export function allHandlers(): HttpHandler[] {
-  return [...screenHandlers(), ...handlers, notMockedYet];
+  // Onboarding hook (D-195): CR-ONB-1 endpoints, served from src/onboarding/mocks.ts.
+  return [...screenHandlers(), ...onboardingHandlers, ...handlers, notMockedYet];
 }
 
 /** Endpoint ids served by the WS7 base handlers (documented in the WS7 notes). */

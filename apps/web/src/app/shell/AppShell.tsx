@@ -20,6 +20,8 @@ import { applyTheme, readTheme, type ThemePref } from '../../lib/theme';
 import { GLOBAL_NAV } from '../routes';
 import { Modal } from './Modal';
 import { SearchDialog } from './SearchDialog';
+// Onboarding hooks (D-195): Guide button and account-menu items (new files; provider in ShellLayout).
+import { GuideButton, GuideMenuItems } from '../../onboarding/GuideEntryPoints';
 
 export const WORKSPACE_NAV = [
   { label: 'Mandates', to: '/me/mandates', icon: 'flag' },
@@ -47,7 +49,12 @@ function NavItem({
 }) {
   return (
     <li>
-      <Link to={to} className="app-navitem" aria-current={active ? 'page' : undefined}>
+      <Link
+        to={to}
+        className="app-navitem"
+        aria-current={active ? 'page' : undefined}
+        data-guide={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+      >
         <Icon name={toIconName(icon) ?? 'dot'} size={16} />
         <span>{label}</span>
         {count ? (
@@ -195,6 +202,8 @@ function UserMenu({ viewer, onSignOut }: { viewer: Viewer; onSignOut: () => void
             ))}
           </fieldset>
           <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+          {/* Onboarding hook (D-195): replay the tour, open the guide, demo reset. */}
+          <GuideMenuItems onSelect={() => setOpen(false)} />
           <button
             type="button"
             className="gos-btn gos-btn--ghost"
@@ -297,6 +306,8 @@ export function AppShell({
             </button>
             <div className="app-header__right">
               {autosave ? <AutosaveStatus state={autosave} /> : null}
+              {/* Onboarding hook (D-195) */}
+              <GuideButton />
               <button
                 type="button"
                 className="gos-ibtn"

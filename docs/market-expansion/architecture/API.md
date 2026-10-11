@@ -552,3 +552,19 @@ New enums and label maps: `CommitteeSeat`, `CommitteeSeatState`, `ApprovalRoute`
 `AssigneeMappingStatus`, `LineageRelation`, and `BUDGET_ENTRY_KIND_LABELS`; helpers `thesisBlockerLabel` ("Pending ·
 G2") and `snapshotLabel` ("G2 · Snapshot v2").
 
+## 12. Onboarding additions — CR-ONB-1 (D-190 … D-199)
+
+Additive: three endpoints about the signed-in person's own first-run state. No path parameter, so nobody can
+address another person's guide state; nothing here reads or changes a case, a gate or any business record. Design:
+`docs/market-expansion/design/ONBOARDING.md`.
+
+| Endpoint | Auth | Purpose | Decision |
+|---|---|---|---|
+| `GET /me/onboarding` (`onboarding.get`) | `human` | `OnboardingState`: role `path`, `welcomeSeen`, `explainer` (`not_started · completed · skipped`), `guideDismissed`, `steps[]` (key, title, why, href, coach-mark `anchors`, `visitPaths`, `completion: state \| visit`, `done`), `coachMarksDismissed`, `canReset`, `updatedAt`. State steps derive from the viewer's own records only. | D-191, D-194 |
+| `PATCH /me/onboarding` (`onboarding.update`) | `human`, Idempotency-Key | One `OnboardingPatch` change (`welcomeSeen: true`, `explainer`, `guideDismissed`, `visitedStep` (visit steps of the viewer's path only), `dismissCoachMark`). Audited `onboarding.updated`; `completed` is never downgraded. `400` for a state step or another path's step. | D-191 |
+| `POST /dev/onboarding/reset` (`onboarding.reset`) | `dev_only`, Idempotency-Key | Demo only: delete the viewer's own row (illustrative tenant, dev features on, D-165). `403 FORBIDDEN` elsewhere; not registered outside dev. Audited `onboarding.reset`. | D-191 |
+
+Agents and services get `403 AGENT_IDENTITY_FORBIDDEN` on all three. New enums and labels: `GuidePath`
+(`GUIDE_PATH_LABELS`), `GuideStepKey`, `GuideStepCompletion`, `ExplainerStatus` (`EXPLAINER_STATUS_LABELS`). The
+registry grows from 165 to 168 endpoints.
+

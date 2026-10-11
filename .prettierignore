@@ -8,3 +8,4 @@ docs/
 packages/db/src/generated/
 .claude/
 apps/web/public/mockServiceWorker.js
+apps/web/src/onboarding/explainer/timing.json

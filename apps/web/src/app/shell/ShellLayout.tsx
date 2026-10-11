@@ -7,6 +7,7 @@ import { useApiQuery } from '../../lib/query';
 import { isUnauthenticated, useLogout, useViewer } from '../../lib/session';
 import { AppShell } from './AppShell';
 import { ProblemBanner } from './ProblemBanner';
+import { OnboardingProvider } from '../../onboarding/OnboardingProvider';
 
 /** Which nav item is active for a path (global nav first, then the workspace group). */
 export function activeNavFor(pathname: string): string {
@@ -51,20 +52,31 @@ export function ShellLayout() {
   const waiting =
     (inbox.data?.gateDecisions.length ?? 0) +
     (inbox.data?.reviewRequests.filter((r) => r.status === 'open').length ?? 0);
+  const v = viewer.data;
   return (
-    <AppShell
-      viewer={viewer.data}
-      activeNav={activeNavFor(location.pathname)}
-      counts={waiting ? { Reviews: waiting } : {}}
-      illustrative={viewer.data.tenant.illustrative}
-      autosave={autosave ?? undefined}
-      onSignOut={async () => {
-        await logout();
-        navigate('/login');
+    // Onboarding hook (D-195): first-run layer (welcome, guide, coach marks, tour) around the shell.
+    <OnboardingProvider
+      viewer={{
+        firstName: v.person.displayName.split(' ')[0] ?? v.person.displayName,
+        displayName: v.person.displayName,
+        initials: v.person.initials,
+        illustrative: v.tenant.illustrative,
       }}
     >
-      <Outlet />
-    </AppShell>
+      <AppShell
+        viewer={viewer.data}
+        activeNav={activeNavFor(location.pathname)}
+        counts={waiting ? { Reviews: waiting } : {}}
+        illustrative={viewer.data.tenant.illustrative}
+        autosave={autosave ?? undefined}
+        onSignOut={async () => {
+          await logout();
+          navigate('/login');
+        }}
+      >
+        <Outlet />
+      </AppShell>
+    </OnboardingProvider>
   );
 }
 

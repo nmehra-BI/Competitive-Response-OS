@@ -1,0 +1,152 @@
+{
+  "$comment": "Narration = captions (D-200). Each cue is spoken verbatim; `designAt` is the earliest second the cue may start (scene alignment) and `minDuration` the scene's own length. scripts/onboarding-audio/generate.py renders the voice and writes timing.json. Edit text here, then regenerate.",
+  "chapters": [
+    {
+      "id": "problem",
+      "title": "Scattered decisions",
+      "minDuration": 9,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "Expansion decisions usually live in slides, spreadsheets, email and task tools."
+        },
+        {
+          "designAt": 4.5,
+          "text": "Numbers drift, approvals get lost, and no one can say what was agreed."
+        }
+      ]
+    },
+    {
+      "id": "case",
+      "title": "One expansion case",
+      "minDuration": 10,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "Market Expansion keeps one case per decision — here ME-104, German food-processing plants."
+        },
+        {
+          "designAt": 5,
+          "text": "Evidence, sizing, validation, approvals, pilot and outcome stay together, with an owner and a stage."
+        }
+      ]
+    },
+    {
+      "id": "kinds",
+      "title": "Four kinds of claim",
+      "minDuration": 12,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "Every number says what kind of claim it is."
+        },
+        {
+          "designAt": 3,
+          "text": "Evidence is sourced. An assumption has an owner. A scenario is calculated. An actual is measured."
+        },
+        {
+          "designAt": 9,
+          "text": "An AI draft stays a draft until a person accepts it."
+        }
+      ]
+    },
+    {
+      "id": "ladder",
+      "title": "The measure ladder",
+      "minDuration": 12,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "TAM: 5,000 sites, €100m/year. SAM: 2,000 unique sites, €40m/year."
+        },
+        {
+          "designAt": 4,
+          "text": "Reachable pool: 500 unique sites. SOM, a year-3 scenario: €2.0m annual revenue."
+        },
+        {
+          "designAt": 8,
+          "text": "Each rung answers a different question. They are never added up."
+        }
+      ]
+    },
+    {
+      "id": "gates",
+      "title": "Gates G0–G3",
+      "minDuration": 13,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "Four gates: G0 scope, G1 validate, G2 pilot, G3 scale."
+        },
+        {
+          "designAt": 3.5,
+          "text": "A person with authority decides — for example “Approve pilot €120k · 90 days” — on the exact snapshot they read."
+        },
+        {
+          "designAt": 8.5,
+          "text": "If the case changes, the snapshot goes stale and is decided again. Nothing passes a gate on its own."
+        }
+      ]
+    },
+    {
+      "id": "pilot",
+      "title": "Pilot and task sync",
+      "minDuration": 10,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "An approved pilot becomes owned tasks sent to your task tool."
+        },
+        {
+          "designAt": 3,
+          "text": "A task shows “Confirmed · PIL-11” only after Jira returns the key. Failed tasks retry without duplicates."
+        },
+        {
+          "designAt": 7.5,
+          "text": "Finishing tasks never passes a gate."
+        }
+      ]
+    },
+    {
+      "id": "outcomes",
+      "title": "Outcomes",
+      "minDuration": 10,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": "At the review, actuals are compared with thresholds set before the pilot."
+        },
+        {
+          "designAt": 3.5,
+          "text": "A negative result is still a result: “Revise and extend validation”, with its own cap, €30k · 45 days."
+        },
+        {
+          "designAt": 7.5,
+          "text": "G3 Scale stays blocked until its own preconditions are met."
+        }
+      ]
+    },
+    {
+      "id": "role",
+      "title": "Your role",
+      "minDuration": 8,
+      "cues": [
+        {
+          "designAt": 0,
+          "text": ""
+        },
+        {
+          "designAt": 5,
+          "text": "Illustrative data: Aster Industrial Systems and its people are fictional."
+        }
+      ]
+    }
+  ],
+  "roleLines": {
+    "build": "You build the case: shortlist, size, validate, then submit G2 for a decision.",
+    "decide": "You decide within your authority: read the package, then choose a scoped action. Nothing is approved until you do.",
+    "run": "You run the pilot: your tasks, the plan, and what reached Jira.",
+    "review": "You review what you are asked to: confirm, dispute or abstain, always with a reason.",
+    "configure": "You set up connections, roles and policies. Administrators configure; they never approve."
+  }
+}

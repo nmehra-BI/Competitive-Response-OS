@@ -7,13 +7,20 @@
  *
  * Deep link: `metric` (metric key) highlights that row.
  */
-import { API, DECISION_OUTCOME_LABELS, type OutcomeReviewView, type PersonRef } from '@growth-os/contracts';
+import {
+  API,
+  DECISION_OUTCOME_LABELS,
+  type CaseHeader,
+  type OutcomeReviewView,
+  type PersonRef,
+} from '@growth-os/contracts';
 import {
   AuthBoxes,
   Banner,
   Button,
   ChartTable,
   DataTable,
+  EmptyState,
   Eyebrow,
   GateChip,
   GateDiamond,
@@ -35,6 +42,7 @@ import { useState, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Modal } from '../../app/shell/Modal';
 import { ProblemBanner } from '../../app/shell/ProblemBanner';
+import { ApiProblem } from '../../lib/api-client';
 import { useApiQuery, useCommand } from '../../lib/query';
 import { useViewer } from '../../lib/session';
 import { fmtDateTime, fmtPeriod } from '../history/dates';
@@ -57,6 +65,7 @@ export default function OutcomesScreen() {
   const [search] = useSearchParams();
   const viewer = useViewer();
   const q = useApiQuery(API.outcomes.get, { params: { caseRef: caseKey } });
+  const header = useApiQuery(API.cases.header, { params: { caseRef: caseKey } });
   const pilot = useApiQuery(API.pilot.get, { params: { caseRef: caseKey } });
   const x = useApiQuery(API.gates.rail, { params: { caseRef: caseKey, gateCode: 'X' } });
   if (q.isPending) {
@@ -68,6 +77,19 @@ export default function OutcomesScreen() {
     );
   }
   if (q.error || !q.data) {
+    // D-180: the review exists only once the pilot is activated. For a case the viewer can read (its
+    // header loaded under the same visibility rule), a 404 here means "no review yet", not "not
+    // found". A hidden or unknown case still shows the generic not-found banner (never-rule 8).
+    if (isNotFound(q.error) && header.data) {
+      return <NoReviewYet caseKey={header.data.case.key} rail={header.data.rail} />;
+    }
+    if (isNotFound(q.error) && header.isPending) {
+      return (
+        <div className="ws8d-page" aria-busy="true">
+          <Skeleton height={120} />
+        </div>
+      );
+    }
     return (
       <div className="ws8d-page">
         <h2 className="gos-sr-only">Outcomes</h2>
@@ -91,6 +113,39 @@ export default function OutcomesScreen() {
         extend: roles.has('case_owner'),
       }}
     />
+  );
+}
+
+const isNotFound = (e: unknown) => e instanceof ApiProblem && e.code === 'NOT_FOUND';
+const APPROVED = new Set(['approved', 'approved_with_conditions']);
+
+/** Empty state before the pilot is activated: the next action is the G2 request or the pilot plan. */
+function NoReviewYet({ caseKey, rail }: { caseKey: string; rail: CaseHeader['rail'] }) {
+  const g2 = rail.find((n) => n.gateCode === 'G2');
+  const g2Approved = !!g2 && APPROVED.has(g2.status);
+  const base = `/me/cases/${encodeURIComponent(caseKey)}`;
+  return (
+    <div className="ws8d-page">
+      <h2 className="gos-sr-only">Outcomes</h2>
+      <EmptyState
+        title="No outcome review yet"
+        action={
+          g2Approved ? (
+            <Button variant="secondary" href={`${base}/pilot`}>
+              Open pilot plan
+            </Button>
+          ) : (
+            <Button variant="secondary" href={`${base}/decisions?gate=G2`}>
+              Open G2 request
+            </Button>
+          )
+        }
+      >
+        {g2Approved
+          ? 'The outcome review opens when the pilot is activated. Actuals are then recorded against the thresholds the G2 package pre-registered.'
+          : 'The outcome review opens when an approved pilot is activated. Thresholds are pre-registered in the G2 package.'}
+      </EmptyState>
+    </div>
   );
 }
 

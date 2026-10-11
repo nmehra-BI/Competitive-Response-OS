@@ -179,7 +179,7 @@ export function CaseHeader({ caseRef, activeTab }: CaseHeaderProps) {
             </span>
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="case-top__aside">
           <NextDecisionBlock next={h.nextDecision} />
           {c.stage === 'discovery' ? <StartAssessment caseRef={c.key} ownerId={c.owner.id} /> : null}
         </div>

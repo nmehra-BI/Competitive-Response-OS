@@ -3,6 +3,8 @@
 import { people } from '@growth-os/fixtures-aster';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { API } from '@growth-os/contracts';
+import { mock, MockProblem } from '../../mocks/define';
 import { mockServer, resetMockState, resetReplay, session } from '../../mocks/node';
 import { seedWs8d } from '../history/journey';
 import { renderAt } from '../pilot/test-utils';
@@ -112,5 +114,29 @@ describe('S12 Outcomes', () => {
     renderAt(URL);
     await screen.findByText('Baseline versus actuals');
     expect(screen.queryByRole('button', { name: /Record decision/ })).toBeNull();
+  });
+
+  it('before the pilot is activated: "No outcome review yet" with the next action, not "not found" (D-180)', async () => {
+    mockServer.use(
+      mock(API.outcomes.get, () => {
+        throw new MockProblem('NOT_FOUND', 'Not found.');
+      }),
+    );
+    session.signIn(people.maya.id);
+    renderAt(URL);
+    expect(await screen.findByRole('heading', { name: 'No outcome review yet' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open G2 request' }).getAttribute('href')).toBe(
+      '/me/cases/ME-104/decisions?gate=G2',
+    );
+    expect(screen.queryByText('This page could not be found.')).toBeNull();
+  });
+
+  it('a case the viewer cannot see still reads "This page could not be found." (never-rule 8)', async () => {
+    session.signIn(people.maya.id);
+    renderAt('/me/cases/ME-999/outcomes');
+    await waitFor(() =>
+      expect(screen.getAllByText('This page could not be found.').length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByRole('heading', { name: 'No outcome review yet' })).toBeNull();
   });
 });

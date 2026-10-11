@@ -3,7 +3,7 @@
  * record. No actions except Print and a link back to Decisions. Print hides the app chrome and
  * keeps the illustrative-data notice.
  *
- * Deep links: ?gate=G1|G2 (default: the case's next decision), ?version=3.
+ * Deep links: ?gate=G1|G2|X (default: the case's next decision), ?version=3.
  */
 import { API, GATE_DISPOSITION_LABELS, GateCode, snapshotLabel } from '@growth-os/contracts';
 import { AuthBoxes, Banner, Button, EmptyState, Mono, Skeleton } from '@growth-os/ui';
@@ -23,7 +23,17 @@ export default function BriefScreen() {
   const h = header.data;
   const parsed = GateCode.safeParse(sp.get('gate'));
   const gate = parsed.success ? parsed.data : h ? defaultGate(h) : 'G2';
-  const node = h?.rail.find((n) => n.gateCode === gate);
+  // The extension (X) is not on the rail: its request comes from the outcome review (D-068, D-180).
+  const review = useApiQuery(
+    API.outcomes.get,
+    { params: { caseRef: caseKey } },
+    { enabled: gate === 'X' && !!h },
+  );
+  const requestId =
+    gate === 'X'
+      ? (review.data?.extensionRequest?.id ?? null)
+      : (h?.rail.find((n) => n.gateCode === gate)?.gateRequestId ?? null);
+  const node = requestId ? { gateRequestId: requestId } : null;
   const v = Number(sp.get('version'));
   const version = Number.isInteger(v) && v > 0 ? v : undefined;
   const pkg = useApiQuery(
@@ -32,7 +42,11 @@ export default function BriefScreen() {
     { enabled: !!node?.gateRequestId },
   );
 
-  if (header.isPending || (node?.gateRequestId && pkg.isPending)) {
+  if (
+    header.isPending ||
+    (gate === 'X' && review.isPending && !review.error) ||
+    (node?.gateRequestId && pkg.isPending)
+  ) {
     return (
       <div className="app-page" aria-busy="true">
         <Skeleton height={640} />

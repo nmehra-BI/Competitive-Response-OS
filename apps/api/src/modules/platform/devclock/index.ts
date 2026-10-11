@@ -5,7 +5,7 @@
  * at once. Forward only: going back would make recorded business times lie, so reseed instead.
  */
 import { API } from '@growth-os/contracts';
-import { devClockOffsetMs } from '@growth-os/db';
+import { hostedWithoutDemo, devClockOffsetMs } from '@growth-os/db';
 import type { Authorization, Identity } from '../../../platform/context';
 import { ApiError } from '../../../platform/errors';
 import { command, query, type HandlerMap } from '../../../platform/pipeline';
@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function devAccess(identity: Identity): Authorization {
   if (identity.actor.kind !== 'human')
     return { allow: false, rule: 'dev:clock', code: 'AGENT_IDENTITY_FORBIDDEN', reason: 'People only.' };
-  if (!identity.tenant.illustrative || process.env.NODE_ENV === 'production')
+  if (!identity.tenant.illustrative || hostedWithoutDemo())
     return {
       allow: false,
       rule: 'dev:clock',
