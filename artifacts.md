@@ -1289,6 +1289,13 @@ on "Read the decision package" → coach mark beside the awaiting decision → E
 `apps/web/e2e/real/onboarding.spec.ts` (every coach mark of all five paths anchors to a visible element; second
 sign-in is quiet; demo reset) and `apps/web/e2e/onboarding.spec.ts` (mocks, axe, reduced motion).
 
+**Update — narration and music (2026-10-11, D-200 … D-205).** The button now reads "Play the 2-minute tour"; the
+click starts the narrated tour (Piper voice, one file per chapter) with an original ambient bed ducked 21 dB under
+speech. The visual clock drives the audio: Pause, slider, chapter jumps and ←/→ move it; Mute, Music on/off and the
+Voice/Music volumes are remembered per browser; Skip, Escape and Close stop every element. Reduced motion: the
+storyboard offers "Play narration" per chapter. `real/onboarding.spec.ts` checks the files load, last their
+chapter/tour (±10%), play after the click and stop on close.
+
 ## End-to-end journey map (2026-10-09)
 
 The 30 acceptance steps of BUILD_PLAN §8, with the workflow each exercises, the screen route, the main API endpoints

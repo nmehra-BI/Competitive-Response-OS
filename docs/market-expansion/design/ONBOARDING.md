@@ -28,7 +28,7 @@ quoted: the vendor statistics found during research could not be traced to prima
 | R8 | Onboarding vendors recommend role-segmented paths (admins configure, end users do daily work) and judging onboarding by activation, not by completion rates. ([Appcues](https://appcues.com/blog/customer-onboarding-checklist); [Pendo whitepaper](https://go.pendo.io/rs/185-LQW-370/images/Pendo_Whitepaper_2020_OnboardingForProductAndCustomerSuccess_2020.pdf)) | [S] (vendor sources) | Five role paths; success measured by "first real step done", not "tour watched" (§9). |
 | R9 | APG: a modal dialog has `role="dialog"`, `aria-modal="true"`, a name, traps focus, closes on Escape and returns focus to the trigger; a tooltip never takes focus — content with controls belongs in a non-modal dialog. ([APG dialog](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/); [APG tooltip](https://www.w3.org/WAI/ARIA/apg/patterns/tooltip/)) | [S] | Welcome and explainer: modal dialog. Coach mark: **non-modal dialog** (it has buttons), not `role="tooltip"`. |
 | R10 | WCAG 2.2.2 Pause, Stop, Hide: moving content that starts automatically and lasts > 5 s needs a pause/stop/hide mechanism. ([WCAG 2.2.2 summary](https://tabnav.com/academy/wcag/success-criterion-2.2.2)); honouring `prefers-reduced-motion` should be checked at run time, and is a complement to, not a substitute for, a pause control. ([Hidde de Vries](https://hidde.blog/meeting-2-22-pause-stop-hide-with-prefers-reduced-motion/)) | [S] | The explainer never starts on its own; it has pause; with reduced motion it renders a still storyboard. |
-| R11 | Chrome allows muted autoplay; sound needs a user gesture; best practice is an explicit play control. ([Chrome autoplay policy](https://developer.chrome.com/blog/autoplay)) | [S] | Captions-only (no audio track) and a "Play the 90-second tour" button: nothing autoplays before a click. |
+| R11 | Chrome allows muted autoplay; sound needs a user gesture; best practice is an explicit play control. ([Chrome autoplay policy](https://developer.chrome.com/blog/autoplay)) | [S] | A "Play the tour" button: no sound and no motion before that click (narration and music since D-200). |
 | R12 | Enterprise approvers with little time learn best from the real item waiting for them, not from a generic tour. | [H] | Elena's guide leads with "You have a G2 decision waiting" from her real inbox. Test with the §11 script. |
 | R13 | A short motion explainer of the *model* (kinds, ladder, gates) reduces the most expensive misreadings (summing measures, assuming approval is automatic). | [H] | Test comprehension quiz items H5/H6 of research §11 with and without the explainer. |
 
@@ -74,7 +74,7 @@ The text always says the person decides: "Nothing is approved until you choose a
 Modal dialog (`role="dialog"`, `aria-modal`, named by its heading, focus on the primary button, Escape = "Skip for
 now", focus returns to the page). Content: "Welcome to Market Expansion, {first name}", one sentence on the expansion
 case, the role line ("You decide pilot and scale investments within your authority."), an "Illustrative data" note,
-and three actions: **Play the 90-second tour** (primary) · **Show me around** (opens the guide) · **Skip for now**.
+and three actions: **Play the 2-minute tour** (primary; the label names the narrated length, D-201) · **Show me around** (opens the guide) · **Skip for now**.
 Any action records `welcomeSeen`. It shows only when the server says `welcomeSeen = false`, so a second sign-in (any
 device) never shows it again.
 
@@ -112,7 +112,7 @@ progress, keeps a plain "Guide" button), **Resume guide**. Replaying never reset
 Visible only when the server says `canReset` (AUTH_MODE=dev, an illustrative tenant and, on a hosted runtime,
 DEMO_MODE=1 — D-165). `POST /dev/onboarding/reset` clears the viewer's own row; audited.
 
-## 5. Explainer — storyboard and script (84 s, 8 chapters, captions only)
+## 5. Explainer — storyboard and script (2:05, 8 chapters, narrated with captions)
 
 Visual language: tokens only (no raw colours), Geist for UI text, Source Serif 4 for the chapter statements, Geist
 Mono for keys and versions, semantic colours with glyph + text, ▼●▲ scenario shapes, gate diamonds of research §10.4,
@@ -121,21 +121,21 @@ Motion: 180–240 ms ease-out entrances, no parallax, no flashing, nothing faste
 
 | # | Chapter | Time | Frame | Caption (exact) |
 |---|---|---|---|---|
-| 1 | Scattered decisions | 0:00–0:09 | Four drifting cards: a slide deck "Germany_v7_final.pptx", a spreadsheet "SOM (2).xlsx", an email "Re: Re: approved?", a task list. Thin links between them break. | "Expansion decisions usually live in slides, spreadsheets, email threads and task tools." · "Numbers drift, approvals get lost, and no one can say exactly what was agreed." |
-| 2 | One expansion case | 0:09–0:19 | The cards fly into one case card: `ME-104` · German food-processing plants — monitoring · stage pill · Owner Maya Rao · Sponsor Elena Fischer; the nine case tabs fade in below. | "Market Expansion keeps one expansion case per decision — here ME-104, German food-processing plants." · "Mandate, evidence, sizing, validation, approvals, pilot and outcome stay together, with an owner and a stage." |
-| 3 | Four kinds of claim | 0:19–0:31 | Four tags appear in turn with their line styles: Evidence (solid) · Assumption · Daniel Weber (dashed) · Scenario · Base · Year 3 (dotted) · Actual · 1 Dec–28 Feb (2 px rule). Then "Assumption" gains an "AI draft" badge beside it. | "Every number says what kind of claim it is." · "Evidence is sourced. An assumption is a person's belief, with an owner. A scenario is calculated under named assumptions. An actual is measured." · "An AI draft stays a draft until a person accepts it." |
-| 4 | The measure ladder | 0:31–0:43 | Site-count bars narrow: TAM 5,000 sites · €100m/year → SAM 2,000 unique sites · €40m/year → Reachable pool 500 unique sites → SOM · Scenario · Year 3 · 100 customers · €2.0m annual revenue. A row "TAM + SAM + pool + SOM = ?" is struck through with the chip "No total — different questions". Scenario line: ▼ €1.0m · ● €2.0m · ▲ €2.4m annual revenue. | "TAM: 5,000 sites, €100m/year. SAM: 2,000 unique sites, €40m/year." · "Reachable pool: 500 unique sites. SOM, a scenario for year 3: €2.0m annual revenue." · "Each rung answers a different question. They are never added up." |
-| 5 | Gates G0–G3 | 0:43–0:56 | The gate rail: Mandate ◆G0 Discovery · Assessment ◆G1 Validation ◆G2 Pilot · Review ◆G3 Scale. G0, G1 fill (Approved); G2 half-fills (Awaiting decision). An approval card: Snapshot v3 · "Approve pilot €120k · 90 days" · "Authorizes: the 90-day pilot · Does not authorize: market entry or scale". Then the card shows "Stale — snapshot changed" and the button disables. | "Four gates: G0 scope, G1 validate, G2 pilot, G3 scale." · "A person with authority decides — for example "Approve pilot €120k · 90 days" — on the exact snapshot they read." · "If the case changes, the snapshot is stale and must be decided again. Nothing passes a gate on its own." |
-| 6 | Pilot and task sync | 0:56–1:06 | Task rows: "Confirm 4 pilot sites and contacts" Sending… → Confirmed · PIL-11; "Install monitoring at 4 sites" Failed · Retry → Confirmed · PIL-17. A "Done" task next to the G3 diamond, which stays unchanged. | "An approved pilot becomes owned tasks sent to your task tool." · "A task shows "Confirmed · PIL-11" only after Jira returns the key. A failed task is retried without duplicates." · "Finishing tasks never passes a gate." |
-| 7 | Outcomes | 1:06–1:16 | Actual vs threshold bars: Paid use and continuation 3 of 4 (threshold 4 of 4) — Not met; Deployment effort 22 hours per site (within 16) — Not met; Buyer fit Mixed — Inconclusive. Decision card "Revise and extend validation" · Extension €30k · 45 days. G3 diamond with bar: Blocked. | "At the review, actuals are compared with thresholds set before the pilot." · "A negative result is still a result. Here the decision is "Revise and extend validation", with its own cap: €30k · 45 days." · "G3 Scale stays blocked until its own preconditions are met." |
-| 8 | Your role | 1:16–1:24 | The viewer's avatar and path name; three role steps; the call to action button. | Role line (below) · "Illustrative data: Aster Industrial Systems and its people are fictional." |
+| 1 | Scattered decisions | 0:00–0:11 | Four drifting cards: a slide deck "Germany_v7_final.pptx", a spreadsheet "SOM (2).xlsx", an email "Re: Re: approved?", a task list. Thin links between them break. | "Expansion decisions usually live in slides, spreadsheets, email and task tools." · "Numbers drift, approvals get lost, and no one can say what was agreed." |
+| 2 | One expansion case | 0:11–0:25 | The cards fly into one case card: `ME-104` · German food-processing plants — monitoring · stage pill · Owner Maya Rao · Sponsor Elena Fischer; the nine case tabs fade in below. | "Market Expansion keeps one case per decision — here ME-104, German food-processing plants." · "Evidence, sizing, validation, approvals, pilot and outcome stay together, with an owner and a stage." |
+| 3 | Four kinds of claim | 0:25–0:39 | Four tags appear in turn with their line styles: Evidence (solid) · Assumption · Daniel Weber (dashed) · Scenario · Base · Year 3 (dotted) · Actual · 1 Dec–28 Feb (2 px rule). Then "Assumption" gains an "AI draft" badge beside it. | "Every number says what kind of claim it is." · "Evidence is sourced. An assumption has an owner. A scenario is calculated. An actual is measured." · "An AI draft stays a draft until a person accepts it." |
+| 4 | The measure ladder | 0:39–0:59 | Site-count bars narrow: TAM 5,000 sites · €100m/year → SAM 2,000 unique sites · €40m/year → Reachable pool 500 unique sites → SOM · Scenario · Year 3 · 100 customers · €2.0m annual revenue. A row "TAM + SAM + pool + SOM = ?" is struck through with the chip "No total — different questions". Scenario line: ▼ €1.0m · ● €2.0m · ▲ €2.4m annual revenue. | "TAM: 5,000 sites, €100m/year. SAM: 2,000 unique sites, €40m/year." · "Reachable pool: 500 unique sites. SOM, a year-3 scenario: €2.0m annual revenue." · "Each rung answers a different question. They are never added up." |
+| 5 | Gates G0–G3 | 0:59–1:21 | The gate rail: Mandate ◆G0 Discovery · Assessment ◆G1 Validation ◆G2 Pilot · Review ◆G3 Scale. G0, G1 fill (Approved); G2 half-fills (Awaiting decision). An approval card: Snapshot v3 · "Approve pilot €120k · 90 days" · "Authorizes: the 90-day pilot · Does not authorize: market entry or scale". Then the card shows "Stale — snapshot changed" and the button disables. | "Four gates: G0 scope, G1 validate, G2 pilot, G3 scale." · "A person with authority decides — for example "Approve pilot €120k · 90 days" — on the exact snapshot they read." · "If the case changes, the snapshot goes stale and is decided again. Nothing passes a gate on its own." |
+| 6 | Pilot and task sync | 1:21–1:36 | Task rows: "Confirm 4 pilot sites and contacts" Sending… → Confirmed · PIL-11; "Install monitoring at 4 sites" Failed · Retry → Confirmed · PIL-17. A "Done" task next to the G3 diamond, which stays unchanged. | "An approved pilot becomes owned tasks sent to your task tool." · "A task shows "Confirmed · PIL-11" only after Jira returns the key. Failed tasks retry without duplicates." · "Finishing tasks never passes a gate." |
+| 7 | Outcomes | 1:36–1:53 | Actual vs threshold bars: Paid use and continuation 3 of 4 (threshold 4 of 4) — Not met; Deployment effort 22 hours per site (within 16) — Not met; Buyer fit Mixed — Inconclusive. Decision card "Revise and extend validation" · Extension €30k · 45 days. G3 diamond with bar: Blocked. | "At the review, actuals are compared with thresholds set before the pilot." · "A negative result is still a result: "Revise and extend validation", with its own cap, €30k · 45 days." · "G3 Scale stays blocked until its own preconditions are met." |
+| 8 | Your role | 1:53–2:05 | The viewer's avatar and path name; three role steps; the call to action button. | Role line (below) · "Illustrative data: Aster Industrial Systems and its people are fictional." |
 
 Role lines and calls to action (chapter 8):
 
 | Path | Caption | Button |
 |---|---|---|
 | Build | "You build the case: shortlist, size, validate, then submit G2 for a decision." | Start with Opportunities |
-| Decide | "You decide within your authority. Read the package, then choose a scoped action — nothing is approved until you do." | Open Reviews |
+| Decide | "You decide within your authority: read the package, then choose a scoped action. Nothing is approved until you do." | Open Reviews |
 | Run | "You run the pilot: your tasks, the plan, and what reached Jira." | Open My Work |
 | Review | "You review what you are asked to: confirm, dispute or abstain, always with a reason." | Open review requests |
 | Configure | "You set up connections, roles and policies. Administrators configure; they never approve." | Open Administration |
@@ -148,10 +148,73 @@ PIL-11, PIL-17, 3 of 4, 22 hours per site, €30k · 45 days.
 In-app React + SVG motion graphics (no video dependency, D-193): the scene is a pure function of time, so pausing,
 scrubbing and chapter jumps are exact and the MP4 is a recording of the same component. Controls: Play/Pause (Space
 or K), previous/next chapter (← →), a chapter list (buttons, `aria-current`), a time slider (`input type=range`, value
-text "0:31 of 1:24 · Chapter 4 of 8"), Captions on/off (on by default), Transcript (full text, always available),
-Skip tour. There is no audio track, so there is no mute control; the player says "Captions only — no sound". With
-`prefers-reduced-motion: reduce` (checked live) it shows the **storyboard**: each chapter's final frame as a still
-with its captions, and the same chapter navigation.
+text "0:39 of 2:05 · Chapter 4 of 8"), Captions on/off (on by default), Transcript (full text, always available),
+Mute/Unmute, Music on/off, Voice and Music volume, Skip tour (see §5.2). With `prefers-reduced-motion: reduce`
+(checked live) it shows the **storyboard**: each chapter's final frame as a still with its captions, the same chapter
+navigation, and "Play narration" for the chapter on screen (no music, only on request).
+
+The chapter times above come from the narration (`timing.json`): a scene is never shorter than its design length,
+and longer narration lengthens it rather than speeding the voice up (D-201). The exact words are in
+`apps/web/src/onboarding/explainer/narration.json`; the captions are those words.
+
+### 5.2 Audio (D-200 … D-205)
+
+**What plays.** One narration file per chapter (the last chapter once per role path, so the role line speaks to the
+viewer) and one ambient music bed for the whole tour, served as static files from `/onboarding/audio/`:
+Opus/WebM (`*.webm`, Chromium and Firefox) or AAC/M4A (`*.m4a`, Safari), chosen with `canPlayType`. Nothing loads until
+the tour opens; a session loads about 1.4 MB (WebM) or 1.8 MB (M4A). Each voice file is exactly its chapter's length
+(silence-padded), the music file exactly the tour's length.
+
+**Sync.** The player's visual clock is the master. On every tick `TourAudio.sync()` plays only the current chapter's
+voice at the chapter time and the music at the tour time, and re-seeks an element only when it drifts by more than
+0.3 s. Pause, slider seeks, chapter buttons and ←/→ therefore move the sound with the picture; Skip, Escape and Close
+unmount the player, which pauses, unloads and removes every element.
+
+**Controls and preferences.** Mute/Unmute (`aria-pressed`), Music on/off, Voice and Music volume sliders (0–100 %,
+value text "Voice volume 80%"). Stored per browser in `localStorage["gos.onboarding.audio"]` inside try/catch; the
+tour works without storage. Captions stay on by default and the transcript stays available, so the tour meets WCAG
+1.2.2 (captions) and 1.4.2 (audio control: sound starts only from the click and can be stopped and muted at once).
+
+**Voice.** Piper (local neural TTS, run offline at build time; not shipped) with the voice
+`en-us-libritts-high`, speaker 0, length scale 0.92. The voice was trained on LibriTTS (openslr.org/60,
+**CC BY 4.0**: commercial use allowed with attribution — "Voice: Piper en-us-libritts-high, trained on LibriTTS by
+Zen et al. (CC BY 4.0)"). Piper itself (`piper-tts` 1.8, GPL-3.0) is a development tool only; its output audio is not
+a derivative of the program. Quality: a neural voice, far better than formant engines such as espeak-ng,
+but clearly synthetic (flat intonation on lists and acronyms is typical). It was checked by measurement only
+(durations, levels, loudness): the build environment has no audio output, so **no one has listened to it yet** —
+have a person review it before showing it outside the team, and use a professional recording for customer-facing
+use. A small pronunciation lexicon in the generator turns UI notation
+into speech for the engine only ("€100m/year" → "100 million euros a year", "PIL-11" → "P I L 11", "G2" → "G two"),
+so the captions keep the research §10.5 notation while saying the same words.
+
+**Music.** Original, synthesized by the generator (no samples, no third-party music, so no licence beyond the
+repository's): four soft sustained pad chords (Cmaj7 · Am7 · Fmaj7 · G6, 8 s each, overlapping), a low soft pulse
+every 2 s, a slow swell, low-passed above ~2.2 kHz. No melody.
+
+**Mix.** Speech normalised to −19 dBFS RMS (active parts). Music sits **21 dB under the voice while someone speaks**
+and 15 dB under in the pauses (6 dB ducking with 250 ms ramps), fades in over 2.5 s and out over 3.5 s. The MP4 uses
+the same mix (integrated loudness about −18 LUFS).
+
+**Regenerate.** After editing `narration.json`:
+
+```bash
+python3 -m venv .venv-tts && .venv-tts/bin/pip install piper-tts      # PyPI
+curl -LO https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-en-us-libritts-high.tar.gz
+tar xzf voice-en-us-libritts-high.tar.gz
+.venv-tts/bin/python scripts/onboarding-audio/generate.py \
+  --piper-python .venv-tts/bin/python --model en-us-libritts-high.onnx --speaker 0 --length-scale 0.92 \
+  --mix-out /tmp/tour-mix-decide.wav
+pnpm format   # narration.json; timing.json is generated and ignored by Prettier
+```
+
+It rewrites `apps/web/src/onboarding/explainer/timing.json` and every file in `apps/web/public/onboarding/audio/`.
+
+**Replace with a professional recording.** Record one WAV per caption cue, reading the caption text exactly:
+`problem-1.wav`, `problem-2.wav`, `case-1.wav` … `outcomes-3.wav`, `role-2.wav` (the illustrative-data line) and
+`role-build.wav` … `role-configure.wav` (the five role lines). Pass the folder as `--voice-dir` instead of `--model`:
+the generator trims room tone, recomputes the timing so the captions follow the recording, ducks the music under it
+and re-encodes every file. No code change is needed. Record at 44.1 kHz or higher, mono, with about
+0.5 s of room tone at each end.
 
 ## 6. State model
 
@@ -209,10 +272,10 @@ audit only and proposes the events as CR-ONB-2 (D-197).
 
 ## 10. MP4 rendition
 
-`market-expansion-tour-1440x900.mp4` (H.264, 1440×900, 88 s including a short hold on the welcome and the end card,
-captions burned in as on screen, no audio) is a recording of the in-app player: Chromium (Playwright) on the mock-mode
-app, captured with a CDP screencast, assembled with ffmpeg from the frame timestamps. It lives at
-`design/market-expansion/onboarding/` (1.4 MB, under the 5 MB limit). Re-record after any scene change; the app's
+`market-expansion-tour-1440x900.mp4` (H.264 1440×900 + AAC 96 kbit/s stereo, 2:10 including a short hold on the
+welcome and the end card, captions as on screen) is a recording of the in-app player (Chromium via Playwright on the
+mock-mode app, CDP screencast frames assembled with ffmpeg from their timestamps) muxed with the narration-and-music
+mix for the Decide path (Elena). It lives at `design/market-expansion/onboarding/` (3.4 MB, under the 5 MB limit). Re-record after any scene change; the app's
 player is the source of truth, the MP4 is for decks and email.
 
 ## 11. Test plan
