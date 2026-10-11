@@ -65,6 +65,9 @@ import {
   snapshotBlockedReason,
 } from './view';
 
+/** One React identity for the sizing editor in both page layouts (see the `!shown` branch). */
+const SIZING_EDITOR_KEY = 'sizing-editor';
+
 // ---------------------------------------------------------------------------
 // URL state
 // ---------------------------------------------------------------------------
@@ -820,12 +823,16 @@ export default function SizingScreen() {
       </div>
     );
   }
+  // The editor keeps one instance across the first save: that save creates draft v1, so the screen
+  // switches from this empty state to the ladder layout below. Both places render the editor as a
+  // direct child of `.as-page` with the same key, so React moves it instead of remounting it. A
+  // remount dropped what the operator typed while the first save was in flight (and lost focus).
   if (!shown) {
     return (
       <div className="as-page">
         <h2 className="gos-sr-only">Sizing</h2>
         {editorOpen ? (
-          <SizingEditor caseKey={caseKey} view={data} />
+          <SizingEditor key={SIZING_EDITOR_KEY} caseKey={caseKey} view={data} />
         ) : (
           <EmptyState title="No sizing yet">
             Define the market boundary and cohorts to calculate the measure ladder.
@@ -977,7 +984,12 @@ export default function SizingScreen() {
       {save.error ? <ProblemBanner error={save.error} /> : null}
       {commit.error ? <ProblemBanner error={commit.error} /> : null}
       {editorOpen && pinned === null ? (
-        <SizingEditor caseKey={caseKey} view={data} onClose={() => setEditorOpen(false)} />
+        <SizingEditor
+          key={SIZING_EDITOR_KEY}
+          caseKey={caseKey}
+          view={data}
+          onClose={() => setEditorOpen(false)}
+        />
       ) : null}
       <div className="as-split">
         <div className="as-main">

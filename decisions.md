@@ -2433,6 +2433,27 @@ on `growth_os_pe`. Additive contract and migration changes went through D-031 an
   (D-143). Ports 4770/5770/4771/5771 (+ mock Jira 4772); the developer's servers on 4600/4601/5600 and database
   `growth_os` were not touched. No test is skipped or marked `fixme`.
 
+### D-159 — Flaky real e2e "sizing v1 in the UI alone": the S06 editor remounted on the first save
+- Symptom: CI run 38094567052 (PR #1, `5c87c72`) failed only `real/w4-e1-editors.spec.ts` › "an operator starts a
+  case and builds sizing v1 and economics v1 in the UI alone", at the committed boundary: expected
+  "Existing water-monitoring system, run as a monitored service", received "Water-monitoring system". The other
+  run on the same commit passed. Locally 1 in 5 repeats failed the same way.
+- Root cause (product bug, not the test): the blur on "Reference year" makes the first save, which creates draft
+  v1 without a product boundary, so the server uses the product name. Once draft v1 exists, `SizingScreen`
+  switches from its "No sizing yet" branch to the ladder layout, and both branches rendered `<SizingEditor>` at
+  different positions in the tree. React unmounted the editor and mounted a new one that started from the
+  server copy. Anything typed while the first save was in flight was dropped: here the product boundary, which
+  later saves never sent. The trace showed the first PATCH (If-Match 0) without `productBoundary` and no later
+  PATCH with it. Whether the text was typed before or after the remount depended on how long the first save took,
+  so the test was flaky. A user typing at that moment also lost their text and focus.
+- Fix: `SizingScreen` renders the editor in both branches as a direct child of `.as-page` with one key
+  (`SIZING_EDITOR_KEY`), so React moves the same instance and its draft state across the layout change. New unit
+  test in `SizingScreen.test.tsx` holds the first save, types the boundary, releases it, and checks that the
+  textarea is the same node, the text is kept and the next PATCH carries it. Without the fix it fails: the
+  value becomes the server's. No assertion, timeout or retry changed.
+- Proof: the spec passed 25 of 25 repeats on the real stack (`growth_os_fix_e2e`, ports 4780/5780/4781/5781 +
+  mock Jira 4782); full real e2e 67 passed; typecheck, lint, format:check; unit 77 files / 2,273 tests.
+
 ### Change-request register — Wave 4 integration
 
 | CR | Request | Decision | Record |
