@@ -591,6 +591,9 @@ a.gos-chip--assumption:hover {
 
 /* ---------- Table ---------- */
 .gos-table-scroll {
+  /* Positioned so the scroll box also clips absolutely positioned descendants (.gos-sr-only marks in
+     cells): otherwise a wide table widened the page on a phone (D-185). */
+  position: relative;
   overflow-x: auto;
 }
 .gos-table {

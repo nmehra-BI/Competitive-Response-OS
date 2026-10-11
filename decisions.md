@@ -2527,6 +2527,39 @@ integration account; (2) the disconnect endpoint (CR-E5-1); (3) customer Finance
 committee entered in S14; (4) licence confirmations entered for every licensed source; (5) SSO and the hosting items
 above. Nothing in the product workflow itself blocks a pilot any more.
 
+### D-185 — Case header: the next-decision card stretched and pushed the rail, tabs and screen below the fold
+- Symptom: on every case screen (`/me/cases/ME-104/*`, all personas, every width) the header was 582 px tall:
+  the "Next decision" card was 386 px high, mostly empty, and the gate rail, the nine tabs and the screen started
+  at y≈538/630/672. In a short browser window the page looked blank under the title. No query failed; the only
+  4xx was the expected `outcome-review` 404 before a review exists.
+- Root cause: the prototype (`common.py case_header()`) makes the card itself the second item of the header's
+  wrapping flex row, sized `flex: 0 1 360px`. The port kept that rule on `.case-next` but wrapped the card in a
+  column flex `<div>` (so S01's "Start assessment" can sit under it). In a column container the flex basis is a
+  height, so the card became 360 px + padding tall, and the wrapper, with no basis of its own, shrank to the card's
+  content width. Not a stretch, a viewport-height rule, a loading state or a token mismatch.
+- Fix (`apps/web/src/app/case/CaseLayout.tsx`, `apps/web/src/app/app.css`): the wrapper is now
+  `.case-top__aside`, the row item that carries `flex: 0 1 360px`, `align-self: flex-start` and the column gap;
+  `.case-next` is `flex: none` and sizes to its content (≈120 px). The header is 316 px at 1440 and 2000 px, and
+  the screen starts at y=406 instead of 672. Link targets and API code are unchanged.
+- Design rationale: matches the approved prototype, with the next decision top-aligned beside the title and the
+  rail, tabs and content directly below with no dead space. The title block's basis rises from 520 to 640 px so the
+  aside wraps under the title below about a 1320 px window (1280 px laptops, tablets, phones), where a 360 px
+  column would squeeze the title and meta onto extra lines. The aside's `min-width` is `min(260px, 100%)` so it
+  never forces a phone to scroll.
+- Also fixed, same class of bug (no horizontal scroll was a requirement of this change): `.case-tabs` and the
+  shared `.gos-table-scroll` (`packages/ui/src/styles/components.css`) are now `position: relative`. Both scroll
+  with `overflow-x: auto`, but their absolutely positioned `.gos-sr-only` descendants (a tab count's ", ", a
+  cell's status mark) had a containing block outside the scroll box, escaped its clip and widened the page by
+  101 px (Thesis) and 286 px (Economics) at 390 px.
+- Still open, outside the header: at 390 px, Feasibility (55 px) and Validation (23 px) overflow because long
+  `nowrap` StatusChip/KindChip labels do not wrap. That needs a separate chip wrapping decision.
+- Tests: `apps/web/src/app/case/CaseLayout.test.tsx` pins the structure (aside is the row item; crumbs, top row,
+  rail, tabs in that order) and the sizing rules. `apps/web/e2e/real/case-header-layout.spec.ts` measures the real
+  page for Elena, Maya and Jonas on Thesis, Sizing, Economics, Decisions and Outcomes at 2000, 1440, 1280 and
+  390 px: card < 260 px, beside the title or stacked under it, rail, tabs and screen directly below and inside the
+  first viewport from 1280 px, no horizontal scroll, and the "Open decision package" link visible with its
+  target unchanged.
+
 ## Stage: Deployment — Vercel and Supabase (2026-10-11)
 
 A demo deployment of the full stack: web, API and jobs on Vercel (Hobby), the system of record on Supabase

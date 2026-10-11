@@ -363,9 +363,24 @@ a.app-switcher__item:hover {
   gap: 16px 24px;
   align-items: flex-start;
 }
+/*
+ * Two columns while both fit (title block ≥ 640 px beside a 360 px next-decision column, so from about a
+ * 1320 px window); below that the aside wraps under the title (1280 px, tablets, phones). The aside is
+ * the row item that carries the 360 px basis; its children size to their content (D-185). Never give
+ * the card itself a flex basis: inside the column aside that basis becomes a height.
+ */
 .case-top__main {
-  flex: 1 1 520px;
+  flex: 1 1 640px;
   min-width: 0;
+}
+.case-top__aside {
+  flex: 0 1 360px;
+  min-width: min(260px, 100%);
+  max-width: 100%;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .case-key {
   font-family: var(--font-mono);
@@ -414,8 +429,8 @@ a.app-switcher__item:hover {
   box-sizing: border-box;
 }
 .case-next {
-  flex: 0 1 360px;
-  min-width: 260px;
+  flex: none;
+  box-sizing: border-box;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 12px 14px;
@@ -428,6 +443,9 @@ a.app-switcher__item:hover {
   border-radius: var(--radius-lg);
 }
 .case-tabs {
+  /* Positioned so the scroll box clips the visually hidden count prefixes (.gos-sr-only is absolute):
+     otherwise a tab scrolled out of view widened the page on a phone (D-185). */
+  position: relative;
   display: flex;
   gap: 22px;
   margin-top: 10px;
