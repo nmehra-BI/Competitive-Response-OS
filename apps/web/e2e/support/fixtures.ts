@@ -64,7 +64,30 @@ type Fixtures = {
   mockScenario: (s: { g2Stale?: boolean }) => Promise<void>;
 };
 
-export const test = base.extend<Fixtures>({
+type Options = {
+  /**
+   * First-run welcome dialog (D-196). Off by default: every journey spec signs in as a returning user, so the
+   * welcome never interrupts it. Onboarding specs opt in with `test.use({ onboardingAutostart: true })`.
+   * This only stops the dialog opening by itself; the guide, the tour and replay stay available.
+   */
+  onboardingAutostart: boolean;
+};
+
+export const ONBOARDING_AUTOSTART_KEY = 'gos.onboarding.autostart';
+
+export const test = base.extend<Fixtures & Options>({
+  onboardingAutostart: [false, { option: true }],
+  context: async ({ context, onboardingAutostart }, use) => {
+    if (!onboardingAutostart)
+      await context.addInitScript((key) => {
+        try {
+          localStorage.setItem(key, 'off');
+        } catch {
+          /* storage unavailable */
+        }
+      }, ONBOARDING_AUTOSTART_KEY);
+    await use(context);
+  },
   loginAs: async ({ page }, use) => {
     await use((who, next) => loginAs(page, who, next));
   },

@@ -23,6 +23,7 @@ transaction; analytics events are the PRD §17 names. Architecture references: A
 | WF-08 | Outcome review → revise/extend, scale gate blocked | ME-14, §6, S12 |
 | WF-09 | Analysis run lifecycle with checkpoint and resume | §8, ME-15, ME-16 |
 | WF-10 | Evidence challenge and restricted-source handling | ME-02, ME-15, ME-16, S13 |
+| WF-12 | First-run onboarding: welcome, explainer, role guide, coach marks | §7, ME-16, research §8.2 |
 
 
 ### Update — Wave 4 contracts landed (2026-10-10)
@@ -1238,6 +1239,55 @@ sequenceDiagram
   Op->>Fn: GET /api/internal/jobs/run without the secret
   Fn-->>Op: 401
 ```
+
+### WF-12 — First-run onboarding
+
+Onboarding stage (2026-10-11; decisions D-190 … D-199; design `docs/market-expansion/design/ONBOARDING.md`). A person's
+first sign-in shows one welcome dialog; the tour plays only after a click; the role guide derives progress from the
+person's own records and never acts on the workflow. State is per person on the server (`platform.user_onboarding`,
+RLS, people only), every change is one audited `PATCH /me/onboarding`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Loading: sign-in (dev persona picker or SSO)
+  Loading --> Welcome: GET /me/onboarding · welcomeSeen = false · autostart on
+  Loading --> Idle: welcomeSeen = true (second sign-in, any device)
+  Welcome --> Explainer: Play the 90-second tour · PATCH welcomeSeen
+  Welcome --> Guide: Show me around · PATCH welcomeSeen
+  Welcome --> Idle: Skip for now / Escape · PATCH welcomeSeen
+  state Explainer {
+    [*] --> Playing
+    Playing --> Paused: Pause / Space
+    Paused --> Playing: Resume
+    Playing --> EndCard: 1:24 reached · PATCH explainer=completed
+    Playing --> Storyboard: prefers-reduced-motion
+  }
+  Explainer --> Idle: Skip tour / Close / Escape · PATCH explainer=skipped (never downgrades completed)
+  Explainer --> Idle: role call to action (navigates)
+  Idle --> Guide: Guide button / ⌘K Guide / account menu
+  Guide --> CoachMark: Show me (navigates to the step's page)
+  CoachMark --> CoachMark: Next (next incomplete step) · PATCH dismissCoachMark
+  CoachMark --> Idle: Got it / × / Escape · PATCH dismissCoachMark · focus returns
+  Guide --> Idle: Close / Escape · focus to the Guide button
+  Guide --> Explainer: Play the tour again
+  Idle --> Explainer: Replay the tour (account menu)
+  Guide --> Welcome: Reset onboarding (demo) · POST /dev/onboarding/reset
+```
+
+Step completion: **state** steps come from the viewer's own rows (owned case, committed sizing, experiment, G2
+submitted, a recorded decision, a task "Confirmed · KEY", an outcome observation, a responded review request);
+**visit** steps complete when the person opens the place (`PATCH visitedStep`, refused for state steps). Next reads
+`reviews.inbox` first ("You have a G2 decision waiting"). Failure paths: agent or service session → 403
+`AGENT_IDENTITY_FORBIDDEN` (API) and the table guard; another tenant's row is invisible (RLS); reset outside an
+illustrative workspace → 403, outside dev features → route not registered; a failed write never blocks the page.
+
+#### UI walkthrough (WF-12)
+
+Elena signs in → "Welcome to Market Expansion, Elena" (focus on "Play the 90-second tour") → the tour (8 chapters,
+captions, transcript, chapter list, slider) → Close → Guide "2 of 3": Next "You have a G2 decision waiting" → Show me
+on "Read the decision package" → coach mark beside the awaiting decision → Escape. Proven by
+`apps/web/e2e/real/onboarding.spec.ts` (every coach mark of all five paths anchors to a visible element; second
+sign-in is quiet; demo reset) and `apps/web/e2e/onboarding.spec.ts` (mocks, axe, reduced motion).
 
 ## End-to-end journey map (2026-10-09)
 

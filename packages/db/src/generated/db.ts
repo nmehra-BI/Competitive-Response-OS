@@ -1450,6 +1450,20 @@ export interface PlatformToolCall {
   tool_version: string;
 }
 
+export interface PlatformUserOnboarding {
+  coach_marks_dismissed: Generated<string[]>;
+  created_at: Generated<Timestamp>;
+  explainer_status: Generated<string>;
+  explainer_updated_at: Timestamp | null;
+  guide_dismissed: Generated<boolean>;
+  row_version: Generated<number>;
+  tenant_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  visited_steps: Generated<string[]>;
+  welcome_seen_at: Timestamp | null;
+}
+
 export interface PlatformWorkflowCase {
   app_type: string;
   business_unit_id: string;
@@ -1608,6 +1622,7 @@ export interface DB {
   "platform.tenant": PlatformTenant;
   "platform.tenant_ai_setting": PlatformTenantAiSetting;
   "platform.tool_call": PlatformToolCall;
+  "platform.user_onboarding": PlatformUserOnboarding;
   "platform.workflow_case": PlatformWorkflowCase;
   "sim.call_log": SimCallLog;
   "sim.external_issue": SimExternalIssue;

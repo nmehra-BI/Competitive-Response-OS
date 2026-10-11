@@ -50,6 +50,11 @@ import {
   VALUE_UNIT_LABELS,
   ValueUnit,
   MODEL_INPUTS,
+  EXPLAINER_STATUS_LABELS,
+  ExplainerStatus,
+  GUIDE_PATH_LABELS,
+  GuidePath,
+  OnboardingPatch,
 } from './index';
 
 describe('API registry', () => {
@@ -235,7 +240,7 @@ describe('Wave 4 additions are additive (D-122 onward)', () => {
       if (e[0]!.method !== 'GET') expect(e[0]!.auth, id).toBe('human');
       if (e[0]!.method === 'POST' && id !== 'admin.checkMapping') expect(e[0]!.idempotent, id).toBe(true);
     }
-    expect(ENDPOINTS).toHaveLength(165);
+    expect(ENDPOINTS).toHaveLength(168); // 165 + 3 onboarding endpoints (CR-ONB-1, D-191)
   });
 
   it('old request bodies and responses still validate without the new optional fields', () => {
@@ -285,5 +290,36 @@ describe('Wave 4 additions are additive (D-122 onward)', () => {
         allowExport: false,
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('Onboarding additions are additive (CR-ONB-1, D-191)', () => {
+  it('adds exactly get, update and a dev-only reset, about the signed-in person only', () => {
+    const ids = ENDPOINTS.filter((e) => e.id.startsWith('onboarding.')).map(
+      (e) => `${e.method} ${e.path} ${e.auth}`,
+    );
+    expect(ids).toEqual([
+      'GET /me/onboarding human',
+      'PATCH /me/onboarding human',
+      'POST /dev/onboarding/reset dev_only',
+    ]);
+    expect(API.onboarding.update.idempotent).toBe(true);
+    expect(API.onboarding.reset.idempotent).toBe(true);
+    // No path parameter: nobody can address another person's guide state.
+    for (const e of Object.values(API.onboarding)) expect(e.path).not.toContain(':');
+  });
+
+  it('the patch takes one known change at a time and refuses unknown fields', () => {
+    expect(OnboardingPatch.safeParse({ welcomeSeen: true }).success).toBe(true);
+    expect(OnboardingPatch.safeParse({ explainer: 'skipped' }).success).toBe(true);
+    expect(OnboardingPatch.safeParse({}).success).toBe(false);
+    expect(OnboardingPatch.safeParse({ welcomeSeen: false }).success).toBe(false);
+    expect(OnboardingPatch.safeParse({ approve: true }).success).toBe(false);
+    expect(OnboardingPatch.safeParse({ visitedStep: 'build.nope' }).success).toBe(false);
+  });
+
+  it('label maps cover their enums exactly', () => {
+    expect(Object.keys(GUIDE_PATH_LABELS).sort()).toEqual([...GuidePath.options].sort());
+    expect(Object.keys(EXPLAINER_STATUS_LABELS).sort()).toEqual([...ExplainerStatus.options].sort());
   });
 });

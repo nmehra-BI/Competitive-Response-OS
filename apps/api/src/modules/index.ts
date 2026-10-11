@@ -40,6 +40,7 @@ import { directoryHandlers } from './platform/directory';
 import { catalogueHandlers } from './me/catalogue';
 import { taskSyncHandlers } from './tasksync';
 import { devClockHandlers } from './platform/devclock';
+import { onboardingHandlers } from './platform/onboarding';
 
 export const handlers: HandlerMap = {
   // Modules register here as they land, e.g. ...platformHandlers, ...meHandlers
@@ -74,4 +75,5 @@ export const handlers: HandlerMap = {
   ...directoryHandlers,
   ...catalogueHandlers,
   ...devClockHandlers,
+  ...onboardingHandlers, // CR-ONB-1 (D-191)
 };
