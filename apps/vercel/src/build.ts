@@ -61,6 +61,7 @@ const SECURITY_HEADERS: Record<string, string> = {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
+    "media-src 'self'",
     "connect-src 'self' https://vercel.live",
     'frame-src https://vercel.live',
     "frame-ancestors 'none'",
@@ -131,10 +132,24 @@ async function writeOutput(): Promise<void> {
         headers: { 'Cache-Control': 'public, max-age=31536000, immutable' },
         continue: true,
       },
+      // Tour audio (static, unhashed names): name the audio type (Vercel's default for .webm is video/webm)
+      // and let the CDN cache it while browsers revalidate by ETag, so a re-rendered file shows up.
+      {
+        src: '^/onboarding/audio/[^/]+\\.webm$',
+        headers: { 'Content-Type': 'audio/webm' },
+        continue: true,
+      },
+      {
+        src: '^/onboarding/audio/[^/]+\\.m4a$',
+        headers: { 'Content-Type': 'audio/mp4' },
+        continue: true,
+      },
       { src: '^/(.*)$', headers: SECURITY_HEADERS, continue: true },
       { src: '^/api(?:/.*)?$', headers: { 'Cache-Control': 'no-store' }, continue: true },
       { handle: 'filesystem' },
       { src: '^/(?:api(?:/.*)?|healthz)$', dest: '/api' },
+      // A missing static asset is a 404, never the SPA's index.html.
+      { src: '^/(?:assets|onboarding/audio)/.*$', status: 404 },
       { src: '^/(.*)$', dest: '/index.html' },
     ],
     // Hobby plan: at most one run a day; command-triggered drains do the real work (D-161).
