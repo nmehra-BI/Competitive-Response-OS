@@ -10,6 +10,7 @@ export * from './platform/policy/policy-engine';
 export * from './platform/snapshot/canonical';
 export * from './platform/materiality/materiality';
 export * from './platform/audit/audit-writer';
+export * from './platform/onboarding/guide';
 export * from './me/lifecycle/machines';
 export * from './me/lifecycle/runtime';
 export * from './me/gates/definitions';
